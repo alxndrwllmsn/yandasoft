@@ -15,7 +15,7 @@ set ( LOFAR_COMMON_TAG             tags/1.2.0                               CACH
 set ( LOFAR_BLOB_TAG               tags/1.3.0                               CACHE  STRING    "lofar-blob version"               FORCE )
 set ( BASE_ASKAP_TAG               tags/1.6.0                               CACHE  STRING    "base-askap version"               FORCE )
 set ( BASE_LOGFILTERS_TAG          tags/1.4.0                               CACHE  STRING    "base-logfilters version"          FORCE )
-set ( BASE_IMAGEMATH_TAG           tags/1.9.0                               CACHE  STRING    "base-imagemath version"           FORCE )
+set ( BASE_IMAGEMATH_TAG           5f8062b9d2df1b5009bad82b7b812c23af4a7261 CACHE  STRING    "base-imagemath version"           FORCE )
 set ( BASE_ASKAPPARRALLEL_TAG      tags/1.5.0                               CACHE  STRING    "base-askapparrallel version"      FORCE )
 set ( BASE_SCIMATH_TAG             tags/1.9.0                               CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.6.0                               CACHE  STRING    "base-components version"          FORCE )

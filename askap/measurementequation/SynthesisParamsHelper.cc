@@ -27,6 +27,7 @@
 #include <askap/scimath/utils/PolConverter.h>
 #include <askap/scimath/fitting/Axes.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
+#include <askap/imagemath/linmos/LinmosImageRegrid.h>
 #include <askap/scimath/utils/PaddingUtils.h>
 #include <askap/gridding/SupportSearcher.h>
 #include <casacore/lattices/LatticeMath/Fit2D.h>
@@ -46,7 +47,7 @@ ASKAP_LOGGER(logger, ".measurementequation.synthesisparamshelper");
 
 #include <casacore/images/Images/PagedImage.h>
 #include <casacore/images/Images/TempImage.h>
-#include <casacore/images/Images/ImageRegrid.h>
+//#include <casacore/images/Images/ImageRegrid.h>
 #include <casacore/scimath/Mathematics/Interpolate2D.h>
 #include <casacore/lattices/Lattices/ArrayLattice.h>
 #include <casacore/coordinates/Coordinates/CoordinateSystem.h>
@@ -1200,9 +1201,9 @@ namespace askap
       boost::shared_ptr<casacore::TempImage<float> > outRef = tempImage(sinkParam,name); // outRef
 
       // regridder
-      casacore::ImageRegrid<float> regridder;
+      askap::imagemath::LinmosImageRegrid<float> regridder;
 
-      const casacore::Interpolate2D::Method method = casacore::Interpolate2D::CUBIC;
+      const askap::imagemath::Interpolate2D::Method method = askap::imagemath::Interpolate2D::CUBIC;
       const casacore::uInt decimate = 1;
       casacore::IPosition itsAxes = IPosition::makeAxisPath(outRef->shape().nonDegenerate().nelements());
 
@@ -1210,7 +1211,7 @@ namespace askap
       // output array. I dont think it combines - I think it just replaces. The output can be empty.
 
       regridder.regrid(*outRef, method,
-                          itsAxes, *inRef, false, decimate,true,true,true);
+                          itsAxes, *inRef, false, decimate,true,true);
 
       // now we have to insert the regridded image into the pixels of the output ...
       update(sinkParam,name,*outRef);

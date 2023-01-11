@@ -36,6 +36,7 @@
 // ASKAPsoft includes
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
+#include <askap/profile/AskapProfiler.h>
 #include <askap/askapparallel/AskapParallel.h>
 
 #include <Common/ParameterSet.h>
@@ -84,6 +85,7 @@ ContinuumMaster::~ContinuumMaster()
 
 void ContinuumMaster::run(void)
 {
+    ASKAPTRACE("ContinuumMaster::run");
     // print out the parset
     ASKAPLOG_INFO_STR(logger,"Parset: \n"<<itsParset);
     // Read from the configuration the list of datasets to process

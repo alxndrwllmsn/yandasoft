@@ -412,7 +412,7 @@ void TableVisGridder::logCFCacheStats() const
            continue;
        }
        if (shape.product() == 0) {
-           ASKAPLOG_DEBUG_STR(logger, "CF plane="<<plane<<" (before oversampling) is unused");
+           // ASKAPLOG_DEBUG_STR(logger, "CF plane="<<plane<<" (before oversampling) is unused");
            memUsed += sizeof(casacore::Matrix<casacore::Complex>);
            continue;
        }

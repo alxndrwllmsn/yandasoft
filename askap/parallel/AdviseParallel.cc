@@ -70,13 +70,13 @@ namespace scimath {
 /// be even optimised by the compiler
 template<>
 struct EstimatorAdapterMonitor<EstimatorAdapter<synthesis::VisMetaDataStats> > {
-   inline static void aboutToMerge(const EstimatorAdapter<synthesis::VisMetaDataStats>& thisEstimator, 
+   inline static void aboutToMerge(const EstimatorAdapter<synthesis::VisMetaDataStats>& thisEstimator,
                                    const EstimatorAdapter<synthesis::VisMetaDataStats>& otherEstimator) {
        ASKAPDEBUGASSERT(thisEstimator.get());
        ASKAPLOG_DEBUG_STR(logger, "Merge This Largest residual W: "<<thisEstimator.get()->maxW()<<" wavelengths, percentile = "<<thisEstimator.get()->wPercentile());
        ASKAPDEBUGASSERT(otherEstimator.get());
        ASKAPLOG_DEBUG_STR(logger, "With other Largest residual W: "<<otherEstimator.get()->maxW()<<" wavelengths, percentile = "<<otherEstimator.get()->wPercentile());
-   }; 
+   };
 }; // struct EstimatorAdapterMonitor
 
 } // namespace scimath
@@ -128,6 +128,8 @@ void AdviseParallel::init(const LOFAR::ParameterSet& parset)
 /// point and the second to obtain the stats
 void AdviseParallel::estimate()
 {
+    ASKAPTRACE("AdviseParallel::estimate");
+
    if (itsTangentDefined) {
        ASKAPLOG_INFO_STR(logger, "Using explicitly defined tangent point "<<printDirection(itsTangent)<<" (J2000)");
        itsEstimator.reset(new VisMetaDataStats(itsTangent, itsWTolerance, itsIncludeFlaggedData,itsWPercentile));
@@ -215,6 +217,8 @@ void AdviseParallel::broadcastStatistics()
 /// @param[in] ms measurement set name
 void AdviseParallel::calcOne(const std::string &ms)
 {
+   ASKAPTRACE("AdviseParallel::calcOne");
+
    casacore::Timer timer;
    timer.mark();
    ASKAPLOG_INFO_STR(logger, "Performing iteration to accumulate metadata statistics for " << ms);
@@ -254,6 +258,8 @@ void AdviseParallel::calcOne(const std::string &ms)
 void AdviseParallel::calcNE()
 {
    ASKAPDEBUGASSERT(itsEstimator);
+   ASKAPTRACE("AdviseParallel::calcNE");
+
    itsNe.reset(new scimath::EstimatorAdapter<VisMetaDataStats>(itsEstimator));
    // the following call avoids merging of normal equations inside the solver (which we don't use)
    // this is an artefact of reusing Master/Worker framework
