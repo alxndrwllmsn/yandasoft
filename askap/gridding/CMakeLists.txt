@@ -28,6 +28,7 @@ WDependentGridderBase.cc
 WProjectVisGridder.cc
 WStackVisGridder.cc
 MPIWProjectVisGridder.cc
+UVWeightCollection.cc
 )
 
 install (FILES
@@ -66,6 +67,8 @@ WDependentGridderBase.h
 WProjectVisGridder.h
 WStackVisGridder.h
 MPIWProjectVisGridder.h
+UVWeightCollection.h
+UVWeight.h
 DESTINATION include/askap/gridding
 )
 
