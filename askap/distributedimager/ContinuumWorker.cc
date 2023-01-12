@@ -46,6 +46,7 @@
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapUtil.h>
+#include <askap/profile/AskapProfiler.h>
 #include <askap/scimath/fitting/Equation.h>
 #include <askap/scimath/fitting/INormalEquations.h>
 #include <askap/scimath/fitting/ImagingNormalEquations.h>
@@ -96,6 +97,7 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
   CubeComms& comms, StatReporter& stats)
   : itsParset(parset), itsComms(comms), itsStats(stats), itsBeamList(),itsWeightsList()
 {
+    ASKAPTRACE("ContinuumWorker::constructor");
 
 
     itsAdvisor = boost::shared_ptr<synthesis::AdviseDI> (new synthesis::AdviseDI(itsComms, itsParset));
@@ -174,6 +176,7 @@ ContinuumWorker::~ContinuumWorker()
 
 void ContinuumWorker::run(void)
 {
+  ASKAPTRACE("ContinuumWorker::run");
 
   // Send the initial request for work
   ContinuumWorkRequest wrequest;
@@ -553,6 +556,8 @@ void ContinuumWorker::processSnapshot()
 }
 void ContinuumWorker::processChannels()
 {
+  ASKAPTRACE("ContinuumWorker::processChannels");
+
   ASKAPLOG_INFO_STR(logger, "Processing Channel Allocation");
 
   if (itsWriteGrids) {

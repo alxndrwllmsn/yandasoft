@@ -158,7 +158,7 @@ namespace askap {
 
             std::vector<casacore::MVDirection> itsTangent;
 
-            std::vector<casacore::Vector<casacore::MDirection> > itsDirVec;
+            std::vector<casacore::MDirection> itsDirMeas;
 
             std::vector<casacore::MVEpoch> itsEpoch;
 

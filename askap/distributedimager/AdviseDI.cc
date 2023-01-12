@@ -144,6 +144,7 @@ AdviseDI::AdviseDI(askap::cp::CubeComms& comms, LOFAR::ParameterSet& parset) :
 /// @return const reference to the object populated with resulted metadata statistics
 const VisMetaDataStats& AdviseDI::computeVisMetaDataStats(const std::string &ms)
 {
+   ASKAPTRACE("AdviseDI::computeVisMetaDataStats");
    // a very basic estimator - we currently use it only to get tangent point
    boost::shared_ptr<VisMetaDataStats> stats(new VisMetaDataStats(true));
    // work with this estimator until the next call to this method or until the proper parallel procedure is performed
@@ -157,6 +158,7 @@ const VisMetaDataStats& AdviseDI::computeVisMetaDataStats(const std::string &ms)
 }
 
 void AdviseDI::prepare() {
+    ASKAPTRACE("AdviseDI::prepare");
     // this assumes only a sinlge spectral window - must generalise
     ASKAPLOG_INFO_STR(logger,"Running prepare");
     // Read from the configruation the list of datasets to process
@@ -306,15 +308,11 @@ void AdviseDI::prepare() {
 
         // MV: see comments above, this is a somewhat ugly approach to get the correct phase centre
         itsTangent.push_back(mdStats.centre());
-        itsDirVec.push_back(casa::Vector<casacore::MDirection>(1,casacore::MDirection(itsTangent[n], casacore::MDirection::J2000)));
+        itsDirMeas.push_back(casacore::MDirection(itsTangent[n], casacore::MDirection::J2000));
         const casacore::Vector<casacore::MDirection> oldDirVec(fc.phaseDirMeasCol()(0));
         ASKAPLOG_DEBUG_STR(logger, "Tangent point for "<<ms[n]<<" : "<<printDirection(itsTangent[n])<<
                            " (J2000), old way: "<<printDirection(oldDirVec(0).getValue())<<" (J2000)");
 
-
-        // the old way to get phase centre/tangent:
-        //itsDirVec.push_back(fc.phaseDirMeasCol()(0));
-        //itsTangent.push_back(itsDirVec[n](0).getValue());
 
         // Read the position on Antenna 0
         Array<casacore::Double> posval;
@@ -392,7 +390,7 @@ void AdviseDI::prepare() {
 
 
     for (unsigned int n = 0; n < ms.size(); ++n) {
-         const MeasFrame frame(MEpoch(itsEpoch[n]),itsPosition[n],itsDirVec[n][0]);
+         const MeasFrame frame(MEpoch(itsEpoch[n]),itsPosition[n],itsDirMeas[n]);
          const MFrequency::Ref refin(MFrequency::castType(itsRef),frame); // the frame of the input channels
 
          // builds a list of all the channels
@@ -551,7 +549,7 @@ void AdviseDI::prepare() {
             for (unsigned int set=0;set < ms.size();++set){
 
 
-                const MeasFrame frame(MEpoch(itsEpoch[set]),itsPosition[set],itsDirVec[set][0]);
+                const MeasFrame frame(MEpoch(itsEpoch[set]),itsPosition[set],itsDirMeas[set]);
                 const MFrequency::Ref refin(MFrequency::castType(itsRef),frame); // the frame of the input channels
                 const MFrequency::Ref refout(itsFreqType,frame); // the frame desired
                 MFrequency::Convert forw(refin,refout); // from input to desired
@@ -773,7 +771,7 @@ void AdviseDI::updateDirectionFromWorkUnit(askap::cp::ContinuumWorkUnit& wu) {
 
 void AdviseDI::addMissingParameters(bool extra)
 {
-
+    ASKAPTRACE("AdvisDI::addMissingParameters");
     ASKAPLOG_DEBUG_STR(logger,"Adding missing params ");
 
     if (itsPrepared == true) {
@@ -938,10 +936,14 @@ void AdviseDI::addMissingParameters(bool extra)
                itsParset.add("wpercentile.advised", wpercentile);
            }
        }
-
-       estimate(itsParset);
+       if (itsParset.getBool("updatedirection",false) && itsParset.getBool("speedupstats",true)) {
+           // avoid going through all the input MSs again just for wmax & Nyquist gridding cellsize
+           ASKAPLOG_DEBUG_STR(logger, "updatedirection and speedupstats parameters are true so only using first MS for metadata stats ");
+           computeVisMetaDataStats(getDatasets()[0]);
+       } else {
+           estimate(itsParset);
+       }
        const VisMetaDataStats &advice = estimator();
-
        param = "nUVWMachines"; // if the number of uvw machines is undefined, set it to the number of beams.
        if (!itsParset.isDefined(param)) {
            const string pstr = toString(advice.nBeams());

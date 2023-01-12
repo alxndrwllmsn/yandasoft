@@ -33,6 +33,7 @@
 // ASKAPsoft includes
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
+#include <askap/profile/AskapProfiler.h>
 #include <Common/ParameterSet.h>
 #include <askap/scimath/fitting/INormalEquations.h>
 #include <askap/scimath/fitting/ImagingNormalEquations.h>
@@ -122,6 +123,7 @@ CalcCore::~CalcCore()
 }
 void CalcCore::doCalc()
 {
+    ASKAPTRACE("CalcCore::doCalc");
 
     casacore::Timer timer;
     timer.mark();
