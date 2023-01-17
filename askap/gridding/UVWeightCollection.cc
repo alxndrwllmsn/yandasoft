@@ -88,15 +88,31 @@ void UVWeightCollection::add(casacore::uInt index, const casacore::Cube<float> &
 /// if the given index doesn't exist.
 /// @param[in] index integer index of the weight in the collection 
 /// @return weight cube for the given index wrapped into a UVWeight object (reference semantics is used)
-/// @note we may implement caching in the future, but at this stage it seems the access pattern will be
-/// via this method in the outer loop and then iterating within the same UVWeight object, so perhaps
+/// @note we may implement caching in the future, but at this stage it seems the access pattern via this 
+/// method will be in the outer loop and then iterating within the same UVWeight object, so perhaps
 /// no need to cache.
 UVWeight UVWeightCollection::get(casacore::uInt index) const
 {
    const std::map<casacore::uInt, casacore::Cube<float> >::const_iterator ci = itsData.find(index);
    ASKAPCHECK(ci != itsData.end(), "UVWeight with index "<<index<<" doesn't exist in the collection");
-   // the following relies on C++17 and the object is non-copyable
+   // the following relies on C++17 if the object is non-copyable
    return UVWeight(ci->second);
+}
+
+/// @brief obtain weight for writing
+/// @details This method returns a non-const reference to the actual cube object. If called in the 
+/// read-only setting, it will be wrapped by UVWeight implicitly (as that object has the approproate 
+/// constructor set up) making it an equivalent of the const method. This method is expected to be used
+/// in the weight builder where we can benefit from casacore cube interface. It is hidden behind the interface
+/// class to hinder breaking encapsulation in gridders.
+/// @param[in] index integer index of the weight in the collection . Note, an exception is raised if the index
+///                  doesn't exist in the collection
+/// @return non-const reference to the weight cube for the given index
+casacore::Cube<float>& UVWeightCollection::get(casacore::uInt index)
+{
+   const std::map<casacore::uInt, casacore::Cube<float> >::iterator ci = itsData.find(index);
+   ASKAPCHECK(ci != itsData.end(), "UVWeight with index "<<index<<" doesn't exist in the collection");
+   return ci->second;
 }
 
 /// @brief check that the index exists in the collection

@@ -38,9 +38,6 @@
 #include <casacore/casa/Arrays/Cube.h>
 #include <casacore/casa/aipstype.h>
 
-// boost includes
-#include <boost/noncopyable.hpp>
-
 namespace askap {
 
 namespace synthesis {
@@ -53,7 +50,7 @@ namespace synthesis {
 /// a possible extension in the future with an abstract interface and multiple possible
 /// implementations.
 /// @ingroup gridding
-struct UVWeight { //: public boost::noncopyable {
+struct UVWeight { 
 
    /// @brief construct a weight class with the given shape
    /// @details This constructor initialises the weight class and fills the grid with zeros.
@@ -65,8 +62,11 @@ struct UVWeight { //: public boost::noncopyable {
    UVWeight(casacore::uInt uSize, casacore::uInt vSize, casacore::uInt nPlanes) :
         itsWeightCube(uSize, vSize, nPlanes, 0.f) {}
 
-   // do we need a default constructor? Not needed if push reference semantics everywhere and don't 
-   // have issues with containers like with early C++ standards
+   /// @brief default constructor, essentially uninitialised object which can be tested with empty()
+   /// @details It is handy to have this state to simplify code reuse/conditional execution inside 
+   /// the gridder. We essentially use the default constructor for the cube object here (a bit of an overhead
+   /// on top of a simple flag, but somewhat simpler code).
+   UVWeight() {}
 
    // also a method to setup from Cube may be handy. In the reverse direction, we may need to rely on 
    // friend relation between say weight builder and this class. An alternative is to have a proper 
@@ -112,6 +112,9 @@ struct UVWeight { //: public boost::noncopyable {
    /// @return a size of the grid along the 3rd dimension
    inline casacore::uInt nPlane() const { return itsWeightCube.nplane(); }
 
+   /// @brief test if this class is uninitialised
+   /// @return true, if the object is empty, i.e. cube doesn't have elements
+   inline bool empty() const { return itsWeightCube.nelements() == 0u; }
 
 private:
    /// @brief array of values describing the weight

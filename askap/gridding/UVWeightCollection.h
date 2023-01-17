@@ -42,6 +42,9 @@
 // casa includes
 #include <casacore/casa/Arrays/Cube.h>
 
+// boost includes
+#include <boost/noncopyable.hpp>
+
 
 namespace askap {
 
@@ -91,6 +94,17 @@ struct UVWeightCollection : public boost::noncopyable {
    /// no need to cache.
    UVWeight get(casacore::uInt index) const;
 
+   /// @brief obtain weight for writing
+   /// @details This method returns a non-const reference to the actual cube object. If called in the 
+   /// read-only setting, it will be wrapped by UVWeight implicitly (as that object has the approproate 
+   /// constructor set up) making it an equivalent of the const method. This method is expected to be used
+   /// in the weight builder where we can benefit from casacore cube interface. It is hidden behind the interface
+   /// class to hinder breaking encapsulation in gridders.
+   /// @param[in] index integer index of the weight in the collection . Note, an exception is raised if the index
+   ///                  doesn't exist in the collection
+   /// @return non-const reference to the weight cube for the given index
+   casacore::Cube<float>& get(casacore::uInt index);
+
    /// @brief check that the index exists in the collection
    /// @details We probably don't need this method, but add just in case
    /// @param[in] index integer index of the weight in the collection 
@@ -103,9 +117,6 @@ struct UVWeightCollection : public boost::noncopyable {
 private:
    /// @brief map of weight grids
    std::map<casacore::uInt, casacore::Cube<float> > itsData;
-   
-   // probably need to setup friendship with builder class or have the appropriate methods available somehow
-   // this is tbd
 };
 
 } // namespace synthesis
