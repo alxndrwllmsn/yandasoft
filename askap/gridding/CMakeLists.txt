@@ -31,6 +31,7 @@ MPIWProjectVisGridder.cc
 UVWeightCollection.cc
 IUVWeightAccessor.cc
 GenericUVWeightAccessor.cc
+IUVWeightCalculator.cc
 )
 
 install (FILES
@@ -72,7 +73,9 @@ MPIWProjectVisGridder.h
 UVWeightCollection.h
 UVWeight.h
 IUVWeightAccessor.h
+IUVWeightBuilder.h
 GenericUVWeightAccessor.h
+IUVWeightCalculator.h
 DESTINATION include/askap/gridding
 )
 
