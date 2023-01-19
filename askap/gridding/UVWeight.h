@@ -68,10 +68,6 @@ struct UVWeight {
    /// on top of a simple flag, but somewhat simpler code).
    UVWeight() {}
 
-   // also a method to setup from Cube may be handy. In the reverse direction, we may need to rely on 
-   // friend relation between say weight builder and this class. An alternative is to have a proper 
-   // interface with abstract virtual functions but this seems to be an overkill at this stage.
-
    /// @brief wrap an exsiting cube to make a UVWeight object
    /// @details This constructor makes UVWeight object from an existing cube benefiting from
    /// reference semantics of the casacore arrays. We want it to be a possible type cast, so no "explicit".

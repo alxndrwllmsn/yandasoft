@@ -76,7 +76,7 @@ struct UVWeightCollection : public boost::noncopyable {
    /// weight information to be added. The behaviour depends on whether a weight exist for the given
    /// index or not. If it does, the cube given in the parameters is simply added to the existing weight
    /// cube. In this case, the passed cube is unchanged but must conform in shape. If the index doesn't 
-   /// exist, then a new element in the collection is setup from the cube passed as a parameter. And in 
+   /// exist, then a new element in the collection is setup from the cube passed as the parameter. And in 
    /// this case, due to reference semantics of casacore arrays, both the parameter and the element 
    /// in the collection would point to the same storage.
    /// @param[in] index integer index of the weight in the collection 
@@ -96,7 +96,7 @@ struct UVWeightCollection : public boost::noncopyable {
 
    /// @brief obtain weight for writing
    /// @details This method returns a non-const reference to the actual cube object. If called in the 
-   /// read-only setting, it will be wrapped by UVWeight implicitly (as that object has the approproate 
+   /// read-only setting, it can be wrapped by UVWeight implicitly (as that object has the approproate 
    /// constructor set up) making it an equivalent of the const method. This method is expected to be used
    /// in the weight builder where we can benefit from casacore cube interface. It is hidden behind the interface
    /// class to hinder breaking encapsulation in gridders.

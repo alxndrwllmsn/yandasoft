@@ -1,7 +1,7 @@
 /// @file
 /// @brief Interface class to access UVWeights
-/// @details This interface is intended to be used inside gridder to structure access 
-/// to uv weights at the stage of application in traditional weighting. In simplest form
+/// @details This interface is intended to be used inside the gridder to structure access 
+/// to uv weights when they are applied (in traditional weighting). In the simplest form
 /// it can be simply the weight collection. But other options may involve index translation
 /// (e.g. if we want to apply the weight obtained for one beam to another or interpolate,
 /// etc).
@@ -44,8 +44,8 @@ namespace askap {
 namespace synthesis {
 
 /// @brief Interface class to access UVWeights
-/// @details This interface is intended to be used inside gridder to structure access 
-/// to uv weights at the stage of application in traditional weighting. In simplest form
+/// @details This interface is intended to be used inside the gridder to structure access 
+/// to uv weights when they are applied (in traditional weighting). In the simplest form
 /// it can be simply the weight collection. But other options may involve index translation
 /// (e.g. if we want to apply the weight obtained for one beam to another or interpolate,
 /// etc).
