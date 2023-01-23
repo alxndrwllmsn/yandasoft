@@ -1,7 +1,8 @@
 /// @file
 /// @brief Simple implementation of IUVWeightAccessor interface
 /// @details It holds the collection of weights with flat index and converts the indices
-/// required by the interace by applying linear factors and summing across (like a dot product).
+/// required by the interace by applying some custom index translator (a linear translation is
+/// setup by default via GenericUVWeightIndexTranslator). 
 /// This is sufficient for ignoring some or all indices (via multiplying them by zero) or translate
 /// into a flat index with the desired order.
 ///
@@ -37,6 +38,8 @@
 
 // own includes
 #include <askap/gridding/IUVWeightAccessor.h>
+#include <askap/gridding/UVWeightIndexTranslationHelper.h>
+#include <askap/gridding/GenericUVWeightIndexTranslator.h>
 #include <askap/gridding/UVWeightCollection.h>
 
 namespace askap {
@@ -45,16 +48,18 @@ namespace synthesis {
 
 /// @brief Simple implementation of IUVWeightAccessor interface
 /// @details It holds the collection of weights with flat index and converts the indices
-/// required by the interace by applying linear factors and summing across (like a dot product).
+/// required by the interace by applying some custom index translator (a linear translation is
+/// setup by default via GenericUVWeightIndexTranslator). 
 /// This is sufficient for ignoring some or all indices (via multiplying them by zero) or translate
 /// into a flat index with the desired order.
 /// @ingroup gridding
-struct GenericUVWeightAccessor : virtual public IUVWeightAccessor { 
+struct GenericUVWeightAccessor : virtual public UVWeightIndexTranslationHelper<IUVWeightAccessor> { 
 
    /// @brief construct weight accessor from the given collection
-   /// @details The translation of indices is set up by this method. By default, all coefficients are zero
-   /// which means that only index 0 will be used from the collection. The constructor is not "explicit" by
-   /// intention. This way we can cast it from the collection type directly.
+   /// @details The default translation of indices is set up by this method. Also, by default, all 
+   /// coefficients are zero which means that only index 0 will be used from the collection. 
+   /// A different index translation class can be assigned via the appropriate setter method of UVWeightIndexTranslationHelper.
+   /// The constructor is not "explicit" by intention. This way we can cast it from the collection type directly.
    /// Otherwise, the resulting index is coeffBeam * beam + coeffField * field + coeffSource * source
    /// @param[in] wts weight collection
    /// @param[in] coeffBeam beam index coefficient
@@ -75,16 +80,7 @@ struct GenericUVWeightAccessor : virtual public IUVWeightAccessor {
    /// @param[in] source source index used to form direction-dependent offset index (not sure if it is needed, 
    /// add it here just to keep things general as it is used in the gridder code)
    /// @return UVWeight object with the selected grid of weights
-   virtual UVWeight getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const;
-
-protected:
-   /// @brief translate input indices into collection index
-   /// @details This is a helper method for index translation (from inputs of getWeight to the single index
-   /// used by the collection)
-   /// @param[in] beam beam index (from accessor for the given row, it is assumed that we don't have cross-beam correlations)
-   /// @param[in] field field index if the gridder is a mosaicing one, zero otherwise
-   /// @param[in] source source index used to form direction-dependent offset index (not sure if it is needed, 
-   casacore::uInt translateIndices(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const;
+   virtual UVWeight getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const override final;
 
 private:
 
@@ -92,15 +88,6 @@ private:
    /// @note reference semantics is used by casacore arrays, so this object is not very large (although grows with the
    /// number of elements) and we could've held it by value (but it would need to be made copyable). 
    const UVWeightCollection& itsWeights;
-
-   /// @brief coefficient for the beam index
-   const casacore::uInt itsBeamCoeff;
-
-   /// @brief coefficient for the field index
-   const casacore::uInt itsFieldCoeff;
-
-   /// @brief coefficient for the source index
-   const casacore::uInt itsSourceCoeff;
 };
 
 } // namespace synthesis

@@ -1,10 +1,10 @@
 /// @file
-/// @brief Simple implementation of IUVWeightAccessor interface
-/// @details It holds the collection of weights with flat index and converts the indices
-/// required by the interace by applying some custom index translator (a linear translation is
-/// setup by default via GenericUVWeightIndexTranslator). 
+/// @brief Simple linear translation of indices
+/// @details It converts the indices used inside the gridder (through the interface to access uv weights)
+/// into a flat index used by weight collection class by applying linear factors and summing across (i.e. like a dot product).
 /// This is sufficient for ignoring some or all indices (via multiplying them by zero) or translate
-/// into a flat index with the desired order.
+/// into a flat index with the desired order and stride. This class is a basic implementation of IUVWeightIndexTranslator
+/// interface.
 ///
 /// @copyright (c) 2023 CSIRO
 /// Australia Telescope National Facility (ATNF)
@@ -31,34 +31,31 @@
 /// @author Max Voronkov <maxim.voronkov@csiro.au>
 
 // own includes
-#include <askap/gridding/GenericUVWeightAccessor.h>
+#include <askap/gridding/GenericUVWeightIndexTranslator.h>
 
 namespace askap {
 
 namespace synthesis {
 
-/// @brief construct weight accessor from the given collection
-/// @details The default translation of indices is set up by this method. Also, by default, all 
-/// coefficients are zero which means that only index 0 will be used from the collection. 
-/// A different index translation class can be assigned via the appropriate setter method of UVWeightIndexTranslationHelper.
-/// The constructor is not "explicit" by intention. This way we can cast it from the collection type directly.
+/// @brief construct the translator
+/// @details The translation of indices is set up by this method. By default, all coefficients are zero
+/// which means that only index 0 will be used from the collection regardless of the indices supplied by the gridder. 
 /// Otherwise, the resulting index is coeffBeam * beam + coeffField * field + coeffSource * source
-/// @param[in] wts weight collection
+/// @note At this stage, it is not envisaged that we'd change the indices during the lifetime of this object, so the
+/// data members are defined as const to help with the optimisation (i.e. the values are fixed at construction)
 /// @param[in] coeffBeam beam index coefficient
 /// @param[in] coeffField field index coefficient
 /// @param[in] coeffSource source index coefficient
-GenericUVWeightAccessor::GenericUVWeightAccessor(const UVWeightCollection &wts, casacore::uInt coeffBeam,
-                           casacore::uInt coeffField, casacore::uInt coeffSource) : itsWeights(wts)
-{
-   // could've used the constructor directly, but it is safer this way and more clear that we won't have a dangling pointer
-   const boost::shared_ptr<GenericUVWeightIndexTranslator> translator(new GenericUVWeightIndexTranslator(coeffBeam, coeffField, coeffSource));
-   setTranslator(translator);
-}
+GenericUVWeightIndexTranslator::GenericUVWeightIndexTranslator(casacore::uInt coeffBeam, casacore::uInt coeffField, 
+         casacore::uInt coeffSource) : itsBeamCoeff(coeffBeam), itsFieldCoeff(coeffField), itsSourceCoeff(coeffSource) {}
 
-/// @brief obtain weight grid for a given index
+/// @brief obtain uv weight index for given gridder indices
 /// @details index interpretation is left for the implementation which can be different
-/// for different gridders. Trying to make it more general, we pass beam, field and source indices
-/// as they are currently used in various gridders. This can change in the future, if necessary.
+/// for different gridders. An implementation of this interface defines a possible translation
+/// from the indices passed to IUVWeightAccessor or IUVWeightBuilder interfaces to the flat index used in
+/// collection of weight grids.  Trying to make the framework more general, we pass beam, field and source 
+/// indices to these interfaces as they are currently used in various griddersi to select convolution functions. 
+/// This can be changed in the future, if necessary.
 /// @note Strictly speaking, detection of field changes will be subject to some assumptions. And the 
 /// numbering will be per gridder (figured out from the accessor supplied), other gridders may have
 /// different indexing. The field index is expected to match currentField() output in AProjectGridderBase.
@@ -66,11 +63,10 @@ GenericUVWeightAccessor::GenericUVWeightAccessor(const UVWeightCollection &wts, 
 /// @param[in] field field index if the gridder is a mosaicing one, zero otherwise
 /// @param[in] source source index used to form direction-dependent offset index (not sure if it is needed, 
 /// add it here just to keep things general as it is used in the gridder code)
-/// @return UVWeight object with the selected grid of weights
-UVWeight GenericUVWeightAccessor::getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const
+/// @return flat index into the weight collection
+casacore::uInt GenericUVWeightIndexTranslator::indexOf(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const 
 {
-   const casacore::uInt index = indexOf(beam, field, source);
-   return itsWeights.get(index);
+   return itsBeamCoeff * beam + itsFieldCoeff * field + itsSourceCoeff * source;
 }
 
 } // namespace synthesis

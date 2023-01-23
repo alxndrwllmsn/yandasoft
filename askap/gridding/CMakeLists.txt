@@ -32,6 +32,8 @@ UVWeightCollection.cc
 IUVWeightAccessor.cc
 GenericUVWeightAccessor.cc
 IUVWeightCalculator.cc
+IUVWeightIndexTranslator.cc
+GenericUVWeightIndexTranslator.cc
 )
 
 install (FILES
@@ -76,6 +78,9 @@ IUVWeightAccessor.h
 IUVWeightBuilder.h
 GenericUVWeightAccessor.h
 IUVWeightCalculator.h
+IUVWeightIndexTranslator.h
+UVWeightIndexTranslationHelper.h
+GenericUVWeightIndexTranslator.h
 DESTINATION include/askap/gridding
 )
 
