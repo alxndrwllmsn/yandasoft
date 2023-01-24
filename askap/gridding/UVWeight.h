@@ -74,6 +74,16 @@ struct UVWeight {
    /// @param[in] wt an object to setup from (weight in the form of casacore cube; note - reference semantics)
    UVWeight(const casacore::Cube<float> &wt) : itsWeightCube(wt) {}
 
+   /// @brief assignment operator to ensure reference semantics
+   /// @details It looks like casacore Cube may be copied by reference or by value in different circumstances.
+   /// Defining this assignment operator ensures we get the expected behaviour (i.e. reference semantics).
+   /// @note I (MV) am not sure whether this behaviour of casacore::Cube changed at some point or was there up front, but
+   /// it is worth to double check at some point (may lead to unnecessary copy in parts of our code; also check my 
+   /// casacore ticket #1222).
+   /// The default copy constructor does the right thing and no custom code is necessary.
+   /// @param[in] src input object to refer to after assignment
+   UVWeight& operator=(const UVWeight &src) { itsWeightCube.reference(src.itsWeightCube); return *this;}
+
    /// @brief obtain weight for the given coordinates 
    /// @brief[in] u first coordinate
    /// @brief[in] v second coordinate
