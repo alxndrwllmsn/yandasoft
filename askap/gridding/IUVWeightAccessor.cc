@@ -1,4 +1,12 @@
-/// @copyright (c) 2007 CSIRO
+/// @file
+/// @brief Interface class to access UVWeights
+/// @details This interface is intended to be used inside gridder to structure access 
+/// to uv weights at the stage of application in traditional weighting. In simplest form
+/// it can be simply the weight collection. But other options may involve index translation
+/// (e.g. if we want to apply the weight obtained for one beam to another or interpolate,
+/// etc).
+///
+/// @copyright (c) 2023 CSIRO
 /// Australia Telescope National Facility (ATNF)
 /// Commonwealth Scientific and Industrial Research Organisation (CSIRO)
 /// PO Box 76, Epping NSW 1710, Australia
@@ -20,30 +28,21 @@
 /// along with this program; if not, write to the Free Software
 /// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 ///
+/// @author Max Voronkov <maxim.voronkov@csiro.au>
 
-// ASKAPsoft includes
-#include <askap/askap/AskapTestRunner.h>
+// own includes
+#include <askap/gridding/IUVWeightAccessor.h>
 
-// just to avoid template compilation which will not work without logging
-#define A_PROJECT_GRIDDER_BASE_TCC
+namespace askap {
 
-// Test includes
-#include "TableVisGridderTest.h"
-#include "SupportSearcherTest.h"
-#include "FrequencyMapperTest.h"
-#include "NonLinearWSamplingTest.h"
-#include "UVWeightTest.h"
+namespace synthesis {
 
-int main(int argc, char *argv[])
-{
-    askapdev::testutils::AskapTestRunner runner(argv[0]);
-    runner.addTest( askap::synthesis::TableVisGridderTest::suite());
-    runner.addTest( askap::synthesis::SupportSearcherTest::suite());
-    runner.addTest( askap::synthesis::FrequencyMapperTest::suite());
-    runner.addTest( askap::synthesis::NonLinearWSamplingTest::suite());
-    runner.addTest( askap::synthesis::UVWeightTest::suite());
 
-    bool wasSucessful = runner.run();
+/// @brief virtual destructor to keep the compiler happy
+IUVWeightAccessor::~IUVWeightAccessor() {}
 
-    return wasSucessful ? 0 : 1;
-}
+} // namespace synthesis
+
+} // namespace askap
+
+
