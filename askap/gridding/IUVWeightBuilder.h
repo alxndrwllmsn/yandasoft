@@ -46,6 +46,7 @@
 #include <askap/gridding/UVWeight.h>
 #include <askap/gridding/IUVWeightAccessor.h>
 #include <askap/gridding/IUVWeightCalculator.h>
+#include <askap/gridding/UVWeightCollection.h>
 
 namespace askap {
 

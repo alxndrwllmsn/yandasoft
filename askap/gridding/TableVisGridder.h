@@ -37,12 +37,17 @@
 #include <askap/dataaccess/IDataAccessor.h>
 #include <askap/gridding/FrequencyMapper.h>
 #include <askap/scimath/utils/PolConverter.h>
+#include <askap/gridding/IUVWeightBuilder.h>
+#include <askap/gridding/IUVWeightAccessor.h>
 
 // std includes
 #include <string>
 
 // casa includes
 #include <casacore/casa/BasicSL/Complex.h>
+
+// boost includes (although would be included through IVisGridder.h)
+#include <boost/shared_ptr.hpp>
 
 
 namespace askap
@@ -142,6 +147,23 @@ namespace askap
       /// @brief assign weights
       /// @param viswt shared pointer to visibility weights
       virtual void initVisWeights(const IVisWeights::ShPtr &viswt);
+
+      /// @brief assign uv weight accessor
+      /// @details If setup (i.e. non-empty shared pointer), the uv weight accessr will be used to obtain
+      /// weights for each sample during gridding (traditional weighting).
+      /// @param[in] wtAcc shared pointer to the weight accessor
+      inline void setUVWeightAccessor(const boost::shared_ptr<IUVWeightAccessor> &wtAcc) { itsUVWeightAccessor = wtAcc; }
+
+      /// @brief assign uv weight builder
+      /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build 
+      /// weights along with the gridding job. This is so-called gridder-dependent builder case.
+      /// The alternative option is to build weights directly without invoking gridder (althought the
+      /// code of the both routines is similar). The two approaches have different approximations about
+      /// second order effects in the wide-field case. Gridder-dependent weight builder allows to 
+      /// account for implicit flagging in gridder (e.g. rejection due to unmapped w-plane) and an exact
+      /// offset of CFs, but wastes resources. 
+      /// @param[in] wtBuilder shared pointer to the weight builder
+      inline void setUVWeightBuilder(const boost::shared_ptr<IUVWeightBuilder> &wtBuilder) { itsUVWeightBuilder = wtBuilder;}
 
       /// @brief Degrid the visibility data.
       /// @param[in] acc non-const data accessor to work with
@@ -520,6 +542,22 @@ protected:
 
       /// Visibility Weights
       IVisWeights::ShPtr itsVisWeight;
+
+      /// @brief uv weight accessor
+      /// @details If setup (i.e. non-empty shared pointer), the interface will be used to obtain
+      /// weights for each sample during gridding (traditional weighting).
+      boost::shared_ptr<IUVWeightAccessor> itsUVWeightAccessor;
+
+      /// @brief uv weight builder
+      /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build 
+      /// weights along with the gridding job. This is so-called gridder-dependent builder case.
+      /// The alternative option is to build weights directly without invoking gridder (althought the
+      /// code of the both routines is similar). The two approaches have different approximations about
+      /// second order effects in the wide-field case. Gridder-dependent weight builder allows to 
+      /// account for implicit flagging in gridder (e.g. rejection due to unmapped w-plane) and an exact
+      /// offset of CFs, but wastes resources. 
+      boost::shared_ptr<IUVWeightBuilder> itsUVWeightBuilder;
+
 
       /// @brief true if no visibilities have been gridded since the last initialize
       /// @details For PSF calculations we need to take just the first feed and
