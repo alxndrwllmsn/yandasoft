@@ -613,7 +613,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
            }
 
            /// Scale U,V to integer pixels plus fractional terms
-           const double uScaled=frequencyList[chan]*outUVW(i)(0)/(casacore::C::c *itsUVCellSize(0));
+           const double uScaled=reciprocalToWavelength * outUVW(i)(0) / itsUVCellSize(0);
            int iu = askap::nint(uScaled);
            int fracu=askap::nint(itsOverSample*(double(iu)-uScaled));
            if (fracu<0) {
@@ -631,7 +631,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                    " iu="<<iu<<" oversample="<<itsOverSample<<" fracu="<<fracu);
            iu+=itsShape(0)/2;
 
-           const double vScaled=frequencyList[chan]*outUVW(i)(1)/(casacore::C::c *itsUVCellSize(1));
+           const double vScaled=reciprocalToWavelength * outUVW(i)(1) / itsUVCellSize(1);
            int iv = askap::nint(vScaled);
            int fracv=askap::nint(itsOverSample*(double(iv)-vScaled));
            if (fracv<0) {
@@ -650,7 +650,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
            iv+=itsShape(1)/2;
 
            // Calculate the delay phasor
-           const double phase=2.0f*casacore::C::pi*frequencyList[chan]*delay(i)/(casacore::C::c);
+           const double phase=casacore::C::_2pi * reciprocalToWavelength * delay(i);
 
            const casacore::Complex phasor(cos(phase), sin(phase));
 
