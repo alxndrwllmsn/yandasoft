@@ -291,7 +291,7 @@ target_link_libraries(yandasoft PUBLIC
 	${CASACORE_LIBRARIES}
 	${COMPONENTS_LIBRARY}
 	${Boost_LIBRARIES}
-        ${GSL_LIBRARIES}
+  ${GSL_LIBRARIES}
 )
 
 target_compile_definitions(yandasoft PUBLIC
@@ -307,6 +307,7 @@ target_include_directories(yandasoft PUBLIC
   ${COMPONENTS_INCLUDE_DIRS}
   ${log4cxx_INCLUDE_DIRS}
   ${CASACORE_INCLUDE_DIRS}
+  ${GSL_INCLUDE_DIRS}
 )
 
 if (MPI_FOUND)
