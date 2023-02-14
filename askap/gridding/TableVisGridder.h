@@ -321,6 +321,15 @@ namespace askap
       /// @param[in] axes coordinate system (ra and dec axes are used).
       void initialiseCellSize(const scimath::Axes& axes);
 
+      /// @brief helper method to set up weight builder
+      /// @details Similar action is required for a number of gridders to setup weight builder with the
+      /// grid parameters. It is only expected to be called from initialiseGrid, after the shape is set
+      /// (and the weight builder assigned).
+      /// We could've just added this code to initialiseCellSize, but it would be called unnecessary from
+      /// initialiseDegrid and for PCF/PSF gridders (although, presumably, the builder won't be set in this
+      /// cases, so no harm). Having a separate method is neater. 
+      void initialiseWeightBuilder();
+
       /// @brief gridder configured to calculate PSF?
       /// @details
       /// @return true if this gridder is configured to calculate PSF, false otherwise

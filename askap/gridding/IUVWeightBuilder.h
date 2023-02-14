@@ -96,8 +96,6 @@ struct IUVWeightBuilder : virtual public IUVWeightAccessor {
    /// It can be called multiple times for the same indices, if necessary. The new grid will be created on demand.
    virtual UVWeight addWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) = 0;
 
-   // prob. need to factor out index translation into a separate class (out of the reader interface implementation) and reuse it here
-
    /// @brief merge with other builder
    /// @details This method is expected to be used in conjunction with the EstimatorAdapter and normal equation tree reduction
    /// routines. It enables merging multiple weight grids (corresponding to the same indices) together in distributed data
