@@ -41,6 +41,8 @@
 #include <casacore/casa/BasicSL/Constants.h>
 #include <askap/askap/AskapError.h>
 #include <askap/gridding/VisGridderFactory.h>
+#include <askap/gridding/IUVWeightAccessor.h>
+#include <askap/scimath/utils/ImageUtils.h>
 
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -64,6 +66,7 @@ namespace askap
       CPPUNIT_TEST(testUnknownGridder);
       CPPUNIT_TEST(testForwardSph);
       CPPUNIT_TEST(testReverseSph);
+      CPPUNIT_TEST(testUVWeightApplication);
       CPPUNIT_TEST(testForwardAWProject);
       CPPUNIT_TEST(testReverseAWProject);
       CPPUNIT_TEST(testForwardWProject);
@@ -92,6 +95,22 @@ namespace askap
       boost::shared_ptr<casa::Array<imtype> > itsModelPSF;
       boost::shared_ptr<casa::Array<imtype> > itsModelWeights;
 
+      struct UVWeightAccessorTester : public IUVWeightAccessor {
+           explicit UVWeightAccessorTester(const UVWeight &wt) : itsWt(wt) {}
+           virtual UVWeight getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const {
+               itsBeams.insert(beam);
+               itsFields.insert(field);
+               itsSourceIndices.insert(source);
+               return itsWt;
+           }
+           // fields to keep track the parameters getWeight is called with
+           mutable std::set<casacore::uInt> itsBeams;
+           mutable std::set<casacore::uInt> itsFields;
+           mutable std::set<casacore::uInt> itsSourceIndices;
+        private:
+           UVWeight itsWt;
+      };
+
   public:
       void setUp()
       {
@@ -99,8 +118,8 @@ namespace askap
 
         Params ip;
         ip.add("flux.i.cena", 100.0);
-        ip.add("direction.ra.cena", 0.5);
-        ip.add("direction.dec.cena", -0.3);
+        ip.add("direction.ra.cena", 0.5*casacore::C::degree);
+        ip.add("direction.dec.cena", -0.3*casacore::C::degree);
         ip.add("shape.bmaj.cena", 0.0);
         ip.add("shape.bmin.cena", 0.0);
         ip.add("shape.bpa.cena", 0.0);
@@ -187,6 +206,38 @@ namespace askap
         itsSphFunc->initialiseDegrid(*itsAxes, *itsModel);
         itsSphFunc->degrid(*idi);
       }
+
+      void testUVWeightApplication() {
+        // first, run without any weighting
+        itsSphFunc->initialiseGrid(*itsAxes, itsModel->shape(), false);
+        itsSphFunc->grid(*idi);
+        itsSphFunc->finaliseGrid(*itsModel);
+
+        // setup weighting
+        UVWeight wt(512,512,1);
+        for (casacore::uInt iu = 240; iu <= 272; ++iu) {
+             for (casacore::uInt iv = 240; iv <= 272; ++iv) {
+                  wt(iu,iv,0) = 1.;
+             }
+        }
+        boost::shared_ptr<UVWeightAccessorTester> wtAcc(new UVWeightAccessorTester(wt));
+        itsSphFunc->setUVWeightAccessor(wtAcc);
+
+        casacore::Array<imtype> newImg(itsModel->shape(), static_cast<imtype>(0.));
+        itsSphFunc->initialiseGrid(*itsAxes, newImg.shape(), false);
+        itsSphFunc->grid(*idi);
+        CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wtAcc->itsBeams.size());
+        CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wtAcc->itsFields.size());
+        CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wtAcc->itsSourceIndices.size());
+        CPPUNIT_ASSERT_EQUAL(0u, *wtAcc->itsBeams.begin());
+        CPPUNIT_ASSERT_EQUAL(0u, *wtAcc->itsFields.begin());
+        CPPUNIT_ASSERT_EQUAL(0u, *wtAcc->itsSourceIndices.begin());
+        itsSphFunc->finaliseGrid(newImg);
+        //scimath::saveAsCasaImage("tst.img", newImg);
+        //scimath::saveAsCasaImage("tst.img", *itsModel);
+        // assess the result here
+      }
+
       void testReverseAWProject()
       {
         itsAWProject->initialiseGrid(*itsAxes, itsModel->shape(), false);
