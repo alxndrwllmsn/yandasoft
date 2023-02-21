@@ -78,29 +78,29 @@ static void calcEachChannelShapePerFile(const LOFAR::ParameterSet &parset,
                                  int& smallestX, int& largestX,
                                  int& smallestY, int& largestY)
 {
-  ASKAPLOG_INFO_STR(logger,"ccalcEachChannelShapePerFilealcEachChannelShapePerFile");
-
   float cutoff = parset.getFloat("cutoff",0.01);
 
   int beamCentreIndex = 0; // it is simply an index to input files
-  smallestX = -1;
-  largestX = -1;
-  smallestY = -1;
-  largestY = -1;
+  smallestX = 0;
+  largestX = 0;
+  smallestY = 0;
+  largestY = 0;
 
   for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
     int xmin, xmax, ymin, ymax;
-    CoordinateSystem coordSys = iacc.coordSys(*it);;
+    CoordinateSystem coordSys = iacc.coordSys(*it);
     casacore::IPosition shape = iacc.shape(*it);
     accumulator.calcWeightInputShape(coordSys,shape,beamCentreIndex,
                                      chan,cutoff,xmin,xmax,ymin,ymax);
-    if ( smallestX > xmin ) smallestX = xmin;
+    if ( smallestX < xmin ) smallestX = xmin;
     if ( largestX < xmax ) largestX = xmax;
-    if ( smallestY > ymin ) smallestY = ymin;
+    if ( smallestY < ymin ) smallestY = ymin;
     if ( largestY < ymax ) largestY = ymax; 
+    
     
     beamCentreIndex += 1;
   }
+  //ASKAPLOG_INFO_STR(logger,"exit calcEachChannelShapePerFile");
 }
 
 // AXA-1618 code
@@ -114,15 +114,16 @@ static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
                             casacore::IPosition& blc, casacore::IPosition& trc)
 {
   // the min and max values of x and y belonged to this rank 
-  int smallestX = -1;
-  int largestX = -1; 
-  int smallestY = -1;
-  int largestY = -1;
+  int smallestX = 0;
+  int largestX = 0; 
+  int smallestY = 0;
+  int largestY = 0;
   for (int channel = firstChannel; channel <= lastChannel; channel += channelInc) {
     calcEachChannelShapePerFile(parset,accumulator,iacc,inImgNames,channel,
                                 nchanCube,smallestX,largestX,smallestY,largestY);
   }
 
+  ASKAPLOG_INFO_STR(logger,"findTrimmingEdgeValues");
   // wait for all ranks get to here
   comms.barrier();
   // contains the smallest and largest of x index from each rank
@@ -194,8 +195,8 @@ static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
     comms.barrier();
     // if we are here then all ranks now have the smallest and largest x y index of the
     // cube and hence the blc and trc (i.e the trimming edge values)
-    blc = casacore::IPosition(4,smallestXinCube,smallestYinCube,0,nchanCube);
-    trc = casacore::IPosition(4,largestXinCube,largestYinCube,0,nchanCube);
+    blc = casacore::IPosition(4,smallestXinCube,smallestYinCube,0,nchanCube-1);
+    trc = casacore::IPosition(4,largestXinCube,largestYinCube,0,nchanCube-1);
 }
 // @brief do the merge
 /// @param[in] parset subset with parameters
@@ -419,6 +420,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
                              firstChannel,lastChannel,channelInc,trimmed_blc,trimmed_trc);
     }
 
+    //ASKAPLOG_INFO_STR(logger," trimmed_blc: " << trimmed_blc << "; trimmed_trc: " << trimmed_trc);
     for (channel = firstChannel; channel <= lastChannel; channel += channelInc) {
 
       // clear the lists of input coordinates and shapes
@@ -451,12 +453,14 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           const casa::IPosition shape3(intrc);
           ASKAPLOG_INFO_STR(logger, " - Calculated Shape for this accumulator and this image is" << shape3);
           inShapeVec.push_back(shape3);
-          ASKAPLOG_INFO_STR(logger,"trimmed blc: " << trimmed_blc);
-          ASKAPLOG_INFO_STR(logger,"trimmed trc: " << trimmed_trc);
-          ASKAPLOG_INFO_STR(logger,"trimmed shape: " << trimmed_trc - trimmed_blc);
         } else {
           // new code added by AXA-1618
-          inCoordSysVec.push_back(iacc.coordSysSlice(*it,trimmed_blc,trimmed_trc));
+          casa::IPosition tempblc = trimmed_blc;
+          casa::IPosition temptrc = trimmed_trc;
+          tempblc[3] = channel;
+          temptrc[3] = channel;
+          inCoordSysVec.push_back(iacc.coordSysSlice(*it,tempblc,temptrc));
+          //inCoordSysVec.push_back(iacc.coordSysSlice(*it,trimmed_blc,trimmed_trc));
           casa::IPosition trimmedShape = trimmed_trc-trimmed_blc+1;
           trimmedShape[3] = 1;
           inShapeVec.push_back(trimmedShape);    
