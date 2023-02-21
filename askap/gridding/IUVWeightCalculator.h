@@ -58,7 +58,8 @@ struct IUVWeightCalculator {
    /// @brief perform processing for the given weight (single grid slice along the 3rd axis)
    /// @details For performance reasons, slices along the 3rd axis are taken inside finalise method
    /// of the builder (this can be changed if we ever had any effect where frequency dependence matter).
-   /// @param[in] wt weight to work work (it is modified in situ).
+   /// At this stage, we can guarantee that supplied matrix has contiguous storage.
+   /// @param[in] wt weight to work with (it is modified in situ).
    /// @note The shape is supposed to stay intact.
    virtual void process(casacore::Matrix<float> &wt) const = 0;
 };
