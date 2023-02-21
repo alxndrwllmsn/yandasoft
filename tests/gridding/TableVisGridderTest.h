@@ -35,6 +35,7 @@
 #include <askap/dataaccess/DataIteratorStub.h>
 #include <casacore/casa/aips.h>
 #include <casacore/casa/Arrays/Matrix.h>
+#include <casacore/casa/Arrays/ArrayMath.h>
 #include <casacore/measures/Measures/MPosition.h>
 #include <casacore/casa/Quanta/Quantum.h>
 #include <casacore/casa/Quanta/MVPosition.h>
@@ -43,6 +44,8 @@
 #include <askap/gridding/VisGridderFactory.h>
 #include <askap/gridding/IUVWeightAccessor.h>
 #include <askap/scimath/utils/ImageUtils.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
+#include <askap/gridding/SupportSearcher.h>
 
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -208,12 +211,7 @@ namespace askap
       }
 
       void testUVWeightApplication() {
-        // first, run without any weighting
-        itsSphFunc->initialiseGrid(*itsAxes, itsModel->shape(), false);
-        itsSphFunc->grid(*idi);
-        itsSphFunc->finaliseGrid(*itsModel);
-
-        // setup weighting
+        // setup weighting with some square window
         UVWeight wt(512,512,1);
         for (casacore::uInt iu = 240; iu <= 272; ++iu) {
              for (casacore::uInt iv = 240; iv <= 272; ++iv) {
@@ -234,8 +232,18 @@ namespace askap
         CPPUNIT_ASSERT_EQUAL(0u, *wtAcc->itsSourceIndices.begin());
         itsSphFunc->finaliseGrid(newImg);
         //scimath::saveAsCasaImage("tst.img", newImg);
-        //scimath::saveAsCasaImage("tst.img", *itsModel);
-        // assess the result here
+        // assess the result now
+        casacore::Matrix<imtypeComplex> buf(newImg.shape().getFirst(2), imtypeComplex(static_cast<imtype>(0.)));
+        casacore::setReal(buf, newImg.nonDegenerate());
+        FFT2DWrapper<imtypeComplex> fftWrapper;
+        fftWrapper(buf, false);
+        // simulated source is 100 Jy, the result should be windowed gridded visibility largely concentrated in
+        // the inner 32 pixels. Leave the cutoff sufficiently high (i.e. 20% of the simulated flux - here it is
+        // the absolute cutoff) to ignore low-level rumble and a bit of aliasing
+        SupportSearcher ss(20);
+        ss.searchCentered(buf);
+        CPPUNIT_ASSERT(ss.support() < 32u);
+        //scimath::saveAsCasaImage("tst.img", casacore::real(buf));
       }
 
       void testReverseAWProject()
