@@ -247,7 +247,7 @@ static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
                             const std::vector<string>& inImgNames,
                             const int nchanCube, const int firstChannel, 
                             const int lastChannel, const int channelInc,
-                            std::map<std::string,std::pair<IPosition,IPosition>>& imageBlcTrcMap)
+                            ImageBlcTrcMapT& imageBlcTrcMap)
 {
   ASKAPLOG_INFO_STR(logger,"findTrimmingEdgeValues");
 
