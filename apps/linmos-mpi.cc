@@ -50,41 +50,60 @@ using namespace askap::synthesis;
 
 namespace askap {
 
+/// @brief This function returns the blc and trc of the output image
+/// @param[in] trimming - flag to indicate if trimming is used or not
+/// @param[in] iacc - image access object
+/// @param[in] imgName - name of input image
+/// @param[in] trimmedBlc - the value of trimmed blc if trimming = true
+/// @param[in] trimmedTlc - the value of trimmed trc if trimming = true
+/// @param[out] blc - bottom left corner of the output image
+/// @param[out] trc - top right corner of the output image
 static void 
-getImageSlice(const bool trimming,
-              const accessors::IImageAccess<casacore::Float>& iacc,
-              const std::string& imgName,
-              const casacore::IPosition trimmed_blc,
-              const casacore::IPosition trimmed_trc,
-              casacore::IPosition& blc,
-              casacore::IPosition& trc)
+getBlcTrc(const bool trimming,
+          const accessors::IImageAccess<casacore::Float>& iacc,
+          const std::string& imgName,
+          const casacore::IPosition trimmedBlc,
+          const casacore::IPosition trimmedTrc,
+          casacore::IPosition& blc,
+          casacore::IPosition& trc)
 {
   if ( ! trimming ) {
     const casa::IPosition shape = iacc.shape(imgName);
     blc = casa::IPosition(shape.nelements(),0);
     trc = casa::IPosition(shape-1);
   } else {
-    blc = trimmed_blc;
-    trc = trimmed_trc;
+    blc = trimmedBlc;
+    trc = trimmedTrc;
   }
 }
                                             
-// AXA-1618 code
-static void calcEachChannelShapePerFile(const LOFAR::ParameterSet &parset,
-                                 imagemath::LinmosAccumulator<float>& accumulator,
-                                 const accessors::IImageAccess<casacore::Float>& iacc,
-                                 const std::vector<string>& inImgNames,
-                                 const int chan, const int nchanCube,
-                                 int& smallestX, int& largestX,
-                                 int& smallestY, int& largestY)
+/// @brief This function calculates the min and max of the x and y of the input images
+/// @details This function iterates over the input images and calculates the min and
+///          max of the x and y of the image plane of the input images. The xMinMaxVect
+///          and yMinMaxVect containers store the min and max values of the image planes/channels
+///          allocated to this rank.
+/// @param[in] parset - the task configuration settings
+/// @param[in] accumulator - object that provides functions which are heavily utilised by this task
+/// @param[in] iacc - image access object
+/// @param[in] inImgNames - input images
+/// @param[in] chan - the channel of the image cube. It is used as in index to access the image plane
+///                   in the cube.
+/// @param[in] nchabCube - how many channels in the cube
+/// @param[out] xMinMaxVect - contains the min and max values of the x dimension of the input image planes/channels
+///                           allocated to this rank
+/// @param[out] xMinMaxVect - contains the min and max values of the y dimension of the input image planes/channels
+///                           allocated to this rank
+static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
+                                         imagemath::LinmosAccumulator<float>& accumulator,
+                                         const accessors::IImageAccess<casacore::Float>& iacc,
+                                         const std::vector<string>& inImgNames,
+                                         const int chan, const int nchanCube,
+                                         std::vector<int>& xMinMaxVect,std::vector<int>& yMinMaxVect)
 {
+  ASKAPLOG_INFO_STR(logger,"calcMinMaxXYInputImagePlanes");
   float cutoff = parset.getFloat("cutoff",0.01);
 
   int beamCentreIndex = 0; // it is simply an index to input files
-  smallestX = 0;
-  largestX = 0;
-  smallestY = 0;
-  largestY = 0;
 
   for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
     int xmin, xmax, ymin, ymax;
@@ -92,18 +111,34 @@ static void calcEachChannelShapePerFile(const LOFAR::ParameterSet &parset,
     casacore::IPosition shape = iacc.shape(*it);
     accumulator.calcWeightInputShape(coordSys,shape,beamCentreIndex,
                                      chan,cutoff,xmin,xmax,ymin,ymax);
-    if ( smallestX < xmin ) smallestX = xmin;
-    if ( largestX < xmax ) largestX = xmax;
-    if ( smallestY < ymin ) smallestY = ymin;
-    if ( largestY < ymax ) largestY = ymax; 
-    
+    // Dont reset these vectors to 0. Just add xmin, xmax, ymin and ymax to them 
+    xMinMaxVect.push_back(xmin);
+    xMinMaxVect.push_back(xmax);
+    yMinMaxVect.push_back(ymin);
+    yMinMaxVect.push_back(ymax);
     
     beamCentreIndex += 1;
   }
-  //ASKAPLOG_INFO_STR(logger,"exit calcEachChannelShapePerFile");
 }
 
-// AXA-1618 code
+/// @brief This function calculates the smallest and largest min and max values of the 
+///        x and y dimension of the image cube.
+/// @detail This function calculates required blc and trc for the output image. This is 
+///         achieved by each rank first determines its own smallest and largest 
+///         min and max for the x and y dimension. The master (rank 0) then collects
+///         these values from other ranks and deduces the required blc and trc for the cube.
+///         Finally, the blc and trc are sent to other ranks
+/// @param[in] parset - the task configuration settings
+/// @param[in] comms - mpi communicator object
+/// @param[in] accumulator - object that provides functions which are heavily utilised by this task
+/// @param[in] iacc - image access object
+/// @param[in] inImgNames - input images
+/// @param[in] nchabCube - how many channels in the cube
+/// @param[in] firstChannel - first channel of this rank
+/// @param[in] lastChannel - last channel of this rank
+/// @param[in] channelInc - channel increment
+/// @param[out] blc - the blc of the output image cube
+/// @param[out] trc - the trc of the output image cube.
 static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
                             askap::askapparallel::AskapParallel &comms,
                             imagemath::LinmosAccumulator<float>& accumulator,
@@ -113,17 +148,24 @@ static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
                             const int lastChannel, const int channelInc,
                             casacore::IPosition& blc, casacore::IPosition& trc)
 {
-  // the min and max values of x and y belonged to this rank 
-  int smallestX = 0;
-  int largestX = 0; 
-  int smallestY = 0;
-  int largestY = 0;
+  ASKAPLOG_INFO_STR(logger,"findTrimmingEdgeValues");
+
+  std::vector<int> xMinMaxVect;
+  std::vector<int> yMinMaxVect; 
   for (int channel = firstChannel; channel <= lastChannel; channel += channelInc) {
-    calcEachChannelShapePerFile(parset,accumulator,iacc,inImgNames,channel,
-                                nchanCube,smallestX,largestX,smallestY,largestY);
+    calcMinMaxXYInputImagePlanes(parset,accumulator,iacc,inImgNames,channel,
+                                 nchanCube,xMinMaxVect,yMinMaxVect);
   }
 
-  ASKAPLOG_INFO_STR(logger,"findTrimmingEdgeValues");
+  // the min and max values of x and y belonged to this rank 
+  auto xMinMaxIter = std::minmax_element(xMinMaxVect.begin(),xMinMaxVect.end());
+  int smallestX = *xMinMaxIter.first;
+  int largestX = *xMinMaxIter.second;
+
+  auto yMinMaxIter = std::minmax_element(yMinMaxVect.begin(),yMinMaxVect.end());
+  int smallestY = *yMinMaxIter.first;
+  int largestY = *yMinMaxIter.second;
+
   // wait for all ranks get to here
   comms.barrier();
   // contains the smallest and largest of x index from each rank
@@ -131,72 +173,72 @@ static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
   // contains the smallest and largest of y index from each rank
   std::vector<int> yIndexOfAllRanks;
 
-    int xyMinMax[4];
-    int nProcs = comms.nProcs();
-    if ( comms.isMaster() ) {
-      // first copy the x and y min and max of master 
-      xIndexOfAllRanks.push_back(smallestX);
-      xIndexOfAllRanks.push_back(largestX);
-      yIndexOfAllRanks.push_back(smallestY);
-      yIndexOfAllRanks.push_back(largestY);
-      // then collect min and max of x and y of workers to master 
-      for (int sender = 1; sender < nProcs; sender++) {
-        comms.receive(xyMinMax,4*sizeof(int),sender);
-        // now copy from worker ranks
-        xIndexOfAllRanks.push_back(xyMinMax[0]);
-        xIndexOfAllRanks.push_back(xyMinMax[2]);
-        yIndexOfAllRanks.push_back(xyMinMax[1]);
-        yIndexOfAllRanks.push_back(xyMinMax[3]);
-      }
-    } else {
-      // send min and max of x and y to the master 
-      xyMinMax[0] = smallestX;
-      xyMinMax[1] = smallestY;
-      xyMinMax[2] = largestX;
-      xyMinMax[3] = largestY;
-      comms.send((void *) xyMinMax, 4*sizeof(int),0); 
+  int xyMinMax[4];
+  int nProcs = comms.nProcs();
+  if ( comms.isMaster() ) {
+    // first copy the x and y min and max of master 
+    xIndexOfAllRanks.push_back(smallestX);
+    xIndexOfAllRanks.push_back(largestX);
+    yIndexOfAllRanks.push_back(smallestY);
+    yIndexOfAllRanks.push_back(largestY);
+    // then collect min and max of x and y of workers to master 
+    for (int sender = 1; sender < nProcs; sender++) {
+      comms.receive(xyMinMax,4*sizeof(int),sender);
+      // now copy from worker ranks
+      xIndexOfAllRanks.push_back(xyMinMax[0]);
+      xIndexOfAllRanks.push_back(xyMinMax[2]);
+      yIndexOfAllRanks.push_back(xyMinMax[1]);
+      yIndexOfAllRanks.push_back(xyMinMax[3]);
     }
+  } else {
+    // send min and max of x and y to the master 
+    xyMinMax[0] = smallestX;
+    xyMinMax[1] = smallestY;
+    xyMinMax[2] = largestX;
+    xyMinMax[3] = largestY;
+    comms.send((void *) xyMinMax, 4*sizeof(int),0); 
+  }
 
-    // comms.barrier(); - dont think we need a barrier here
-    int smallestXinCube = -1;
-    int smallestYinCube = -1;
-    int largestXinCube = -1;
-    int largestYinCube = -1;
-    // now find the smallest and largest min max x y values of all the ranks. 
-    // This gives us the smallest blc and largest trc of the cube
-    if ( comms.isMaster() ) {
-      // since the master is the only rank that has the info to work out the 
-      // largest and smallest values of the cube so let it does the work and 
-      // then send these values to worker ranks
-      auto xPairIter = std::minmax_element(xIndexOfAllRanks.begin(),xIndexOfAllRanks.end());
-      smallestXinCube = *xPairIter.first;
-      largestXinCube = *xPairIter.second;
-      auto yPairIter = std::minmax_element(yIndexOfAllRanks.begin(),yIndexOfAllRanks.end());
-      smallestYinCube = *yPairIter.first;
-      largestYinCube = *yPairIter.second;
-      xyMinMax[0] = smallestXinCube;
-      xyMinMax[1] = smallestYinCube;
-      xyMinMax[2] = largestXinCube;
-      xyMinMax[3] = largestYinCube;
-      // now send the smallest and largest x and y of the image cube to all theworkers
-      for (int receiver = 1; receiver < nProcs; receiver++) {
-        comms.send((void *) xyMinMax,4*sizeof(int),receiver);
-      }
-    } else {
-      // workers wait for master to do its calculation and receive the smallest and
-      // largest x y 
-      comms.receive(xyMinMax,4*sizeof(int),0);
-      smallestXinCube = xyMinMax[0];
-      smallestYinCube = xyMinMax[1];
-      largestXinCube = xyMinMax[2];
-      largestYinCube = xyMinMax[3];
+  // comms.barrier(); - dont think we need a barrier here
+  int smallestXinCube = -1;
+  int smallestYinCube = -1;
+  int largestXinCube = -1;
+  int largestYinCube = -1;
+  // now find the smallest and largest min max x y values of all the ranks. 
+  // This gives us the smallest blc and largest trc of the cube
+  if ( comms.isMaster() ) {
+    // since the master is the only rank that has the info to work out the 
+    // largest and smallest values of the cube so let it does the work and 
+    // then send these values to worker ranks
+    auto xPairIter = std::minmax_element(xIndexOfAllRanks.begin(),xIndexOfAllRanks.end());
+    smallestXinCube = *xPairIter.first;
+    largestXinCube = *xPairIter.second;
+    auto yPairIter = std::minmax_element(yIndexOfAllRanks.begin(),yIndexOfAllRanks.end());
+    smallestYinCube = *yPairIter.first;
+    largestYinCube = *yPairIter.second;
+    xyMinMax[0] = smallestXinCube;
+    xyMinMax[1] = smallestYinCube;
+    xyMinMax[2] = largestXinCube;
+    xyMinMax[3] = largestYinCube;
+    // now send the smallest and largest x and y of the image cube to all theworkers
+    for (int receiver = 1; receiver < nProcs; receiver++) {
+      comms.send((void *) xyMinMax,4*sizeof(int),receiver);
     }
+  } else {
+    // workers wait for master to do its calculation and receive the smallest and
+    // largest x y 
+    comms.receive(xyMinMax,4*sizeof(int),0);
+    smallestXinCube = xyMinMax[0];
+    smallestYinCube = xyMinMax[1];
+    largestXinCube = xyMinMax[2];
+    largestYinCube = xyMinMax[3];
+  }
     
-    comms.barrier();
-    // if we are here then all ranks now have the smallest and largest x y index of the
-    // cube and hence the blc and trc (i.e the trimming edge values)
-    blc = casacore::IPosition(4,smallestXinCube,smallestYinCube,0,nchanCube-1);
-    trc = casacore::IPosition(4,largestXinCube,largestYinCube,0,nchanCube-1);
+  comms.barrier();
+  // if we are here then all ranks now have the smallest and largest x y index of the
+  // cube and hence the blc and trc (i.e the trimming edge values)
+  blc = casacore::IPosition(4,smallestXinCube,smallestYinCube,0,nchanCube-1);
+  trc = casacore::IPosition(4,largestXinCube,largestYinCube,0,nchanCube-1);
 }
 // @brief do the merge
 /// @param[in] parset subset with parameters
@@ -411,13 +453,16 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       statsAndMask.reset(new askap::utils::StatsAndMask{comms,outImgName,iaccPtr});
     }
 
-    // AXA-1618. Should be findTrimmingValue() here
     casacore::IPosition trimmed_blc;
     casacore::IPosition trimmed_trc;
     const bool trimming = parset.getBool("trimming",false);
     if ( trimming ) {
-      findTrimmingEdgeValues(parset,comms,accumulator,iacc,inImgNames,nchanCube,
-                             firstChannel,lastChannel,channelInc,trimmed_blc,trimmed_trc);
+      if (accumulator.weightType() == FROM_BP_MODEL|| accumulator.weightType() == COMBINED) {
+        findTrimmingEdgeValues(parset,comms,accumulator,iacc,inImgNames,nchanCube,
+                               firstChannel,lastChannel,channelInc,trimmed_blc,trimmed_trc);
+      } else {
+        ASKAPCHECK(false,"trimming is only supported for weighttype FromPrimaryBeamModel or Combined");
+      }
     }
 
     //ASKAPLOG_INFO_STR(logger," trimmed_blc: " << trimmed_blc << "; trimmed_trc: " << trimmed_trc);
@@ -429,7 +474,6 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       for (vector<string>::iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
         ASKAPLOG_INFO_STR(logger,"Processing Channel " << channel << " of input image " << *it << " which is part of output mosaick " << outImgName);
         if ( !trimming ) {
-          // This is current existing code prior to AXA-1618 added
           const casa::IPosition shape = iacc.shape(*it);
 
           ASKAPCHECK(shape.nelements()==4,"Work with 4D cubes!");
@@ -454,7 +498,6 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           ASKAPLOG_INFO_STR(logger, " - Calculated Shape for this accumulator and this image is" << shape3);
           inShapeVec.push_back(shape3);
         } else {
-          // new code added by AXA-1618
           casa::IPosition tempblc = trimmed_blc;
           casa::IPosition temptrc = trimmed_trc;
           tempblc[3] = channel;
@@ -608,13 +651,9 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
               ASKAPLOG_INFO_STR(logger, " - and input Stokes I image " << inStokesIName);
           }
 
-          //const casa::IPosition shape = iacc.shape(inImgName);
-          //casa::IPosition blc(shape.nelements(),0);
-          //casa::IPosition trc(shape-1);
-          // AXA-1618
           casa::IPosition blc; 
           casa::IPosition trc;
-          getImageSlice(trimming,iacc,inImgName,trimmed_blc,trimmed_trc,blc,trc);
+          getBlcTrc(trimming,iacc,inImgName,trimmed_blc,trimmed_trc,blc,trc);
 
           if (nchanCube < 0) {
             nchanCube = shape(3);
@@ -794,13 +833,9 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
             } else {
                 // use weights images
-                //const casa::IPosition shape = iacc.shape(inWgtName);
-                //casa::IPosition blc(shape.nelements(),0);
-                //casa::IPosition trc(shape-1);
-                // AXA-1618
                 casa::IPosition blc;
                 casa::IPosition trc;
-                getImageSlice(trimming,iacc,inWgtName,trimmed_blc,trimmed_trc,blc,trc);
+                getBlcTrc(trimming,iacc,inWgtName,trimmed_blc,trimmed_trc,blc,trc);
 
                 blc[3] = channel;
                 trc[3] = channel;
@@ -811,13 +846,9 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           }
           if (accumulator.doSensitivity()) {
 
-            //const casa::IPosition shape = iacc.shape(inSenName);
-            //casa::IPosition blc(shape.nelements(),0);
-            //casa::IPosition trc(shape-1);
-            // AXA-1618
             casa::IPosition blc;
             casa::IPosition trc;
-            getImageSlice(trimming,iacc,inSenName,trimmed_blc,trimmed_trc,blc,trc);
+            getBlcTrc(trimming,iacc,inSenName,trimmed_blc,trimmed_trc,blc,trc);
 
             blc[3] = channel;
             trc[3] = channel;
