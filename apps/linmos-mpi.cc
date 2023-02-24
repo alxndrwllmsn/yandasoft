@@ -64,7 +64,6 @@ using ImageBlcTrcMapT =  std::map<std::string,std::pair<casacore::IPosition,casa
 /// @param[in] trimming - flag to indicate if trimming is used or not
 /// @param[in] iacc - image access object
 /// @param[in] imgName - name of input image
-/// @param[in] imgInputOrWgtOrSenName - name of input/weight/sensitive image
 /// @param[in] imageBlcTrcMap - a map which contains the input images' trc and blc
 /// @param[out] blc - bottom left corner of the output image
 /// @param[out] trc - top right corner of the output image
@@ -72,13 +71,12 @@ static void
 getBlcTrc(const bool trimming,
           const accessors::IImageAccess<casacore::Float>& iacc,
           const std::string& imgName,
-          const std::string& imgInputOrWgtOrSenName,
           const ImageBlcTrcMapT& imageBlcTrcMap,
           casacore::IPosition& blc,
           casacore::IPosition& trc)
 {
   if ( ! trimming ) {
-    const casa::IPosition shape = iacc.shape(imgInputOrWgtOrSenName);
+    const casa::IPosition shape = iacc.shape(imgName);
     blc = casa::IPosition(shape.nelements(),0);
     trc = casa::IPosition(shape-1);
   } else {
@@ -89,9 +87,9 @@ getBlcTrc(const bool trimming,
   }
 }
                                             
-/// @brief This function calculates the blc and trc  of the input images
-/// @details This function iterates over the input images and calculates the blc and trc
-///          of the input images. The imageBlcTrcMap map stores the blc and trc of the images.
+/// @brief This function calculates the blc and trc  of the input image
+/// @details This function iterates over the channels and calculates the blc and trc
+///          of the input image. The imageBlcTrcMap map stores the blc and trc of the images.
 ///          The key of the map is the input name and the value is an std::pair consisting of
 ///          blc and trc values.
 /// @param[in] parset - the task configuration settings
@@ -165,6 +163,11 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
 
   // now find the smallest and largest min max x y values of all the ranks.
   // This gives us the smallest blc and largest trc of the input image
+  int thisImgSmallestX = 0;
+  int thisImgSmallestY = 0;
+  int thisImgLargestX = 0;
+  int thisImgLargestY = 0;
+
   if ( comms.isMaster() ) {
     // then collect min and max of x and y of workers to master
     for (int sender = 1; sender < nProcs; sender++) {
@@ -179,12 +182,12 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
     // The master now has collected all the min and max from all the workers.
     // Next, work out the smallest and largest from all the ranks
     auto xMinMaxIter = std::minmax_element(xMinMaxVect.begin(),xMinMaxVect.end());
-    int thisImgSmallestX = *xMinMaxIter.first;
-    int thisImgLargestX = *xMinMaxIter.second;
+    thisImgSmallestX = *xMinMaxIter.first;
+    thisImgLargestX = *xMinMaxIter.second;
 
     auto yMinMaxIter = std::minmax_element(yMinMaxVect.begin(),yMinMaxVect.end());
-    int thisImgSmallestY = *yMinMaxIter.first;
-    int thisImgLargestY = *yMinMaxIter.second;   
+    thisImgSmallestY = *yMinMaxIter.first;
+    thisImgLargestY = *yMinMaxIter.second;   
 
     // thisImgSmallestX, thisImgSmallestY, thisImgLargestX and thisImgLargestY
     // are the smallest and largest min and max of this image.
@@ -206,25 +209,25 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
     //  wait and receive the smallest and largest x and y of this image from master
     comms.receive(xyMinMax,4*sizeof(int),0);
 
-    smallestX = xyMinMax[0];
-    smallestY = xyMinMax[1];
-    largestX = xyMinMax[2];
-    largestY = xyMinMax[3];
+    thisImgSmallestX = xyMinMax[0];
+    thisImgSmallestY = xyMinMax[1];
+    thisImgLargestX = xyMinMax[2];
+    thisImgLargestY = xyMinMax[3];
   }    
   comms.barrier();
   
   // by the time the code gets here, each rank knows the smallest and largest min and max
   // of the image. Dedue the blc and trc from these values and store them in the map
-  casacore::IPosition blc(4,smallestX,smallestY,0,nchanCube-1);
-  casacore::IPosition trc(4,largestX,largestX,0,nchanCube-1);
+  casacore::IPosition blc(4,thisImgSmallestX,thisImgSmallestY,0,nchanCube-1);
+  casacore::IPosition trc(4,thisImgLargestX,thisImgLargestY,0,nchanCube-1);
   std::pair<casacore::IPosition,casacore::IPosition> p;
   p.first = blc;
   p.second = trc;
   imageBlcTrcMap.insert(std::make_pair(inImgName,p));
 }
 
-/// @brief This function calculates the smallest and largest min and max values of the 
-///        x and y dimension of the image cube.
+/// @brief This function calculates the bounding box of pixels above the beam cutoff for all 
+///        the image cubes.
 /// @detail This function calculates required blc and trc for the output image. This is 
 ///         achieved by each rank first determines its own smallest and largest 
 ///         min and max for the x and y dimension. The master (rank 0) then collects
@@ -235,12 +238,12 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
 /// @param[in] accumulator - object that provides functions which are heavily utilised by this task
 /// @param[in] iacc - image access object
 /// @param[in] inImgNames - input images
-/// @param[in] nchabCube - how many channels in the cube
+/// @param[in] nchanCube - how many channels in the cube
 /// @param[in] firstChannel - first channel of this rank
 /// @param[in] lastChannel - last channel of this rank
 /// @param[in] channelInc - channel increment
 /// @param[out] imageBlcTrcMap - contains the blc and trc of the input images
-static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
+static void findBoundingBoxes(const LOFAR::ParameterSet &parset,
                             askap::askapparallel::AskapParallel &comms,
                             imagemath::LinmosAccumulator<float>& accumulator,
                             accessors::IImageAccess<casacore::Float>& iacc,
@@ -249,7 +252,7 @@ static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
                             const int lastChannel, const int channelInc,
                             ImageBlcTrcMapT& imageBlcTrcMap)
 {
-  ASKAPLOG_INFO_STR(logger,"findTrimmingEdgeValues");
+  ASKAPLOG_INFO_STR(logger,"findBoundingBoxes");
 
   int beamCentreIndex = 0;
   
@@ -477,11 +480,11 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       statsAndMask.reset(new askap::utils::StatsAndMask{comms,outImgName,iaccPtr});
     }
 
-    std::map<std::string,std::pair<casacore::IPosition,casacore::IPosition> > imageBlcTrcMap;
+    ImageBlcTrcMapT imageBlcTrcMap;
     const bool trimming = parset.getBool("trimming",false);
     if ( trimming ) {
       if (accumulator.weightType() == FROM_BP_MODEL|| accumulator.weightType() == COMBINED) {
-        findTrimmingEdgeValues(parset,comms,accumulator,iacc,inImgNames,nchanCube,
+        findBoundingBoxes(parset,comms,accumulator,iacc,inImgNames,nchanCube,
                                firstChannel,lastChannel,channelInc,imageBlcTrcMap);
       } else {
         ASKAPCHECK(false,"trimming is only supported for weighttype FromPrimaryBeamModel or Combined");
@@ -677,7 +680,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
           casa::IPosition blc; 
           casa::IPosition trc;
-          getBlcTrc(trimming,iacc,inImgName,inImgName,imageBlcTrcMap,blc,trc);
+          getBlcTrc(trimming,iacc,inImgName,imageBlcTrcMap,blc,trc);
 
           if (nchanCube < 0) {
             nchanCube = shape(3);
@@ -854,27 +857,16 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
               ASKAPCHECK(size>0,"No weights found in image header or extension for image: "<<inImgName);
 
             } else {
-                // use weights images
-                casa::IPosition blc;
-                casa::IPosition trc;
-                getBlcTrc(trimming,iacc,inImgName,inWgtName,imageBlcTrcMap,blc,trc);
-
-                blc[3] = channel;
-                trc[3] = channel;
-
+                // use the same blc and trc obtained from the previous getBlcTrc() call for 
+                // input image since input/weight/sensitive message (should) have the same size
                 inWgtPix = iacc.read(inWgtName,blc,trc);
             }
             ASKAPASSERT(inPix.shape() == inWgtPix.shape());
           }
           if (accumulator.doSensitivity()) {
 
-            casa::IPosition blc;
-            casa::IPosition trc;
-            getBlcTrc(trimming,iacc,inImgName,inSenName,imageBlcTrcMap,blc,trc);
-
-            blc[3] = channel;
-            trc[3] = channel;
-
+            // use the same blc and trc obtained from the previous getBlcTrc() call for
+            // input image since input/weight/sensitive message (should) have the same size
             inSenPix = iacc.read(inSenName,blc,trc);
 
             ASKAPASSERT(inPix.shape() == inSenPix.shape());
