@@ -267,7 +267,7 @@ namespace askap {
             }
 
             Matrix<FT> residualFFT(this->dirty().shape().nonDegenerate(2), static_cast<FT>(0.));
-            casacore::setReal(residualFFT, this->dirty().nonDegenerate(2));
+            casacore::setReal(residualFFT, this->dirty().nonDegenerate());
             // the original wrapper is a method in scimath namespace, new wrapper is a local variable with the same name
             //scimath::fft2d(residualFFT, true);
             fft2d(residualFFT, true);
@@ -360,7 +360,7 @@ namespace askap {
             ASKAPLOG_DEBUG_STR(decbflogger, "Peak of PSF subsection at  " << subPsfPeak);
             ASKAPLOG_DEBUG_STR(decbflogger, "Shape of PSF subsection is " << subPsfShape);
 
-            casacore::setReal(subXFR, this->psf().nonDegenerate(2)(subPsfSlicer));
+            casacore::setReal(subXFR, this->psf().nonDegenerate()(subPsfSlicer));
             // the original wrapper is a method in scimath namespace, new wrapper is a local variable with the same name
             //scimath::fft2d(subXFR, true);
             fft2d(subXFR, true);
