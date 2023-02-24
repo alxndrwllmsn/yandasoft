@@ -105,7 +105,7 @@ getBlcTrc(const bool trimming,
 /// @param[in] nchanCube - numer of channels in the cube
 /// @param[in] beanmCentreIndex - index of the input images
 /// @param[out] imageBlcTrcMap - contains the blc and trc of the input images
-static void calcMinMaxXYInputImagePlanes2(const LOFAR::ParameterSet &parset,
+static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
                                          askap::askapparallel::AskapParallel &comms,
                                          imagemath::LinmosAccumulator<float>& accumulator,
                                          const accessors::IImageAccess<casacore::Float>& iacc,
@@ -251,36 +251,18 @@ static void findTrimmingEdgeValues(const LOFAR::ParameterSet &parset,
 {
   ASKAPLOG_INFO_STR(logger,"findTrimmingEdgeValues");
 
-  // store the min and max values of the x dimension of the input images
-  //std::vector<int> xMinMaxVect;
-  // store the min and max values of the y dimension of the input images
-  //std::vector<int> yMinMaxVect; 
-  
   int beamCentreIndex = 0;
   
   //std::map<std::string,std::pair<casacore::IPosition,casacore::IPosition> > imageBlcTrcMap;
   for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
-    calcMinMaxXYInputImagePlanes2(parset,comms,accumulator,iacc,*it,
+    calcMinMaxXYInputImagePlanes(parset,comms,accumulator,iacc,*it,
                                  firstChannel,lastChannel,channelInc,nchanCube,
                                  beamCentreIndex,imageBlcTrcMap);
-                                 //beamCentreIndex,xMinMaxVect,yMinMaxVect,imageBlcTrcMap);
     beamCentreIndex += 1;
   }
 
   // wait for all ranks get to here
   comms.barrier();
-  //auto xMinMaxIter = std::minmax_element(xMinMaxVect.begin(),xMinMaxVect.end());
-  //int smallestXinCube = *xMinMaxIter.first;
-  //int largestXinCube = *xMinMaxIter.second;
-
-  //auto yMinMaxIter = std::minmax_element(yMinMaxVect.begin(),yMinMaxVect.end());
-  //int smallestYinCube = *yMinMaxIter.first;
-  //int largestYinCube = *yMinMaxIter.second;
-
-  // if we are here then all ranks now have the smallest and largest x y index of the
-  // cube and hence the blc and trc (i.e the trimming edge values)
-  //blc = casacore::IPosition(4,smallestXinCube,smallestYinCube,0,nchanCube-1);
-  //trc = casacore::IPosition(4,largestXinCube,largestYinCube,0,nchanCube-1);
 }
 // @brief do the merge
 /// @param[in] parset subset with parameters
