@@ -85,12 +85,15 @@ public:
             int blocksize = subset.getInt("blocksize",0);
             int shift = subset.getInt("shift",0);
             bool interleave = subset.getBool("interleave",false);
+            bool useCollectiveIO = subset.getString("imageaccess","collective")=="collective";
 
 
             FitsImageAccessParallel accessor(comms);
+            FitsImageAccess accessorFits;
 
             // work out channel shift due to bary/lsrk to topo correction
             Vector<int> channelShift = dopplerCorrection(infile, accessor, subset);
+            IPosition shape = accessor.shape(infile);
 
             if (comms.isMaster()) {
                 ASKAPLOG_INFO_STR(logger,"In = "<<infile <<", Out = "<<
@@ -109,6 +112,10 @@ public:
                 } else {
                     accessor.copyHeader(infile, outfile);
                 }
+                // allocate output file if not using collective IO - this should be quick
+                if (!useCollectiveIO) {
+                    quickAllocateFits(outfile,shape);
+                }
             }
 
             // All wait for header to be written
@@ -117,7 +124,14 @@ public:
             // Now process the rest of the file in parallel
             // Specify axis of cube to distribute over: 1=y -> array dimension returned: (nx,n,nchan)
             const int iax = 1;
-            Array<Float> arr = accessor.readAll(infile, iax);
+            Array<Float> arr;
+            IPosition blc, trc;
+            if (useCollectiveIO) {
+                arr = accessor.readAll(infile, iax);
+            } else {
+                getBlcTrc(comms, shape, iax, blc, trc);
+                arr = accessorFits.read(infile, blc, trc);
+            }
             // remove degenerate 3rd or 4th axis - cube constructor will fail if there isn't one
             arr.removeDegenerate();
             ASKAPCHECK(arr.shape().size()==3,"imcontsub can only deal with 3D data cubes");
@@ -192,8 +206,29 @@ public:
 
 
             // Write results to output file - make sure we use the same axis as for reading
-            accessor.writeAll(outfile,arr,iax);
+            if (useCollectiveIO) {
+                accessor.writeAll(outfile,arr,iax);
+            } else {
+                if (comms.isMaster()) {
+                  ASKAPLOG_INFO_STR(logger, "Ensuring serial write access to cubes");
+                }
+                else { // this serializer appears to be needed for FITS when writing non contiguous slices
+                  int buf;
+                  int from = comms.rank() - 1;
+                  ASKAPLOG_INFO_STR(logger, "Waiting for trigger from rank " << from);
+                  comms.receive((void *) &buf,sizeof(int),from);
+                }
+                // write out the slice
+                accessorFits.write(outfile,arr,blc);
+
+                if (comms.rank() < comms.nProcs()-1) { // last rank doesnot use this method
+                  int buf = 0;
+                  int to = comms.rank()+1;
+                  comms.send((void *) &buf,sizeof(int),to);
+                }
+            }
             ASKAPLOG_INFO_STR(logger,"Done");
+
             // Done
             stats.logSummary();
             } catch (const AskapError& x) {
@@ -208,6 +243,34 @@ public:
             return 0;
         }
 
+        void getBlcTrc(const askapparallel::AskapParallel & comms, const casacore::IPosition & shape, const int iax,
+                        casacore::IPosition & blc, casacore::IPosition & trc) const
+        {
+            blc.resize(shape.size());
+            trc.resize(shape.size());
+            blc = 0;
+            trc = shape - 1;
+            blc(iax) = comms.rank() * (shape(iax)/comms.nProcs());
+            trc(iax) = (comms.rank() + 1) * (shape(iax)/comms.nProcs()) - 1;
+            ASKAPCHECK(shape(iax) % comms.nProcs() == 0,"Size of axis "<<iax<<" is "<<shape(iax)<<" this needs to be a multiple of #ranks ("<<comms.nProcs()<<")");
+        }
+
+        void quickAllocateFits(std::string name, casacore::IPosition shape) {
+            std::fstream outfs((name+".fits").c_str());
+            ASKAPCHECK(outfs.is_open(), "Cannot open FITS file for output");
+
+            long long pos = outfs.tellp();
+            pos += shape.product() * sizeof(float);
+            // add FITS padding
+            if (pos % 2880) {
+                pos += 2880 - (pos % 2880);
+            }
+            ASKAPLOG_DEBUG_STR(logger, "Allocating file of size "<<pos/1024/1024/1024<<" GB, shape = "<<shape);
+            // get ready to write to last byte in file
+            pos -= 1;
+            outfs.seekp(pos);
+            outfs.write ("\0",1);
+        }
 
         Vector<int> dopplerCorrection(String& infile, FitsImageAccessParallel& accessor, LOFAR::ParameterSet& parset)
         {
