@@ -70,7 +70,7 @@ void ConjugatesAdderFFT::process(casacore::Matrix<float> &wt) const
    wrapper(buffer, false);
    buffer += casacore::conj(buffer);
    wrapper(buffer, true);
-   casacore::ComplexToReal(wt, buffer);
+   casacore::real(wt, buffer);
    ASKAPLOG_DEBUG_STR(logger, "Before conjugates sum of grid = " << sum(wt));
 }
 
