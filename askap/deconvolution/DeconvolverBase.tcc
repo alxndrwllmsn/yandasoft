@@ -351,7 +351,7 @@ namespace askap {
 
             // Don't reorder harmonics as with the original wrapper (hence, pass false to the wrapper), it seems possible to
             // skip it here as we use FFT to do convolutions and don't care about particular harmonic placement in the Fourier space
-            scimath::FFT2DWrapper<FT> fft2d(false);
+            scimath::FFT2DWrapper<FT> fft2d(true); // MHW changed to true - work image was shifted by half size, circularly in x and y
 
             for (uInt term = 0; term < nTerms(); ++term) {
                  const Array<T>& thisTermPSF = psf(term);
@@ -424,7 +424,7 @@ namespace askap {
 
             // Don't reorder harmonics as with the original wrapper (hence, pass false to the wrapper), it seems possible to
             // skip it here as we use FFT to do convolutions and don't care about particular harmonic placement in the Fourier space
-            scimath::FFT2DWrapper<FT> fft2d(false);
+            scimath::FFT2DWrapper<FT> fft2d(true); //MHW changed to true - components were restored in corners instead of centre
 
             // the original wrapper is a method in scimath namespace, new wrapper is a local variable with the same name
             //scimath::fft2d(gaussian, true);

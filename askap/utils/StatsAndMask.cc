@@ -50,7 +50,7 @@ using namespace askap::accessors;
 /// @param[in] comms - MPI comms
 /// @param[in] cubeName - name of image cube
 /// @param[in] imageCube - a boost shared pointer to the image access instance
-StatsAndMask::StatsAndMask(askapparallel::AskapParallel &comms, const std::string& cubeName, 
+StatsAndMask::StatsAndMask(askapparallel::AskapParallel &comms, const std::string& cubeName,
                            boost::shared_ptr<askap::accessors::IImageAccess<>> imageCube)
     : itsComms(comms), itsImageName(cubeName), itsImageCube(imageCube)
 {
@@ -78,7 +78,7 @@ void StatsAndMask::setUnits(const std::string& unit)
 void StatsAndMask::calculate(const std::string& name, Channel channel,const casacore::IPosition& blc, const casacore::IPosition& trc)
 {
     if ( boost::shared_ptr<IImageAccess<>> imageCube = itsImageCube.lock() ) {
-        casacore::Array<float> imgPerPlane = imageCube->read(name,blc,trc);    
+        casacore::Array<float> imgPerPlane = imageCube->read(name,blc,trc);
         // remove all the NaN from the imgPerPlane because it messes it the calculation
         // of the statistics
         casacore::Vector<float> nonMaskArray(imgPerPlane.size());
@@ -97,9 +97,9 @@ void StatsAndMask::calculate(const std::string& name, Channel channel,const casa
         Stats stats;
         if ( nonMaskArray.size() > 0 ) {
           stats = calculateImpl(channel,nonMaskArray);
-        } else { 
+        } else {
             // nonMaskArray.size() == 0 if the image plane is masked or contains NaN pixels
-            // in this case, dont use nonMaskArray 
+            // in this case, dont use nonMaskArray
             stats = calculateImpl(channel,imgPerPlane);
         }
         itsStatsPerChannelMap.insert(std::make_pair(channel,stats));
@@ -107,7 +107,7 @@ void StatsAndMask::calculate(const std::string& name, Channel channel,const casa
 }
 
 /// @brief calculates the per plane statistics
-/// @param[in] name - name of image cube
+/// @param[in] name - name of image cube (unused!)
 /// @param[in] channel - chanel of the image where the statistics are to be calculated
 /// @param[in] arr - the channel image where the statistics are calculated
 void StatsAndMask::calculate(const std::string& name, Channel channel, const casacore::Array<float>& arr)
@@ -211,13 +211,14 @@ void StatsAndMask::receiveStats(const std::set<unsigned int>& excludedRanks)
             continue;
         }
         int source = rank;
-        // first read the message size    
+        // first read the message size
         unsigned char* msgSizebuffer[sizeof(unsigned long)];
         itsComms.receive(msgSizebuffer,sizeof(unsigned long),source);
         unsigned long msgSize;
         std::memcpy(reinterpret_cast<void *>(&msgSize),msgSizebuffer,sizeof(unsigned long));
         // check that msgSize is a multiple of sizeof(Stats)
-        ASKAPCHECK((msgSize % sizeof(Stats)) == 0, 
+        ASKAPLOG_INFO_STR(logger,"received message of size "<<msgSize<<" from rank "<<source);
+        ASKAPCHECK((msgSize % sizeof(Stats)) == 0,
                     "StatsAndMask::receiveStats: msgSize is a multiple of sizeof(Stats)");
         // ASKAPLOG_INFO_STR(logger,"node: " << itsComms.nodeName() << ", rank: " << itsComms.rank() << " - number of stats objects received: " << msgSize/sizeof(Stats));
         // now read the stats but nothing to read if msgSize == 0
@@ -231,7 +232,7 @@ void StatsAndMask::receiveStats(const std::set<unsigned int>& excludedRanks)
                 Stats s;
                 //std::memcpy(reinterpret_cast<void *>(&s),buffer.get(),sizeof(Stats));
                 std::memcpy(reinterpret_cast<void *>(&s),ptr,sizeof(Stats));
-                ASKAPLOG_INFO_STR(logger,"node: " << itsComms.nodeName() << ", rank: " << itsComms.rank() 
+                ASKAPLOG_INFO_STR(logger,"node: " << itsComms.nodeName() << ", rank: " << itsComms.rank()
                                 << " - Received stats from channel: " << s.channel);
 
                 itsStatsPerChannelMap.insert(std::make_pair(s.channel,s));
@@ -250,14 +251,14 @@ void StatsAndMask::receiveStats(const std::set<unsigned int>& excludedRanks)
 void StatsAndMask::sendStats(int destRank)
 {
     auto mapSize = itsStatsPerChannelMap.size();
-    auto msgSize = static_cast<unsigned long> (mapSize * sizeof(Stats)); 
-    
+    auto msgSize = static_cast<unsigned long> (mapSize * sizeof(Stats));
+
     // send the message size
     unsigned char* msgSizebuffer[sizeof(unsigned long)];
     std::memcpy(msgSizebuffer,reinterpret_cast<void *>(&msgSize),sizeof(unsigned long));
     itsComms.send(msgSizebuffer,sizeof(unsigned long),destRank);
 
-    ASKAPLOG_INFO_STR(logger,"rank: " << itsComms.rank() << " sends  " 
+    ASKAPLOG_INFO_STR(logger,"rank: " << itsComms.rank() << " sends  "
                         << msgSize << " bytes to rank " << destRank);
     // if the map is empty then got nothing to send
     if ( msgSize > 0 ) {
@@ -320,7 +321,7 @@ void StatsAndMask::writeStatsToImageTable(const std::string& name)
         const auto& statsPerChan = kvp.second;
         chanVect[index] = statsPerChan.channel;
         freqVect[index] = statsPerChan.freq;
-        
+
         rmsVect[index] = statsPerChan.rms;
         stdVect[index] = statsPerChan.std;
         meanVect[index] = statsPerChan.mean;
@@ -355,7 +356,7 @@ void StatsAndMask::writeStatsToImageTable(const std::string& name)
     units[7] = "mJy/beam";
     units[8] = "mJy/beam";
     units[9] = "mJy/beam";
-    statsTable.define("Units",units); 
+    statsTable.define("Units",units);
 
     statsRecord.defineRecord("ImgStats",statsTable);
 
@@ -411,16 +412,16 @@ void StatsAndMask::writeStatsToFile(const std::string& catalogue)
             ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.maxval;
             ofile << std::endl;
         }
-        
+
         ofile.close();
-    }    
+    }
 }
 
 /// @brief this method masks the channels in the image cube if they dont meet the user
 ///        defined thresholds. It is based very much on the code in the maskBadChannels.cc
-void StatsAndMask::maskBadChannels(const std::string& image, float threshold, float badMADFM, 
-                                   bool maskBlank, bool useSignificance, bool useNoise, 
-                                   bool editStats, bool editImage, 
+void StatsAndMask::maskBadChannels(const std::string& image, float threshold, float badMADFM,
+                                   bool maskBlank, bool useSignificance, bool useNoise,
+                                   bool editStats, bool editImage,
                                    const std::string& outputStats, int master)
 {
     // only do the masking on the master rank
@@ -476,7 +477,7 @@ void StatsAndMask::maskBadChannels(const std::string& image, float threshold, fl
                 maskChannel = maskChannel || (maskBlank && isBlank);
                 maskChannel = maskChannel || (useSignificance && isHighSig);
                 maskChannel = maskChannel || (useNoise && isBadNoise);
-                
+
                 if ( maskChannel ) {
                     if (isBlank) {
                         ASKAPLOG_INFO_STR(logger, "Blank Channel #" << statsPerChan.channel << ": std = "<<statsPerChan.std);
@@ -579,8 +580,8 @@ void StatsAndMask::writeStatsToImageTable(askapparallel::AskapParallel &comms,
         return;
     }
 
-    if ( (imgName.find("taylor.0") != std::string::npos) || 
-         (imgName.find("taylor") == std::string::npos) ) { 
+    if ( (imgName.find("taylor.0") != std::string::npos) ||
+         (imgName.find("taylor") == std::string::npos) ) {
         // Stats is only done for taylor.0 image if nterms > 1
         // the iacc is created on the stack so we dont want iaccPtr to delete it when
         // it goes out of scope and hence contruct it with NullDeleter
@@ -600,7 +601,7 @@ void StatsAndMask::writeStatsToImageTable(askapparallel::AskapParallel &comms,
         }
         stats.writeStatsToImageTable(imgName);
         if ( statsFile != "" ) {
-           stats.writeStatsToFile(imgName+"_"+statsFile); 
+           stats.writeStatsToFile(imgName+"_"+statsFile);
         }
     }
 }

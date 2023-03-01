@@ -1236,7 +1236,10 @@ void ContinuumWorker::processChannels()
         rootImager.params()->addComplexVector("pcf.slice",pcfVec);
         ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
         casacore::Array<casacore::Complex> psfarr = rootImager.getPSFGrid();
+        ASKAPLOG_INFO_STR(logger,"Adding psfgrid #1");
+
         casacore::Vector<casacore::Complex> psfVec(psfarr.reform(IPosition(1,psfarr.nelements())));
+        ASKAPLOG_INFO_STR(logger,"Adding psfgrid #2");
         rootImager.params()->addComplexVector("psfgrid.slice",psfVec);
       }
 
@@ -1502,13 +1505,24 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
       }
   }
 
-  // Write the grids
+  // Write the grids - we write all or none, so only need to set gridShape once
+  IPosition gridShape;
   if (params->has("grid.slice") && (itsVisGridCube||itsVisGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("grid.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(params->shape("psf.slice")));
+    ASKAPLOG_INFO_STR(logger,"grid.slice shape= "<<params->shape("grid.slice"));
+    // turns out we don't always have psf.slice, so need some alternative way to get shape
+    if (params->has("psf.slice")) {
+        gridShape = params->shape("psf.slice");
+    } else if (itsVisGridCubeReal) {
+        gridShape = itsVisGridCubeReal->imageHandler()->shape(itsVisGridCubeReal->filename()).getFirst(2);
+    } else {
+        gridShape = itsVisGridCube->imageHandler()->shape(itsVisGridCube->filename()).getFirst(2);
+    }
+    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing Vis Grid and writing it as a real image");
       askap::scimath::fft2d(grid,false);
+      grid *= static_cast<casacore::Float>(grid.nelements());
       itsVisGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
     } else {
       if (itsGridType == "casa") {
@@ -1523,10 +1537,11 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
   if (params->has("pcf.slice") && (itsPCFGridCube||itsPCFGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("pcf.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(params->shape("psf.slice")));
+    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing PCF Grid and writing it as a real image");
       askap::scimath::fft2d(grid,false);
+      grid *= static_cast<casacore::Float>(grid.nelements());
       itsPCFGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
 
     } else {
@@ -1542,10 +1557,11 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
   if (params->has("psfgrid.slice") && (itsPSFGridCube||itsPSFGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("psfgrid.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(params->shape("psf.slice")));
+    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing PSF Grid and writing it as a real image");
       askap::scimath::fft2d(grid,false);
+      grid *= static_cast<casacore::Float>(grid.nelements());
       itsPSFGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
     } else {
       if (itsGridType == "casa") {
@@ -1738,7 +1754,6 @@ void ContinuumWorker::logWeightsInfo()
           if (itsResidualCube) {
             itsResidualCube->setInfo(wtInfo);
           }
-          // TODO: which other images should have the weights?
         }
     }
   }

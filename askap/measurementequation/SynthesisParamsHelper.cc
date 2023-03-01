@@ -938,13 +938,13 @@ namespace askap
             casacore::Array<casacore::Complex> Agrid(image.shape());
             casacore::ArrayLattice<casacore::Complex> Lgrid(Agrid);
 
-            // copy image into a complex scratch space
-            casacore::convertArray<casacore::Complex,float>(Agrid, image);
-
             // renormalise based on the imminent padding
             if (norm) {
-                Agrid *= static_cast<float>(osfactor*osfactor);
+                image *= static_cast<float>(osfactor*osfactor);
             }
+
+            // copy image into a complex scratch space
+            casacore::convertArray<casacore::Complex,float>(Agrid, image);
 
             // fft to uv
             casacore::LatticeFFT::cfft2d(Lgrid, casacore::True);
@@ -1542,7 +1542,7 @@ namespace askap
            // we have to figure out the name
            psfName = findPSF(ip);
        }
-       ASKAPCHECK(psfName != "", "Unable to find psf paramter to fit, params="<<ip);
+       ASKAPCHECK(psfName != "", "Unable to find psf parameter to fit, params="<<ip);
        ASKAPLOG_INFO_STR(logger, "Fitting 2D Gaussian into PSF parameter "<<psfName);
 
        casacore::Array<imtype> psfArray = ip.valueT(psfName);
