@@ -28,6 +28,8 @@
 /// @author Max Voronkov <maxim.voronkov@csiro.au>
 
 #include <askap/gridding/ConjugatesAdderFFT.h>
+#include <askap/gridding/RobustUVWeightCalculator.h>
+#include <askap/gridding/CompositeUVWeightCalculator.h>
 #include <cppunit/extensions/HelperMacros.h>
 
 
@@ -39,6 +41,8 @@ class UVWeightCalculatorTest : public CppUnit::TestFixture
 {
    CPPUNIT_TEST_SUITE(UVWeightCalculatorTest);
    CPPUNIT_TEST(testConjugatesAdderFFT);
+   CPPUNIT_TEST(testRobustWeights);
+   CPPUNIT_TEST(testCompositeUVWeightCalculator);
    CPPUNIT_TEST_SUITE_END();
 public:
 
@@ -55,10 +59,70 @@ public:
         for (casacore::uInt pt = 0; pt < 4; ++pt) {
              // factor of 2 still remains because we added conjugates as opposed to just taking the real part, so this way of doing it preserves the values
              CPPUNIT_ASSERT_DOUBLES_EQUAL(2.f*pt/6, buf(pos[pt][0], pos[pt][1]), 1e-6);
-             // check conjugates as well (note, we don't have 0th row or column which do not have conjugates with even-sized grids)
+             // check conjugates as well (note, we didn't simulate any point on the 0th row or column which do not have conjugates with even-sized grids)
              CPPUNIT_ASSERT_DOUBLES_EQUAL(2.f*pt/6, buf(512 - pos[pt][0], 512 - pos[pt][1]), 1e-6);
         }
    }
+
+   void testRobustWeights() {
+        casacore::Matrix<float> buf(512, 512, 0.f);
+
+        for (casacore::uInt row = 0; row < buf.nrow(); ++row) {
+             const float x = (static_cast<float>(row) - buf.nrow() / 2) / 2. / 100.;
+             for (casacore::uInt col = 0; col < buf.ncolumn(); ++col) {
+                  const float y = (static_cast<float>(col) - buf.ncolumn() / 2) / 2. / 130.;
+                  buf(row, col) = exp(x*x + y*y);
+             }
+        }
+        
+        RobustUVWeightCalculator calc(-2.);
+        calc.process(buf);
+        // need to check the result
+   }
+
+   void testCompositeUVWeightCalculator() {
+        casacore::Matrix<float> buf(128, 128, 0.f);
+
+        CompositeUVWeightCalculator calc;
+        boost::shared_ptr<DummyUVWeightCalculator> dummy1(new DummyUVWeightCalculator(1., 2.));
+        boost::shared_ptr<DummyUVWeightCalculator> dummy2(new DummyUVWeightCalculator(2., 3.));
+        boost::shared_ptr<DummyUVWeightCalculator> dummy3(new DummyUVWeightCalculator(-1., 0.5));
+        calc.add(dummy1);
+        calc.add(dummy2);
+        calc.add(dummy3);
+        calc.process(buf);
+        for (casacore::uInt row = 0; row < buf.nrow(); ++row) {
+             for (casacore::uInt col = 0; col < buf.ncolumn(); ++col) {
+                  CPPUNIT_ASSERT_DOUBLES_EQUAL(5.5f, buf(row,col), 1e-6);
+             }
+        }
+   }
+
+private:
+   struct DummyUVWeightCalculator : virtual public IUVWeightCalculator {
+  
+      /// @bief constructor to set up the linear transformation (add a number, multiply by another)
+      /// @details It is handy to do it this way (as opposed to simple multiplication and addition), 
+      /// so we can test the order of operations as well because in
+      /// general such operations will not commute
+      /// @param[in] add the number of to add
+      /// @param[in] mul the number to multiply by
+      explicit DummyUVWeightCalculator(float add, float mul) : itsNumber2Add(add), itsNumber2Mul(mul) {} 
+
+      /// @brief dummy processing, just adds the number it was setup with to all elements and multiplies by another one     
+      /// @param[in] wt weight to work with (it is modified in situ).
+      /// @note The shape is supposed to stay intact.
+      virtual void process(casacore::Matrix<float> &wt) const override {
+         wt += itsNumber2Add;
+         wt *= itsNumber2Mul;
+      }
+   private:
+      /// @brief dummy weight number to add
+      const float itsNumber2Add;
+
+      /// @brief dummy number to multiply by
+      const float itsNumber2Mul;
+   };
 
 };
     
