@@ -55,6 +55,7 @@
 #include <askap/deconvolution/DeconvolverHogbom.h>
 #include <askap/distributedimager/CubeBuilder.h>
 #include <askap/imageaccess/BeamLogger.h>
+#include <askap/imageaccess/WeightsLog.h>
 #include <askap/askapparallel/AskapParallel.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
 #include <askap/scimath/fft/FFTWrapper.h>
@@ -104,12 +105,15 @@ class CdeconvolverApp : public askap::Application
                        casacore::Array<casacore::Float> &dirty,
                        casacore::Array<casacore::Float> &model,
                        casacore::Array<casacore::Float> &restored,
+                       bool writeRestored,
                        float oversampling,
                        casacore::Vector<casacore::Double>& fov,
                        casacore::Vector<casacore::Quantum<double>> & beam);
 
         void initialiseBeamList(const unsigned int numChannels);
         void writeBeamInfo(askap::askapparallel::AskapParallel &comms);
+        void initialiseWeightsList(const unsigned int numChannels);
+        void writeWeightsInfo(askap::askapparallel::AskapParallel &comms);
 
         std::pair<int, int> get_channel_allocation(askap::askapparallel::AskapParallel &comms, int nchannels)
         {
@@ -160,13 +164,16 @@ class CdeconvolverApp : public askap::Application
             // Lets get the grid,pcf and psf cube names from the parset
 
             const std::vector<std::string> visGridCubeNames = subset.getStringVector("visgrid",{},true);
-            const std::vector<std::string> pcfGridCubeNames = subset.getStringVector("pcfgrid",{},true);
-            const std::vector<std::string> psfGridCubeNames = subset.getStringVector("psfgrid",{},true);
-
             uInt nCubes = visGridCubeNames.size();
             ASKAPCHECK(nCubes > 0,"No input cube provided");
-            ASKAPCHECK(psfGridCubeNames.size() == nCubes && pcfGridCubeNames.size() == nCubes,
-                "Number of inputs for grid, pcf and psf must match");
+            std::vector<std::string> psfGridCubeNames(nCubes);
+            std::vector<std::string> pcfGridCubeNames(nCubes);
+            for (int i = 0; i < nCubes; i++) {
+                psfGridCubeNames[i] = visGridCubeNames[i];
+                psfGridCubeNames[i].replace(0,3,"psf");
+                pcfGridCubeNames[i] = visGridCubeNames[i];
+                pcfGridCubeNames[i].replace(0,3,"pcf");
+            }
 
             const string imageType = subset.getString("imagetype","fits");
             // CASA images need to be written one process at a time, for fits we have a choice
@@ -178,10 +185,13 @@ class CdeconvolverApp : public askap::Application
             const bool writeResidual = subset.getBool("write.residualimage",false);
             const bool writePsf = subset.getBool("write.psfimage",false);
             const bool writeModel = subset.getBool("write.modelimage",false);
+            const bool restore = subset.getBool("restore",true);
+            const bool writeRestored = subset.getBool("write.restoredimage",restore);
+            ASKAPCHECK(writeResidual||writePsf||writeModel||writeRestored,"Need to request at least one output image");
 
             // get the calcstats flag from the parset. if it is true, then this task also calculates the image statistics
-            const bool calcstats = subset.getBool("calcstats", false);
-            // file to store the statistics
+            const bool calcstats = subset.getBool("calcstats", true);
+            // file to store the statistics (optional)
             const std::string outputStats = subset.getString("outputStats","");
 
             // Check if we're loading real/imag fits cubes
@@ -210,10 +220,6 @@ class CdeconvolverApp : public askap::Application
             }
 
             // ok lets set up some output cubes
-            const std::string outPsfCubeName = subset.getString("psf","psf");
-            const std::string outResidCubeName = subset.getString("residual","residual");
-            const std::string outModelCubeName = subset.getString("model","model");
-            const std::string outRestoredCubeName = subset.getString("restored","restored");
 
             // WorkArrays
             casacore::Array<casacore::Float> psfImage;
@@ -320,34 +326,38 @@ class CdeconvolverApp : public askap::Application
                     // create the output cubes
                     if (writePsf) {
                         itsPsfCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        nChanCube, f0, cdelt, outPsfCubeName));
+                        nChanCube, f0, cdelt, "psf.image"));
                     }
                     if (writeResidual) {
                         itsResidualCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        nChanCube, f0, cdelt, outResidCubeName));
+                        nChanCube, f0, cdelt, "residual"));
                     }
                     if (writeModel) {
                         itsModelCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        nChanCube, f0, cdelt, outModelCubeName));
+                        nChanCube, f0, cdelt, "image"));
                     }
-                    itsRestoredCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        nChanCube, f0, cdelt, outRestoredCubeName));
+                    if (writeRestored) {
+                        itsRestoredCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
+                        nChanCube, f0, cdelt, "restored"));
+                    }
                 } else {
-                    // use the coordinates of the input images
+                    // FITS case: use the coordinates of the input images
                     if (writePsf) {
                         itsPsfCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        shape, coordSys, outPsfCubeName));
+                        shape, coordSys, "psf.image"));
                     }
                     if (writeResidual) {
                         itsResidualCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        shape, coordSys, outResidCubeName));
+                        shape, coordSys, "residual"));
                     }
                     if (writeModel) {
                         itsModelCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        shape, coordSys, outModelCubeName));
+                        shape, coordSys, "image"));
                     }
-                    itsRestoredCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
-                        shape, coordSys, outRestoredCubeName));
+                    if (writeRestored) {
+                        itsRestoredCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,
+                        shape, coordSys, "restored"));
+                    }
                 }
                 initialiseBeamList(nChanCube);
                 initialiseWeightsList(nChanCube);
@@ -356,29 +366,28 @@ class CdeconvolverApp : public askap::Application
                 // this should work fine as the cubes will exist by the time
                 // they are needed.
                 if (writePsf) {
-                    itsPsfCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,outPsfCubeName));
+                    itsPsfCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,"psf.image"));
                 }
                 if (writeResidual) {
-                    itsResidualCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,outResidCubeName));
+                    itsResidualCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,"residual"));
                 }
                 if (writeModel) {
-                    itsModelCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,outModelCubeName));
+                    itsModelCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,"image"));
                 }
-                itsRestoredCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,outRestoredCubeName));
+                if (writeRestored) {
+                    itsRestoredCube.reset(new askap::cp::CubeBuilder<casacore::Float>(subset,"restored"));
+                }
             }
 
-            // built the output cube for this image, all wait until done (for parallel write)
+            // built the output cubes for this image, all wait until done (for parallel write)
             if (!serialWrite) {
                 comms.barrier();
             }
 
 
-            // create a stats object for this image. It is a bit messy. The StatsAndMask class requires a shared_ptr for the
-            // IImageAccess so we have to create a shared pointer from iacc. Also, we dont want this shared pointer to delete
-            // the object (iacc) when it goes out of scope
-            //boost::shared_ptr<askap::accessors::IImageAccess<>> iaccPtr;
+            // create a stats object for this image.
             askap::utils::StatsAndMask statsAndMask(comms);
-            if ( calcstats ) {
+            if ( calcstats && itsRestoredCube) {
               statsAndMask.set(itsRestoredCube->filename(),itsRestoredCube->imageHandler());
             }
 
@@ -403,6 +412,7 @@ class CdeconvolverApp : public askap::Application
                 // assumes pol, chan are axis 2 and 3
                 inblc[3] = channel;
                 intrc[3] = channel;
+                ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
 
                 if (combineRealImag) {
                     psfGrid = casacore::makeComplex(iaccF->read(psfGridCubeNames[0]+".real",inblc,intrc),
@@ -479,7 +489,7 @@ class CdeconvolverApp : public askap::Application
                     casacore::Array<casacore::Float> model;
                     casacore::Array<casacore::Float> restored;
                     casacore::Vector<casacore::Quantum<double>> beam(3);
-                    doTheWork(subset, dirtyIn, psfIn, pcfIn, psfOut, dirty, model, restored, oversampling, fov, beam);
+                    doTheWork(subset, dirtyIn, psfIn, pcfIn, psfOut, dirty, model, restored, writeRestored, oversampling, fov, beam);
                     itsBeamList[channel] = beam;
 
                     if (serialWrite) {
@@ -508,14 +518,15 @@ class CdeconvolverApp : public askap::Application
                     if (writeModel) {
                         itsModelCube->writeRigidSlice(model, channel);
                     }
-                    itsRestoredCube->writeRigidSlice(restored, channel);
-
+                    if (writeRestored) {
+                        itsRestoredCube->writeRigidSlice(restored, channel);
+                    }
                     if (serialWrite) {
                       int buf = 0;
                       const int to = (comms.rank() == comms.nProcs()-1 ? 0 : comms.rank()+1);
                       comms.send((void *) &buf,sizeof(int),to);
                     }
-                    if ( calcstats ) {
+                    if ( calcstats && writeRestored) {
                       statsAndMask.calculate("",channel,restored);
                     }
                 }
@@ -528,7 +539,7 @@ class CdeconvolverApp : public askap::Application
                 comms.receive((void *) &buf,sizeof(int),from);
             }
 
-            if ( calcstats ) {
+            if ( calcstats && writeRestored ) {
               // Since the processing of the image channels is distributed among the MPI ranks,
               // the master has to collect all the stats from the worker ranks prior to writing
               // the stats to the image table
@@ -539,16 +550,13 @@ class CdeconvolverApp : public askap::Application
                     statsAndMask.writeStatsToFile(outputStats);
                 }
               } else {
-                ASKAPLOG_INFO_STR(logger,"Rank "<<comms.rank()<<" sending stats now");
                 statsAndMask.sendStats();
-                ASKAPLOG_INFO_STR(logger,"Rank "<<comms.rank()<<" done sending stats now");
               }
             }
 
             writeBeamInfo(comms);
             writeWeightsInfo(comms);
             stats.logSummary();
-            writeBeamInfo(comms);
             comms.barrier();
             return 0;
         }
@@ -585,12 +593,13 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
                                 casacore::Array<casacore::Float> &dirtyOut,
                                 casacore::Array<casacore::Float> &model,
                                 casacore::Array<casacore::Float> &restored,
+                                bool writeRestored,
                                 float oversampling,
                                 casacore::Vector<casacore::Double>& fov,
                                 casacore::Vector<casacore::Quantum<double>> & beam)
 {
 
-    ASKAPLOG_INFO_STR(logger,"Array Shape: " << dirtyIn.shape());
+    ASKAPLOG_DEBUG_STR(logger,"Array Shape: " << dirtyIn.shape());
 
     // Convolution correction probably should pull the support from the PARSET
     // alpha is usually 1
@@ -598,6 +607,8 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     int alpha = 1;
     int support = 3;
     scimath::SpheroidalFunction sf(casacore::C::pi*support, alpha);
+    const double cutoff = subset.getDouble("restore.beam.cutoff",0.5);
+    const int maxsupport = subset.getInt("restore.beam.maxsupport",101);
 
 
     #ifdef ASKAP_FLOAT_IMAGE_PARAMS
@@ -688,11 +699,8 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
 
                 }
 
-                bool isPsfSize = subset.getBool("preconditioner.GaussianTaper.isPsfSize",False);
-                double tol = subset.getDouble("preconditioner.GaussianTaper.tolerance",0.005);
-                // Try to use the same cutoff as used by the restore solver so final beams will match
-                double cutoff = subset.getDouble("restore.beam.cutoff",0.5);
-                int maxsupport = subset.getInt("restore.beam.maxsupport",101);
+                const bool isPsfSize = subset.getBool("preconditioner.GaussianTaper.isPsfSize",False);
+                const double tol = subset.getDouble("preconditioner.GaussianTaper.tolerance",0.005);
 
                 /*
                  * leave this unless needed
@@ -828,25 +836,56 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
         }
     }
 
-    // Fit the PSF and set restoring beam in Deconvolver
-    double cutoff = subset.getDouble("restore.beam.cutoff",0.5);
-    int maxsupport = subset.getInt("restore.beam.maxsupport",101);
-    ASKAPLOG_INFO_STR(logger, "Fitting restoring beam");
-    casacore::Vector<double> result = SynthesisParamsHelper::fitBeam(psfIn, cutoff, maxsupport);
-    ASKAPDEBUGASSERT(result.size() == 3);
-    // Deconvolver wants pixels and degrees for beam
-    cleanset.replace("beam","["+std::to_string(result[0])+","+std::to_string(result[1])+","+std::to_string(result[2]/C::pi * 180.0)+"]");
-    // tortured way to get the (oversampled) cellsize of the output
-    casacore::Vector<casacore::Double> increments = itsRestoredCube->imageHandler()->coordSys(itsRestoredCube->filename()).directionCoordinate().increment();
-    // now convert to arcsec & sky PA in deg (code from SynthesisParamsHelper)
-    beam[0] = casacore::Quantum<double>(fabs(increments[0])*result[0],"rad").get("arcsec");
-    beam[1] = casacore::Quantum<double>(fabs(increments[1])*result[1],"rad").get("arcsec");
-    double pa = increments[0]<0 ? result[2] : -result[2];
-    if (pa < -casacore::C::pi/2) {
-        pa += casacore::C::pi;
+    // tortured way to get the (oversampled) cellsize of the output cubes (only one has to exist)
+    casacore::Vector<casacore::Double> increments;
+    if (itsRestoredCube) {
+        increments = itsRestoredCube->imageHandler()->coordSys(itsRestoredCube->filename()).directionCoordinate().increment();
+    } else if (itsResidualCube) {
+        increments = itsResidualCube->imageHandler()->coordSys(itsResidualCube->filename()).directionCoordinate().increment();
+    } else if (itsModelCube) {
+        increments = itsModelCube->imageHandler()->coordSys(itsModelCube->filename()).directionCoordinate().increment();
+    } else if (itsPsfCube) {
+        increments = itsPsfCube->imageHandler()->coordSys(itsPsfCube->filename()).directionCoordinate().increment();
+    } else {
+        ASKAPTHROW(AskapError, "Cannot determine output image increments");
     }
-    beam[2] = casacore::Quantum<double>(pa,"rad").get("deg");
-    ASKAPLOG_INFO_STR(logger, "Restore will convolve with the 2D gaussian: " << beam);
+
+    // Fit the PSF and set restoring beam in Deconvolver
+    if (writeRestored) {
+        const vector<string> beampar = subset.getStringVector("restore.beam");
+        if (beampar.size() == 1) {
+            ASKAPCHECK(beampar[0] == "fit",
+                "beam parameter should be either equal to 'fit' or contain 3 elements defining the beam size."<<
+                " You have "<<beampar[0]);
+            ASKAPLOG_INFO_STR(logger, "Fitting restoring beam");
+            casacore::Vector<double> result = SynthesisParamsHelper::fitBeam(psfIn, cutoff, maxsupport);
+            ASKAPDEBUGASSERT(result.size() == 3);
+            // Deconvolver wants pixels and degrees for beam
+            cleanset.replace("beam","["+std::to_string(result[0])+","+std::to_string(result[1])+","+std::to_string(result[2]/C::pi * 180.0)+"]");
+            // now convert to arcsec & sky PA in deg (code from SynthesisParamsHelper)
+            beam[0] = casacore::Quantum<double>(fabs(increments[0])*result[0],"rad").get("arcsec");
+            beam[1] = casacore::Quantum<double>(fabs(increments[1])*result[1],"rad").get("arcsec");
+            double pa = increments[0]<0 ? result[2] : -result[2];
+            if (pa < -casacore::C::pi/2) {
+                pa += casacore::C::pi;
+            }
+            beam[2] = casacore::Quantum<double>(pa,"rad").get("deg");
+
+        } else {
+            ASKAPCHECK(beampar.size() == 3, "Need three elements for beam or a single word 'fit'. You have "<<subset.getString("restore.beam"));
+            for (int i=0; i<3; ++i) {
+                casacore::Quantity::read(beam(i), beampar[i]);
+            }
+            // convert to pixels for deconvolver
+            cleanset.replace("beam","["+std::to_string(beam[0].get("rad").getValue()/fabs(increments[0]))+","+
+                std::to_string(beam[1].get("rad").getValue()/increments[1])+","+std::to_string(beam[2].get("rad").getValue())+"]");
+
+        }
+        ASKAPLOG_INFO_STR(logger, "Restore will convolve with the 2D gaussian: " << beam);
+    } else {
+        // deconvolver wants a beam even if we're not restoring
+        cleanset.replace("beam","[0,0,0]");
+    }
 
     ASKAPLOG_INFO_STR(logger,"Configure deconvolver");
     deconvolver->configure(cleanset);
@@ -856,65 +895,62 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
 
     dirtyOut = deconvolver->dirty();
     model = deconvolver->model();
-    ASKAPLOG_INFO_STR(logger,"After deconvolution: Peak of model    : "<<max(model));
-    ASKAPLOG_INFO_STR(logger,"                     Peak of residuals: "<<max(dirtyOut));
-
+    ASKAPLOG_INFO_STR(logger,"After deconvolution: Peak of model    : "<<max(model)<<", Peak of residuals: "<<max(dirtyOut));
 
     psfOut = psfIn;
 
-
-    // this was set by "name" for facets, but surely it should be equal for all facets
-    casacore::Vector< casacore::Array<casacore::Float> > restored_vec(1); // sometimes there is more than one restored image
-    ASKAPLOG_INFO_STR(logger,"Restore the model");
-    if(deconvolver->restore(restored_vec)) {
-        restored = restored_vec(0);
+    if (writeRestored) {
+        // this was set by "name" for facets, but surely it should be equal for all facets
+        casacore::Vector< casacore::Array<casacore::Float> > restored_vec(1); // sometimes there is more than one restored image
+        ASKAPLOG_INFO_STR(logger,"Restore the model");
+        if(deconvolver->restore(restored_vec)) {
+            restored = restored_vec(0);
+        }
     }
 }
 
 void CdeconvolverApp::writeBeamInfo(askap::askapparallel::AskapParallel &comms)
 {
-    askap::accessors::BeamLogger beamlog;
-    ASKAPLOG_INFO_STR(logger, "Channel-dependent restoring beams will be written to image " << itsRestoredCube->filename());
-    beamlog.beamlist() = itsBeamList;
-    if (comms.nProcs() > 1) {
-      beamlog.gather(comms, 0, true);
-    }
+    if (itsRestoredCube) {
+        askap::accessors::BeamLogger beamlog;
+        beamlog.beamlist() = itsBeamList;
+        if (comms.nProcs() > 1) {
+          beamlog.gather(comms, 0, true);
+        }
 
-    if (comms.isMaster()) {
-        if (itsRestoredCube) {
-              ASKAPLOG_DEBUG_STR(logger, "Writing list of individual channel beams to image file");
-              itsRestoredCube->addBeamList(beamlog.beamlist());
+        if (comms.isMaster()) {
+            ASKAPLOG_INFO_STR(logger, "Channel-dependent restoring beams will be written to image " << itsRestoredCube->filename());
+            itsRestoredCube->addBeamList(beamlog.beamlist());
 
             if (itsParset.getString("imagetype") == "fits") {
               // can't write ref beam to casa image if per channel beams are stored
               ASKAPLOG_DEBUG_STR(logger, "Writing reference restoring beam to header of restored cube");
               casa::Vector<casa::Quantum<double> > refbeam = beamlog.beam(itsBeamReferenceChannel);
               itsRestoredCube->addBeam(refbeam);
-          } else {
+            } else {
               itsRestoredCube->setUnits("Jy/beam");
-          }
+            }
         }
     }
 }
 void CdeconvolverApp::writeWeightsInfo(askap::askapparallel::AskapParallel &comms)
 {
     askap::accessors::WeightsLog weightsLog;
-    ASKAPLOG_INFO_STR(logger, "Channel-dependent weights will be written to image " << itsRestoredCube->filename());
-    weightsLog.weightslist() = itsWeightStateList;
+    weightsLog.weightslist() = itsWeightsList;
     if (comms.nProcs() > 1) {
       weightsLog.gather(comms, 0, true);
     }
 
     if (comms.isMaster()) {
-        ASKAPLOG_INFO_STR(logger, "Writing list of individual channel weights to image extension");
         casacore::Record wtInfo = weightsLog.toRecord();
         if (itsRestoredCube) {
-          itsRestoredCube->setInfo(wtInfo);
+            ASKAPLOG_INFO_STR(logger, "Channel-dependent weights will be written to image " << itsRestoredCube->filename());
+            itsRestoredCube->setInfo(wtInfo);
         }
         if (itsResidualCube) {
-          itsResidualCube->setInfo(wtInfo);
+            ASKAPLOG_INFO_STR(logger, "Channel-dependent weights will be written to image " << itsResidualCube->filename());
+            itsResidualCube->setInfo(wtInfo);
         }
-
     }
 }
 
