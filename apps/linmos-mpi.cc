@@ -58,6 +58,13 @@ using ImageBlcTrcMapT =  std::map<std::string,std::pair<casacore::IPosition,casa
 // the pair is <channel weight pixel, max channel weight pixel>
 using MaxWgtPerChannelMapT = std::map<int,float>;
 
+/// @brief This function returns the weight pixel of a channel
+/// @param[in] accumulator - object that provides functions which are heavily utilised by this task
+/// @param[in] iacc - image access object
+/// @param[in] inImgName - name of the input image
+/// @param[in] inWgtName - name of the weight image
+/// @param[in] channel - the channel of the weight pixel
+/// @param[out] inWgtPix - the weight pixel
 static void loadWgtImage(imagemath::LinmosAccumulator<float>& accumulator,
                          const accessors::IImageAccess<casacore::Float>& iacc,
                          const std::string& inImgName,
@@ -124,6 +131,18 @@ getBlcTrc(const bool trimming,
   }
 }
 
+/// @brief This function calculates the maximum weight pixel of each channel
+/// @details This function iterates over the weight files and determines the
+///          maximum weight pixel for each channel. The result is stored in
+///          a map (maxWgtPerChannelMap). The key of the map is the channel
+///          and the value is the max weight pixel.
+/// @param[in] comms - mpi communicator
+/// @param[in] accumulator - object that provides functions which are heavily utilised by this task
+/// @param[in] iacc - image access object
+/// @param[in] inImgNames - a list of input images
+/// @param[in] inWgtNames - a list of weight images
+/// @param[in] channel - the channel of the weight pixel
+/// @param[out] maxWgtPerChannelMap - contains a map of channel and max weight pixel.
 static void calcMaxWgtPerChannels(askap::askapparallel::AskapParallel &comms,
                                imagemath::LinmosAccumulator<float>& accumulator,
                                const accessors::IImageAccess<casacore::Float>& iacc,
@@ -218,28 +237,37 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
                                          ImageBlcTrcMapT& imageBlcTrcMap,bool useWgtLog)
 {
   const float cutoff = parset.getFloat("cutoff",0.01);
+  const float beamPackingFactor = parset.getFloat("beampackingfactor",2.0);
 
   // used to store the min and max of the x and y dimension of the input image planes/channels
   std::vector<int> xMinMaxVect;
   std::vector<int> yMinMaxVect;
 
+  // calculates the maximum weight pixel for each channel
   for (int channel = firstChannel; channel <= lastChannel; channel += channelInc) {
     float scaledCutoff = cutoff;
     if (useWgtLog) {
       float inWgtPix = 0.0;
       loadWgtImage(accumulator,iacc,inImgName,inWgtName,channel,inWgtPix);
+      ASKAPCHECK(maxWgtPerChannelMap.find(channel) != maxWgtPerChannelMap.end() || maxWgtPerChannelMap[channel] != 0.0,
+                 "Channel: " << channel << " is not found or it has 0 max weight pixel");
       const float maxWgt = maxWgtPerChannelMap[channel];
-      scaledCutoff = (inWgtPix == 0 ? 0 : cutoff * sqrt(maxWgt/inWgtPix));
+      scaledCutoff = (inWgtPix == 0 ? 0 : cutoff * sqrt(beamPackingFactor * maxWgt/inWgtPix));
+      if ( comms.isMaster() ) {
+        ASKAPLOG_INFO_STR(logger,"channel: " << channel 
+                          << "; scaledCutoff: " << scaledCutoff
+                          << "; inWgtPix: << " << inWgtPix
+                          << "; maxWgt: " << maxWgt);
+      }
     }
-
 
     int xmin = -1;
     int xmax = -1;
     int ymin = -1;
     int ymax = -1;
     if ( scaledCutoff != 0 ) {
-      // scaledCutoff is 0 if the weight pixel of the channel is 0 (ie no valid data)
-      // 
+      // scaledCutoff is 0 if the weight pixel of the channel is 0 (ie no valid data).
+      // Hence, we dont need to calculate min and max for this channel
       CoordinateSystem coordSys = iacc.coordSys(inImgName);
       casacore::IPosition shape = iacc.shape(inImgName);
       accumulator.calcWeightInputShape(coordSys,shape,beamCentreIndex,
@@ -277,9 +305,8 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
   yMinMaxVect.resize(0);
   // xMinMaxVect and yMinMaxVect contains the smallest and largest min and max values belonged
   // to this rank
-  //std::cout << "smallestX = " << smallestX << "; smallestY = " << smallestY
-  //          << "; largestX = " << largestX << "; largestY = " << largestY << std::endl;
   if ( smallestX != -1 && largestX != -1 && smallestY != -1 && largestY != -1 ) {
+    // only interested in channels that have valid smallest and largest x and y 
     xMinMaxVect.push_back(smallestX);
     xMinMaxVect.push_back(largestX);
     yMinMaxVect.push_back(smallestY);
