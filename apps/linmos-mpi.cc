@@ -232,13 +232,21 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
                                          const std::string& inWgtName,
                                          const int firstChannel, const int lastChannel,
                                          const int channelInc, const int nchanCube,
+                                         const int numberOfInImg,
                                          const int beamCentreIndex,
                                          MaxWgtPerChannelMapT& maxWgtPerChannelMap,
-                                         ImageBlcTrcMapT& imageBlcTrcMap,bool useWgtLog)
+                                         ImageBlcTrcMapT& imageBlcTrcMap,
+                                         const bool useWgtLog)
 {
   const float cutoff = parset.getFloat("cutoff",0.01);
-  const float beamPackingFactor = parset.getFloat("beampackingfactor",2.0);
+  float beamPackingFactor = 1.0;
 
+  if ( parset.isDefined("beampackingfactor") ) {
+    beamPackingFactor = parset.getFloat("beampackingfactor");
+  } else if (numberOfInImg >= 36) {
+    beamPackingFactor = 1.4;
+  }
+  
   // used to store the min and max of the x and y dimension of the input image planes/channels
   std::vector<int> xMinMaxVect;
   std::vector<int> yMinMaxVect;
@@ -250,14 +258,14 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
       float inWgtPix = 0.0;
       loadWgtImage(accumulator,iacc,inImgName,inWgtName,channel,inWgtPix);
       ASKAPCHECK(maxWgtPerChannelMap.find(channel) != maxWgtPerChannelMap.end() || maxWgtPerChannelMap[channel] != 0.0,
-                 "Channel: " << channel << " is not found or it has 0 max weight pixel");
+               "Channel: " << channel << " is not found or it has 0 max weight pixel");
       const float maxWgt = maxWgtPerChannelMap[channel];
-      scaledCutoff = (inWgtPix == 0 ? 0 : cutoff * sqrt(beamPackingFactor * maxWgt/inWgtPix));
+      scaledCutoff = (inWgtPix == 0 ? 0 : cutoff * beamPackingFactor * sqrt(maxWgt/inWgtPix));
       if ( comms.isMaster() ) {
         ASKAPLOG_INFO_STR(logger,"channel: " << channel 
-                          << "; scaledCutoff: " << scaledCutoff
-                          << "; inWgtPix: << " << inWgtPix
-                          << "; maxWgt: " << maxWgt);
+                        << "; scaledCutoff: " << scaledCutoff
+                        << "; inWgtPix: << " << inWgtPix
+                        << "; maxWgt: " << maxWgt);
       }
     }
 
@@ -409,7 +417,8 @@ static void findBoundingBoxes(const LOFAR::ParameterSet &parset,
                             const std::vector<string>& inWgtNames,
                             const int nchanCube, const int firstChannel, 
                             const int lastChannel, const int channelInc,
-                            ImageBlcTrcMapT& imageBlcTrcMap)
+                            ImageBlcTrcMapT& imageBlcTrcMap,
+                            ImageBlcTrcMapT& imageBlcTrcLimosShapeMap)
 {
   ASKAPLOG_INFO_STR(logger,"findBoundingBoxes");
 
@@ -425,15 +434,31 @@ static void findBoundingBoxes(const LOFAR::ParameterSet &parset,
 
   int beamCentreIndex = 0;
   int inWgtNamesIndex = 0;
+  const int numberOfInImg = inImgNames.size();
   for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
     calcMinMaxXYInputImagePlanes(parset,comms,accumulator,iacc,*it,inWgtNames[inWgtNamesIndex],
-                                 firstChannel,lastChannel,channelInc,nchanCube,
+                                 firstChannel,lastChannel,channelInc,nchanCube,numberOfInImg,
                                  beamCentreIndex,maxWgtPerChannelMap,imageBlcTrcMap,useWgtLog);
     beamCentreIndex += 1;
     inWgtNamesIndex += 1;
   }
 
   // wait for all ranks get to here
+  comms.barrier();
+
+  if ( useWgtLog ) {
+    beamCentreIndex = 0;
+    inWgtNamesIndex = 0;
+    MaxWgtPerChannelMapT unusedMap;
+    for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
+      calcMinMaxXYInputImagePlanes(parset,comms,accumulator,iacc,*it,inWgtNames[inWgtNamesIndex],
+                                 firstChannel,lastChannel,channelInc,nchanCube,numberOfInImg,
+                                 beamCentreIndex,unusedMap,imageBlcTrcLimosShapeMap,false);
+      beamCentreIndex += 1;
+      inWgtNamesIndex += 1;
+    }
+  }
+
   comms.barrier();
 }
 // @brief do the merge
@@ -454,6 +479,8 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
   const bool calcstats = parset.getBool("calcstats", false);
   // file to store the statistics
   const std::string outputStats = parset.getString("outputStats","");
+
+  const bool useWgtLog = parset.getBool("useweightslog", false);
 
   // get the list of keywords to copy from the input
   // Set some defaults for simple beam mosaic, won't be correct for more complex cases
@@ -549,6 +576,13 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
     vector<IPosition> inShapeVec;
     vector<CoordinateSystem> inCoordSysVec;
+    // if the useWgtLog is true, the vectors below store the coordinate systems and shapes of the
+    // linmos input shape. This is needed because if the useWgtLog is true, the output shape and
+    // the input shape (see setOutputParameters() and setInputParameters()) are not the same i.e
+    // in this case, we want the input shape to be at beam cutoff whereas the output shape to be
+    // at a scaled beam cutoff (1.4 * cutoff * sqrt(maxWgtPix/WgtPix) 
+    vector<IPosition> inLinmosShapeVec;
+    vector<CoordinateSystem> inLinmosCoordSysVec;
     // What fraction of the full problem does this rank
     // THe units here are channels - not polarisations.
     int numChannelsLocal = 0;
@@ -650,11 +684,12 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
     }
 
     ImageBlcTrcMapT imageBlcTrcMap;
+    ImageBlcTrcMapT imageBlcTrcLimosShapeMap;
     const bool trimming = parset.getBool("trimming",false);
     if ( trimming ) {
       if (accumulator.weightType() == FROM_BP_MODEL|| accumulator.weightType() == COMBINED) {
         findBoundingBoxes(parset,comms,accumulator,iacc,inImgNames,inWgtNames,nchanCube,
-                               firstChannel,lastChannel,channelInc,imageBlcTrcMap);
+                               firstChannel,lastChannel,channelInc,imageBlcTrcMap,imageBlcTrcLimosShapeMap);
       } else {
         ASKAPCHECK(false,"trimming is only supported for weighttype FromPrimaryBeamModel or Combined");
       }
@@ -665,6 +700,9 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       // clear the lists of input coordinates and shapes
       inCoordSysVec.clear();
       inShapeVec.clear();
+      inLinmosCoordSysVec.clear();
+      inLinmosShapeVec.clear();
+
       for (vector<string>::iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
         ASKAPLOG_INFO_STR(logger,"Processing Channel " << channel << " of input image " << *it << " which is part of output mosaick " << outImgName);
         if ( !trimming ) {
@@ -697,15 +735,29 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           const auto& blcTrcPair = imageBlcTrcMapIter->second;
           casa::IPosition tempblc = blcTrcPair.first;
           casa::IPosition temptrc = blcTrcPair.second;
+          ASKAPLOG_INFO_STR(logger,"XXXX trimmed output shape: blc = " << tempblc << "; trc = " << temptrc);
           tempblc[3] = channel;
           temptrc[3] = channel;
-          ASKAPLOG_INFO_STR(logger, "XXXX blc: " << blcTrcPair.first << ". trc: " << blcTrcPair.second);
           inCoordSysVec.push_back(iacc.coordSysSlice(*it,tempblc,temptrc));
           //casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
           casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
           trimmedShape[3] = 1;
-          ASKAPLOG_INFO_STR(logger, "YYYY trimmedShape: " << trimmedShape);
           inShapeVec.push_back(trimmedShape);    
+
+
+          const auto imageBlcTrcMapIter2 = imageBlcTrcLimosShapeMap.find(*it);
+          ASKAPCHECK(imageBlcTrcMapIter2 != imageBlcTrcLimosShapeMap.end(),"input image is not in imageBlcTrcLimosShapeMap");
+          const auto& blcTrcPair2 = imageBlcTrcMapIter2->second;
+          casa::IPosition tempblc2 = blcTrcPair2.first;
+          casa::IPosition temptrc2 = blcTrcPair2.second;
+          ASKAPLOG_INFO_STR(logger,"XXXX trimmed output shape: blc2 = " << tempblc2 << "; trc2 = " << temptrc2);
+          tempblc2[3] = channel;
+          temptrc2[3] = channel;
+          inLinmosCoordSysVec.push_back(iacc.coordSysSlice(*it,tempblc2,temptrc2));
+          //casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
+          casa::IPosition trimmedShape2 = blcTrcPair2.second - blcTrcPair2.first + 1;
+          trimmedShape2[3] = 1;
+          inLinmosShapeVec.push_back(trimmedShape2);
         }
       } // got the input shapes for this output image
 
@@ -852,7 +904,8 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
           casa::IPosition blc; 
           casa::IPosition trc;
-          getBlcTrc(trimming,iacc,inImgName,imageBlcTrcMap,blc,trc);
+          getBlcTrc(trimming,iacc,inImgName,imageBlcTrcLimosShapeMap,blc,trc);
+          ASKAPLOG_INFO_STR(logger,"YYYY trimmed Limos input shape: blc = " << blc << ", trc = " << trc);
 
           if (nchanCube < 0) {
             nchanCube = shape(3);
@@ -864,7 +917,15 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           blc[3] = channel;
           trc[3] = channel;
 
-          accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
+          if ( ! trimming ) {
+            accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
+          } else {
+            if ( useWgtLog ) {
+              accumulator.setInputParameters(inLinmosShapeVec[img], inLinmosCoordSysVec[img], img);
+            } else {
+                accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
+            }
+          }
           Array<float> inPix = iacc.read(inImgName,blc,trc);
 
 
@@ -1084,7 +1145,8 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           // accessor is needed with a unique shape. To do this, send the
           // current iterator position, rather than the iterator itself.
           accumulator.loadAndWeightInputBuffers(curpos, inPix, inWgtPix, inSenPix);
-
+          ASKAPLOG_INFO_STR(logger, " TESTING TESTING ");
+          
           if ( regridRequired ) {
             // call regrid for any buffered images
             accumulator.regrid();
