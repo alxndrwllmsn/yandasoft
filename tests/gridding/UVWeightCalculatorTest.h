@@ -32,6 +32,8 @@
 #include <askap/gridding/CompositeUVWeightCalculator.h>
 #include <cppunit/extensions/HelperMacros.h>
 
+// for saveAsCasaImage (it was needed for debugging)
+//#include <askap/scimath/utils/ImageUtils.h>
 
 namespace askap {
 
@@ -65,19 +67,45 @@ public:
    }
 
    void testRobustWeights() {
+      testRobustWeights(-2.);
+      testRobustWeights(0.);
+      testRobustWeights(+2.);
+   }
+
+   void testRobustWeights(float robustness) {
         casacore::Matrix<float> buf(512, 512, 0.f);
 
         for (casacore::uInt row = 0; row < buf.nrow(); ++row) {
-             const float x = (static_cast<float>(row) - buf.nrow() / 2) / 2. / 100.;
+             const float x = (static_cast<float>(row) - buf.nrow() / 2) / 2. / 50.;
              for (casacore::uInt col = 0; col < buf.ncolumn(); ++col) {
-                  const float y = (static_cast<float>(col) - buf.ncolumn() / 2) / 2. / 130.;
-                  buf(row, col) = exp(x*x + y*y);
+                  const float y = (static_cast<float>(col) - buf.ncolumn() / 2) / 2. / 75.;
+                  buf(row, col) = exp(-x*x - y*y);
              }
         }
+        const float avgWt = casacore::sum(buf*buf) / casacore::sum(buf);       
         
-        RobustUVWeightCalculator calc(-2.);
+        RobustUVWeightCalculator calc(robustness);
         calc.process(buf);
+
         // need to check the result
+        buf -= 1.f;
+        // normalise to simplify the comparison
+        const float peak = casacore::max(buf);       
+        CPPUNIT_ASSERT(peak > 0.);
+        buf /= peak;
+        for (casacore::uInt row = 0; row < buf.nrow(); ++row) {
+             const float x = (static_cast<float>(row) - buf.nrow() / 2) / 2. / 50.;
+             for (casacore::uInt col = 0; col < buf.ncolumn(); ++col) {
+                  const float y = (static_cast<float>(col) - buf.ncolumn() / 2) / 2. / 75.;
+                  const float expected = exp(-x*x - y*y);
+                  CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, buf(row,col), 2e-5);
+             }
+        }
+        // check normalisation factor to match formula for Robust weighting with the given robustness
+        // generous tolerance accounts for the fact that the math is done with single precision for the test
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(25.f / avgWt * pow(10., -2.*robustness), peak, 1e-4 * peak);
+        
+        //scimath::saveAsCasaImage("tst.img", buf);
    }
 
    void testCompositeUVWeightCalculator() {
