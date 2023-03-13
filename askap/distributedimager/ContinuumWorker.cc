@@ -1236,10 +1236,7 @@ void ContinuumWorker::processChannels()
         rootImager.params()->addComplexVector("pcf.slice",pcfVec);
         ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
         casacore::Array<casacore::Complex> psfarr = rootImager.getPSFGrid();
-        ASKAPLOG_INFO_STR(logger,"Adding psfgrid #1");
-
         casacore::Vector<casacore::Complex> psfVec(psfarr.reform(IPosition(1,psfarr.nelements())));
-        ASKAPLOG_INFO_STR(logger,"Adding psfgrid #2");
         rootImager.params()->addComplexVector("psfgrid.slice",psfVec);
       }
 

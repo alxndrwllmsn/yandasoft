@@ -88,9 +88,6 @@ class CdeconvolverApp : public askap::Application
         int itsBeamReferenceChannel;
         LOFAR::ParameterSet itsParset;
 
-
-        //static void correctConvolution(casacore::Array<imtype>&, int, int, bool);
-
         const bool itsInterp = true;
         static void interpolateEdgeValues(casacore::Vector<casacore::DComplex> &func);
 

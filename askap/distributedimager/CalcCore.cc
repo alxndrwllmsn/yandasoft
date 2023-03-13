@@ -228,16 +228,13 @@ casacore::Array<casacore::Complex> CalcCore::getGrid() {
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
     boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-    ASKAPLOG_INFO_STR(logger,"Dumping vis #1");
 
     // We will need to loop over all completions i.e. all sources
     const std::vector<std::string> completions(itsModel->completions("image"));
-    ASKAPLOG_INFO_STR(logger,"Dumping vis #2");
 
     std::vector<std::string>::const_iterator it=completions.begin();
     const string imageName("image"+(*it));
     boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getResidualGridder(imageName));
-    ASKAPLOG_INFO_STR(logger,"Dumping vis #3");
     return tvg->getGrid();
 }
 casacore::Array<casacore::Complex> CalcCore::getPCFGrid() {
@@ -260,15 +257,12 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() {
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
     boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-    ASKAPLOG_INFO_STR(logger,"Dumping psf #1");
 // We will need to loop over all completions i.e. all sources
     const std::vector<std::string> completions(itsModel->completions("image"));
-    ASKAPLOG_INFO_STR(logger,"Dumping psf #2");
 
     std::vector<std::string>::const_iterator it=completions.begin();
     const string imageName("image"+(*it));
     boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPSFGridder(imageName));
-    ASKAPLOG_INFO_STR(logger,"Dumping psf #3");
     ASKAPCHECK(tvg,"PSFGridder not defined")
 
     return tvg->getGrid();

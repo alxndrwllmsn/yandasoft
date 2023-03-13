@@ -107,7 +107,7 @@ void StatsAndMask::calculate(const std::string& name, Channel channel,const casa
 }
 
 /// @brief calculates the per plane statistics
-/// @param[in] name - name of image cube (unused!)
+/// @param[in] name - name of image cube
 /// @param[in] channel - chanel of the image where the statistics are to be calculated
 /// @param[in] arr - the channel image where the statistics are calculated
 void StatsAndMask::calculate(const std::string& name, Channel channel, const casacore::Array<float>& arr)
@@ -217,7 +217,6 @@ void StatsAndMask::receiveStats(const std::set<unsigned int>& excludedRanks)
         unsigned long msgSize;
         std::memcpy(reinterpret_cast<void *>(&msgSize),msgSizebuffer,sizeof(unsigned long));
         // check that msgSize is a multiple of sizeof(Stats)
-        ASKAPLOG_INFO_STR(logger,"received message of size "<<msgSize<<" from rank "<<source);
         ASKAPCHECK((msgSize % sizeof(Stats)) == 0,
                     "StatsAndMask::receiveStats: msgSize is a multiple of sizeof(Stats)");
         // ASKAPLOG_INFO_STR(logger,"node: " << itsComms.nodeName() << ", rank: " << itsComms.rank() << " - number of stats objects received: " << msgSize/sizeof(Stats));
