@@ -54,7 +54,46 @@ using namespace casacore;
 namespace askap {
 
 using ImageBlcTrcMapT =  std::map<std::string,std::pair<casacore::IPosition,casacore::IPosition>>;
+// the key of  the map is channel no
+// the pair is <channel, max weight>
+using MaxWgtPerChannelMapT = std::map<int,float>;
 
+/// @brief This function returns the weight pixel of a channel
+/// @param[in] accumulator - object that provides functions which are heavily utilised by this task
+/// @param[in] iacc - image access object
+/// @param[in] inImgName - name of the input image
+/// @param[in] inWgtName - name of the weight image
+/// @param[in] channel - the channel of the weight pixel
+/// @param[out] inWgtPix - the weight pixel
+static void loadWgtImage(imagemath::LinmosAccumulator<float>& accumulator,
+                         const accessors::IImageAccess<casacore::Float>& iacc,
+                         const std::string& inImgName,
+                         const std::string& inWgtName,
+                         const int channel,
+                         float& inWgtPix)
+{
+
+  if (accumulator.weightType() == FROM_WEIGHT_IMAGES || accumulator.weightType() == COMBINED) {
+    if (accumulator.useWeightsLog()) {
+      accessors::WeightsLog wtlog(inWgtName);
+      wtlog.read();
+      inWgtPix = wtlog.weight(channel);
+    } else if (accumulator.useWtFromHdr()) {
+      const casacore::Vector<casacore::Float> wts = readWeightsTable(inImgName);
+      const size_t size = wts.size();
+      if (size > 1) {
+        ASKAPCHECK(channel < size,"Not enough channels in weights table");
+        inWgtPix = wts(channel);
+      } else if (size == 1) {
+        inWgtPix = wts(0);
+      }
+      ASKAPCHECK(size>0,"No weights found in image header or extension for image: "<<inImgName);
+    } else {
+      //inWgtPix = iacc.read(inWgtName);
+      ASKAPCHECK(false,"Neither useweightslog or useWtFromHdr is set");
+    }
+  }
+}
 /// @brief This function returns the blc and trc of the input image
 /// @detail if trimming is true, this function returns blc and trc of the 
 ///         trimmed input image otherwise it returns the full input image size.
@@ -86,6 +125,83 @@ getBlcTrc(const bool trimming,
     trc = blcTrcPair.second;;
   }
 }
+
+/// @brief This function calculates the maximum weight pixel of each channel
+/// @details This function iterates over the weight files and determines the
+///          maximum weight pixel for each channel. The result is stored in
+///          a map (maxWgtPerChannelMap). The key of the map is the channel
+///          and the value is the max weight pixel.
+/// @param[in] comms - mpi communicator
+/// @param[in] accumulator - object that provides functions which are heavily utilised by this task
+/// @param[in] iacc - image access object
+/// @param[in] inImgNames - a list of input images
+/// @param[in] inWgtNames - a list of weight images
+/// @param[in] channel - the channel of the weight pixel
+/// @param[out] maxWgtPerChannelMap - contains a map of channel and max weight pixel.
+static void calcMaxWgtPerChannels(askap::askapparallel::AskapParallel &comms,
+                               imagemath::LinmosAccumulator<float>& accumulator,
+                               const accessors::IImageAccess<casacore::Float>& iacc,
+                               const std::vector<std::string>& inImgNames,
+                               const std::vector<std::string>& inWgtNames,
+                               const int channel,
+                               MaxWgtPerChannelMapT& maxWgtPerChannelMap)
+{
+
+  int inWgtNamesIndex = 0;
+
+  // contains a collection of weight pixel values
+  std::vector<float> wgtPixVect;
+  for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
+    // find the max weight pixel for this each input image
+    float inWgtPix = -1.0;
+    loadWgtImage(accumulator,iacc,*it,inWgtNames[inWgtNamesIndex],channel,inWgtPix);
+    wgtPixVect.push_back(inWgtPix);
+    if ( comms.isMaster() ) {
+        ASKAPLOG_INFO_STR(logger,"weightlog file: " << inWgtNames[inWgtNamesIndex] << ": channel" << channel << " , weight value: " << inWgtPix);
+    }
+    inWgtNamesIndex += 1;
+  }    
+  // get the max weight pixel for this rank
+  auto iter = std::max_element(wgtPixVect.begin(),wgtPixVect.end());
+  float thisRankMaxWgt = *iter;
+  
+  if ( comms.isMaster() ) {
+    ASKAPLOG_INFO_STR(logger,"Master rank max weight pixel = "  << thisRankMaxWgt);
+  }
+
+  comms.barrier();
+
+  float thisChannelMaxPix = 0;
+  // get the max weight pixel for this channel
+  wgtPixVect.resize(0); // just reuse this vector to store max weight pixel value for each rank
+  int nProcs = comms.nProcs();
+
+  if ( comms.isMaster() ) {
+    wgtPixVect.push_back(thisRankMaxWgt);
+    float buffer;
+    for (int sender = 1; sender < nProcs; sender++) {
+      comms.receive(&buffer,sizeof(float),sender);
+      wgtPixVect.push_back(buffer);
+    }
+    auto maxIter = std::max_element(wgtPixVect.begin(),wgtPixVect.end());
+    thisChannelMaxPix = *maxIter;
+    // now send the max weight pixel of this image to all the workers
+    for (int rcv = 1; rcv < nProcs; rcv++) {
+      comms.send(&thisChannelMaxPix,sizeof(float),rcv);
+      wgtPixVect.push_back(buffer);
+    }
+  } else {
+    // send this rank max weight pixel to master
+    comms.send((void *) &thisRankMaxWgt,sizeof(int),0);
+    // wait and receive the max weight pixel of this weight image from master
+    comms.receive((void *) &thisChannelMaxPix,sizeof(int),0);
+  }
+  if ( comms.isMaster() ) {
+    ASKAPLOG_INFO_STR(logger,"calcMaxWgtPerChannels: channel" << channel << ", thisChannelMaxPix: " << thisChannelMaxPix);
+  }
+  maxWgtPerChannelMap.insert(std::make_pair(channel,thisChannelMaxPix));
+  comms.barrier();
+}
                                             
 /// @brief This function calculates the blc and trc  of the input image
 /// @details This function iterates over the channels and calculates the blc and trc
@@ -103,44 +219,84 @@ getBlcTrc(const bool trimming,
 /// @param[in] nchanCube - numer of channels in the cube
 /// @param[in] beanmCentreIndex - index of the input images
 /// @param[out] imageBlcTrcMap - contains the blc and trc of the input images
+/// @param[in] useWgtLog - true indicate if the weight log file is used
 static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
                                          askap::askapparallel::AskapParallel &comms,
                                          imagemath::LinmosAccumulator<float>& accumulator,
                                          const accessors::IImageAccess<casacore::Float>& iacc,
-                                         const string& inImgName,
+                                         const std::string& inImgName,
+                                         const std::string& inWgtName,
                                          const int firstChannel, const int lastChannel,
                                          const int channelInc, const int nchanCube,
+                                         const int numberOfInImg,
                                          const int beamCentreIndex,
-                                         ImageBlcTrcMapT& imageBlcTrcMap)
+                                         MaxWgtPerChannelMapT& maxWgtPerChannelMap,
+                                         ImageBlcTrcMapT& imageBlcTrcMap,
+                                         const bool useWgtLog)
 {
-  float cutoff = parset.getFloat("cutoff",0.01);
+  const float cutoff = parset.getFloat("cutoff",0.01);
+  float beamPackingFactor = 1.0;
 
+  if ( parset.isDefined("beampackingfactor") ) {
+    beamPackingFactor = parset.getFloat("beampackingfactor");
+  } else if (numberOfInImg >= 36) {
+    beamPackingFactor = 1.4;
+  }
+  
   // used to store the min and max of the x and y dimension of the input image planes/channels
   std::vector<int> xMinMaxVect;
   std::vector<int> yMinMaxVect;
 
+  // calculates the maximum weight pixel for each channel
   for (int channel = firstChannel; channel <= lastChannel; channel += channelInc) {
-    int xmin, xmax, ymin, ymax;
-    CoordinateSystem coordSys = iacc.coordSys(inImgName);
-    casacore::IPosition shape = iacc.shape(inImgName);
-    accumulator.calcWeightInputShape(coordSys,shape,beamCentreIndex,
-                                     channel,cutoff,xmin,xmax,ymin,ymax);
-    // Dont reset these vectors to 0. Just add xmin, xmax, ymin and ymax to them
-    xMinMaxVect.push_back(xmin);
-    xMinMaxVect.push_back(xmax);
-    yMinMaxVect.push_back(ymin);
-    yMinMaxVect.push_back(ymax);
+    float scaledCutoff = cutoff;
+    if (useWgtLog) {
+      float inWgtPix = 0.0;
+      loadWgtImage(accumulator,iacc,inImgName,inWgtName,channel,inWgtPix);
+      ASKAPCHECK(maxWgtPerChannelMap.find(channel) != maxWgtPerChannelMap.end() || maxWgtPerChannelMap[channel] != 0.0,
+               "Channel: " << channel << " is not found or it has 0 max weight pixel");
+      const float maxWgt = maxWgtPerChannelMap[channel];
+      scaledCutoff = (inWgtPix == 0 ? 0 : cutoff * beamPackingFactor * sqrt(maxWgt/inWgtPix));
+      if ( comms.isMaster() ) {
+        ASKAPLOG_INFO_STR(logger,"channel: " << channel 
+                        << "; scaledCutoff: " << scaledCutoff
+                        << "; inWgtPix: << " << inWgtPix
+                        << "; maxWgt: " << maxWgt);
+      }
+    }
+
+    int xmin = -1;
+    int xmax = -1;
+    int ymin = -1;
+    int ymax = -1;
+    if ( scaledCutoff != 0 ) {
+      // scaledCutoff is 0 if the weight pixel of the channel is 0 (ie no valid data).
+      // Hence, we dont need to calculate min and max for this channel
+      CoordinateSystem coordSys = iacc.coordSys(inImgName);
+      casacore::IPosition shape = iacc.shape(inImgName);
+      accumulator.calcWeightInputShape(coordSys,shape,beamCentreIndex,
+                                       channel,scaledCutoff,xmin,xmax,ymin,ymax);
+      // Dont reset these vectors to 0. Just add xmin, xmax, ymin and ymax to them
+      xMinMaxVect.push_back(xmin);
+      xMinMaxVect.push_back(xmax);
+      yMinMaxVect.push_back(ymin);
+      yMinMaxVect.push_back(ymax);
+    }
   }
 
   // xMinMaxVect and yMinMaxVect now contains the min and max of all the image planes
   // of the input image
-  auto xMinMaxIter = std::minmax_element(xMinMaxVect.begin(),xMinMaxVect.end());
-  int smallestX = *xMinMaxIter.first;
-  int largestX = *xMinMaxIter.second;
+  int smallestX = -1.0; int largestX = -1.0; int smallestY = -1.0; int largestY = -1.0;
 
-  auto yMinMaxIter = std::minmax_element(yMinMaxVect.begin(),yMinMaxVect.end());
-  int smallestY = *yMinMaxIter.first;
-  int largestY = *yMinMaxIter.second;
+  if (xMinMaxVect.size() != 0 && yMinMaxVect.size() != 0) {
+    auto xMinMaxIter = std::minmax_element(xMinMaxVect.begin(),xMinMaxVect.end());
+    smallestX = *xMinMaxIter.first;
+    largestX = *xMinMaxIter.second;
+
+    auto yMinMaxIter = std::minmax_element(yMinMaxVect.begin(),yMinMaxVect.end());
+    smallestY = *yMinMaxIter.first;
+    largestY = *yMinMaxIter.second;
+  }
 
   // smallestX, largestX, smallestY, largestY are the smallest and largest min max
   // values of the x and y dimension of the image planes/channels allocated to this rank
@@ -153,10 +309,13 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
   yMinMaxVect.resize(0);
   // xMinMaxVect and yMinMaxVect contains the smallest and largest min and max values belonged
   // to this rank
-  xMinMaxVect.push_back(smallestX);
-  xMinMaxVect.push_back(largestX);
-  yMinMaxVect.push_back(smallestY);
-  yMinMaxVect.push_back(largestY);
+  if ( smallestX != -1 && largestX != -1 && smallestY != -1 && largestY != -1 ) {
+    // only interested in channels that have valid smallest and largest x and y 
+    xMinMaxVect.push_back(smallestX);
+    xMinMaxVect.push_back(largestX);
+    yMinMaxVect.push_back(smallestY);
+    yMinMaxVect.push_back(largestY);
+  }
 
   int xyMinMax[4];
   int nProcs = comms.nProcs();
@@ -172,11 +331,14 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
     // then collect min and max of x and y of workers to master
     for (int sender = 1; sender < nProcs; sender++) {
       comms.receive(xyMinMax,4*sizeof(int),sender);
-      // now copy from worker ranks
-      xMinMaxVect.push_back(xyMinMax[0]);
-      xMinMaxVect.push_back(xyMinMax[2]);
-      yMinMaxVect.push_back(xyMinMax[1]);
-      yMinMaxVect.push_back(xyMinMax[3]);
+      if ( xyMinMax[0] != -1.0 && xyMinMax[1] != -1.0 && 
+           xyMinMax[2] != -1.0 && xyMinMax[3] != -1.0 ) {
+        // now copy from worker ranks
+        xMinMaxVect.push_back(xyMinMax[0]);
+        xMinMaxVect.push_back(xyMinMax[2]);
+        yMinMaxVect.push_back(xyMinMax[1]);
+        yMinMaxVect.push_back(xyMinMax[3]);
+      }
     }
 
     // The master now has collected all the min and max from all the workers.
@@ -242,30 +404,66 @@ static void calcMinMaxXYInputImagePlanes(const LOFAR::ParameterSet &parset,
 /// @param[in] firstChannel - first channel of this rank
 /// @param[in] lastChannel - last channel of this rank
 /// @param[in] channelInc - channel increment
-/// @param[out] imageBlcTrcMap - contains the blc and trc of the input images
+/// @param[out] imageBlcTrcMap - contains the blc and trc of the output limos images.
+///                              It is used to set the size of the output images.
+/// @param[out] imageBlcTrcLimosShapeMap - contains the blc and trc of the input images
+///                              It is used to set the size of the input images.
 static void findBoundingBoxes(const LOFAR::ParameterSet &parset,
                             askap::askapparallel::AskapParallel &comms,
                             imagemath::LinmosAccumulator<float>& accumulator,
                             accessors::IImageAccess<casacore::Float>& iacc,
                             const std::vector<string>& inImgNames,
+                            const std::vector<string>& inWgtNames,
                             const int nchanCube, const int firstChannel, 
                             const int lastChannel, const int channelInc,
-                            ImageBlcTrcMapT& imageBlcTrcMap)
+                            ImageBlcTrcMapT& imageBlcTrcMap,
+                            ImageBlcTrcMapT& imageBlcTrcLimosShapeMap)
 {
-  ASKAPLOG_INFO_STR(logger,"findBoundingBoxes");
+  ASKAPLOG_DEBUG_STR(logger,"findBoundingBoxes");
+
+  // find the max weight pixel for each channel
+  // const bool useWgtLog = parset.getBool("useweightslog", false);
+  const bool useWgtLog = (accumulator.useWeightsLog() || accumulator.useWtFromHdr()); 
+  MaxWgtPerChannelMapT maxWgtPerChannelMap;
+  if ( useWgtLog ) {
+    ASKAPLOG_DEBUG_STR(logger,"useWgtLog: true");
+    for (int channel = firstChannel; channel <= lastChannel; channel += channelInc) {
+      calcMaxWgtPerChannels(comms,accumulator,iacc,inImgNames,inWgtNames,channel,maxWgtPerChannelMap);
+    }
+    comms.barrier();
+  } else {
+    ASKAPLOG_DEBUG_STR(logger,"useWgtLog: false");
+  }
 
   int beamCentreIndex = 0;
-  
-  //std::map<std::string,std::pair<casacore::IPosition,casacore::IPosition> > imageBlcTrcMap;
+  int inWgtNamesIndex = 0;
+  const int numberOfInImg = inImgNames.size();
   for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
-    calcMinMaxXYInputImagePlanes(parset,comms,accumulator,iacc,*it,
-                                 firstChannel,lastChannel,channelInc,nchanCube,
-                                 beamCentreIndex,imageBlcTrcMap);
+    calcMinMaxXYInputImagePlanes(parset,comms,accumulator,iacc,*it,inWgtNames[inWgtNamesIndex],
+                                 firstChannel,lastChannel,channelInc,nchanCube,numberOfInImg,
+                                 beamCentreIndex,maxWgtPerChannelMap,imageBlcTrcMap,useWgtLog);
     beamCentreIndex += 1;
+    inWgtNamesIndex += 1;
   }
 
   // wait for all ranks get to here
   comms.barrier();
+
+  if ( useWgtLog ) {
+    // if weight log file is used, we need to get the blc and trc for the input images
+    beamCentreIndex = 0;
+    inWgtNamesIndex = 0;
+    MaxWgtPerChannelMapT unusedMap;
+    for (vector<string>::const_iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
+      calcMinMaxXYInputImagePlanes(parset,comms,accumulator,iacc,*it,inWgtNames[inWgtNamesIndex],
+                                 firstChannel,lastChannel,channelInc,nchanCube,numberOfInImg,
+                                 beamCentreIndex,unusedMap,imageBlcTrcLimosShapeMap,false);
+      beamCentreIndex += 1;
+      inWgtNamesIndex += 1;
+    }
+
+    comms.barrier();
+  }
 }
 // @brief do the merge
 /// @param[in] parset subset with parameters
@@ -285,6 +483,8 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
   const bool calcstats = parset.getBool("calcstats", false);
   // file to store the statistics
   const std::string outputStats = parset.getString("outputStats","");
+
+  const bool useWgtLog = parset.getBool("useweightslog", false);
 
   // get the list of keywords to copy from the input
   // Set some defaults for simple beam mosaic, won't be correct for more complex cases
@@ -380,6 +580,13 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
     vector<IPosition> inShapeVec;
     vector<CoordinateSystem> inCoordSysVec;
+    // if useWgtLog or useWgtFromHeader is true, the vectors below store the coordinate systems and shapes of the
+    // linmos input shape. This is needed because if the useWgtLog is true, the output shape and
+    // the input shape (see setOutputParameters() and setInputParameters()) are not the same i.e
+    // in this case, we want the input shape to be at beam cutoff whereas the output shape to be
+    // at a scaled beam cutoff (1.4 * cutoff * sqrt(maxWgtPix/WgtPix) 
+    vector<IPosition> inLinmosShapeVec;
+    vector<CoordinateSystem> inLinmosCoordSysVec;
     // What fraction of the full problem does this rank
     // THe units here are channels - not polarisations.
     int numChannelsLocal = 0;
@@ -481,11 +688,12 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
     }
 
     ImageBlcTrcMapT imageBlcTrcMap;
+    ImageBlcTrcMapT imageBlcTrcLimosShapeMap;
     const bool trimming = parset.getBool("trimming",false);
     if ( trimming ) {
       if (accumulator.weightType() == FROM_BP_MODEL|| accumulator.weightType() == COMBINED) {
-        findBoundingBoxes(parset,comms,accumulator,iacc,inImgNames,nchanCube,
-                               firstChannel,lastChannel,channelInc,imageBlcTrcMap);
+        findBoundingBoxes(parset,comms,accumulator,iacc,inImgNames,inWgtNames,nchanCube,
+                               firstChannel,lastChannel,channelInc,imageBlcTrcMap,imageBlcTrcLimosShapeMap);
       } else {
         ASKAPCHECK(false,"trimming is only supported for weighttype FromPrimaryBeamModel or Combined");
       }
@@ -496,6 +704,9 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       // clear the lists of input coordinates and shapes
       inCoordSysVec.clear();
       inShapeVec.clear();
+      inLinmosCoordSysVec.clear();
+      inLinmosShapeVec.clear();
+
       for (vector<string>::iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
         ASKAPLOG_INFO_STR(logger,"Processing Channel " << channel << " of input image " << *it << " which is part of output mosaick " << outImgName);
         if ( !trimming ) {
@@ -528,12 +739,28 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           const auto& blcTrcPair = imageBlcTrcMapIter->second;
           casa::IPosition tempblc = blcTrcPair.first;
           casa::IPosition temptrc = blcTrcPair.second;
+          ASKAPLOG_INFO_STR(logger,"trimmed output shape: blc = " << tempblc << "; trc = " << temptrc);
           tempblc[3] = channel;
           temptrc[3] = channel;
           inCoordSysVec.push_back(iacc.coordSysSlice(*it,tempblc,temptrc));
           casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
           trimmedShape[3] = 1;
           inShapeVec.push_back(trimmedShape);    
+
+          if ( useWgtLog ) {
+            const auto imageBlcTrcMapIter2 = imageBlcTrcLimosShapeMap.find(*it);
+            ASKAPCHECK(imageBlcTrcMapIter2 != imageBlcTrcLimosShapeMap.end(),"input image is not in imageBlcTrcLimosShapeMap");
+            const auto& blcTrcPair2 = imageBlcTrcMapIter2->second;
+            casa::IPosition tempblc2 = blcTrcPair2.first;
+            casa::IPosition temptrc2 = blcTrcPair2.second;
+            ASKAPLOG_INFO_STR(logger,"trimmed output shape: blc2 = " << tempblc2 << "; trc2 = " << temptrc2);
+            tempblc2[3] = channel;
+            temptrc2[3] = channel;
+            inLinmosCoordSysVec.push_back(iacc.coordSysSlice(*it,tempblc2,temptrc2));
+            casa::IPosition trimmedShape2 = blcTrcPair2.second - blcTrcPair2.first + 1;
+            trimmedShape2[3] = 1;
+            inLinmosShapeVec.push_back(trimmedShape2);
+          }
         }
       } // got the input shapes for this output image
 
@@ -680,7 +907,12 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
           casa::IPosition blc; 
           casa::IPosition trc;
-          getBlcTrc(trimming,iacc,inImgName,imageBlcTrcMap,blc,trc);
+          if ( useWgtLog ) {
+            getBlcTrc(trimming,iacc,inImgName,imageBlcTrcLimosShapeMap,blc,trc);
+          } else {
+            getBlcTrc(trimming,iacc,inImgName,imageBlcTrcMap,blc,trc);
+          }
+          ASKAPLOG_INFO_STR(logger,"trimmed Limos input shape: blc = " << blc << ", trc = " << trc);
 
           if (nchanCube < 0) {
             nchanCube = shape(3);
@@ -692,11 +924,19 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           blc[3] = channel;
           trc[3] = channel;
 
-          accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
+          if ( ! trimming ) {
+            accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
+          } else {
+            if ( useWgtLog ) {
+                ASKAPLOG_INFO_STR(logger,"Trimming image using weights");
+              accumulator.setInputParameters(inLinmosShapeVec[img], inLinmosCoordSysVec[img], img);
+            } else {
+                ASKAPLOG_INFO_STR(logger,"Trimming image but not using weights");
+                accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
+            }
+          }
           Array<float> inPix = iacc.read(inImgName,blc,trc);
 
-
-          ASKAPLOG_INFO_STR(logger, "Shapes " << shape << " blc " << blc << " trc " << trc << " inpix " << inPix.shape());
 
           if (parset.getBool("removebeam",false)) {
 
@@ -912,7 +1152,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           // accessor is needed with a unique shape. To do this, send the
           // current iterator position, rather than the iterator itself.
           accumulator.loadAndWeightInputBuffers(curpos, inPix, inWgtPix, inSenPix);
-
+          
           if ( regridRequired ) {
             // call regrid for any buffered images
             accumulator.regrid();
@@ -996,6 +1236,9 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       iacc.write(outImgName,outPix,outMask,loc);
       // calculate the statistics for the array slice
       if ( calcstats ) {
+        if ( channel == 10 ) {
+          ASKAPLOG_INFO_STR(logger, "outPix size channel 10 " << outPix.size());
+        }
         statsAndMask->calculate(outImgName,channel,outPix);
       }
       if (accumulator.outWgtDuplicates()[outImgName]) {
