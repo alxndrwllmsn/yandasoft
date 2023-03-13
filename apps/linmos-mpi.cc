@@ -55,7 +55,7 @@ namespace askap {
 
 using ImageBlcTrcMapT =  std::map<std::string,std::pair<casacore::IPosition,casacore::IPosition>>;
 // the key of  the map is channel no
-// the pair is <channel weight pixel, max channel weight pixel>
+// the pair is <channel, max weight>
 using MaxWgtPerChannelMapT = std::map<int,float>;
 
 /// @brief This function returns the weight pixel of a channel
@@ -75,21 +75,16 @@ static void loadWgtImage(imagemath::LinmosAccumulator<float>& accumulator,
 
   if (accumulator.weightType() == FROM_WEIGHT_IMAGES || accumulator.weightType() == COMBINED) {
     if (accumulator.useWeightsLog()) {
-      //ASKAPLOG_INFO_STR(logger,"Reading weights log file :"<< inWgtName);
       accessors::WeightsLog wtlog(inWgtName);
       wtlog.read();
-      //inWgtPix.resize(inPix.shape());
       inWgtPix = wtlog.weight(channel);
     } else if (accumulator.useWtFromHdr()) {
-      //ASKAPLOG_INFO_STR(logger,"Reading weights from input image file :"<< inImgName);
       const casacore::Vector<casacore::Float> wts = readWeightsTable(inImgName);
       const size_t size = wts.size();
       if (size > 1) {
-        //inWgtPix.resize(inPix.shape());
         ASKAPCHECK(channel < size,"Not enough channels in weights table");
         inWgtPix = wts(channel);
       } else if (size == 1) {
-        //inWgtPix.resize(inPix.shape());
         inWgtPix = wts(0);
       }
       ASKAPCHECK(size>0,"No weights found in image header or extension for image: "<<inImgName);
@@ -424,20 +419,20 @@ static void findBoundingBoxes(const LOFAR::ParameterSet &parset,
                             ImageBlcTrcMapT& imageBlcTrcMap,
                             ImageBlcTrcMapT& imageBlcTrcLimosShapeMap)
 {
-  ASKAPLOG_INFO_STR(logger,"findBoundingBoxes");
+  ASKAPLOG_DEBUG_STR(logger,"findBoundingBoxes");
 
   // find the max weight pixel for each channel
   // const bool useWgtLog = parset.getBool("useweightslog", false);
   const bool useWgtLog = (accumulator.useWeightsLog() || accumulator.useWtFromHdr()); 
   MaxWgtPerChannelMapT maxWgtPerChannelMap;
   if ( useWgtLog ) {
-    ASKAPLOG_INFO_STR(logger,"useWgtLog: true");
+    ASKAPLOG_DEBUG_STR(logger,"useWgtLog: true");
     for (int channel = firstChannel; channel <= lastChannel; channel += channelInc) {
       calcMaxWgtPerChannels(comms,accumulator,iacc,inImgNames,inWgtNames,channel,maxWgtPerChannelMap);
     }
     comms.barrier();
   } else {
-    ASKAPLOG_INFO_STR(logger,"useWgtLog: false");
+    ASKAPLOG_DEBUG_STR(logger,"useWgtLog: false");
   }
 
   int beamCentreIndex = 0;
@@ -585,7 +580,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
     vector<IPosition> inShapeVec;
     vector<CoordinateSystem> inCoordSysVec;
-    // if the useWgtLog is true, the vectors below store the coordinate systems and shapes of the
+    // if useWgtLog or useWgtFromHeader is true, the vectors below store the coordinate systems and shapes of the
     // linmos input shape. This is needed because if the useWgtLog is true, the output shape and
     // the input shape (see setOutputParameters() and setInputParameters()) are not the same i.e
     // in this case, we want the input shape to be at beam cutoff whereas the output shape to be
@@ -748,7 +743,6 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           tempblc[3] = channel;
           temptrc[3] = channel;
           inCoordSysVec.push_back(iacc.coordSysSlice(*it,tempblc,temptrc));
-          //casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
           casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
           trimmedShape[3] = 1;
           inShapeVec.push_back(trimmedShape);    
@@ -763,7 +757,6 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
             tempblc2[3] = channel;
             temptrc2[3] = channel;
             inLinmosCoordSysVec.push_back(iacc.coordSysSlice(*it,tempblc2,temptrc2));
-            //casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
             casa::IPosition trimmedShape2 = blcTrcPair2.second - blcTrcPair2.first + 1;
             trimmedShape2[3] = 1;
             inLinmosShapeVec.push_back(trimmedShape2);
@@ -935,17 +928,15 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
             accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
           } else {
             if ( useWgtLog ) {
-                ASKAPLOG_INFO_STR(logger,"Trimming using weight log file");
+                ASKAPLOG_INFO_STR(logger,"Trimming image using weights");
               accumulator.setInputParameters(inLinmosShapeVec[img], inLinmosCoordSysVec[img], img);
             } else {
-                ASKAPLOG_INFO_STR(logger,"Trimming but not using weight log file");
+                ASKAPLOG_INFO_STR(logger,"Trimming image but not using weights");
                 accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
             }
           }
           Array<float> inPix = iacc.read(inImgName,blc,trc);
 
-
-          ASKAPLOG_INFO_STR(logger, "Shapes " << shape << " blc " << blc << " trc " << trc << " inpix " << inPix.shape());
 
           if (parset.getBool("removebeam",false)) {
 
@@ -1245,6 +1236,9 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       iacc.write(outImgName,outPix,outMask,loc);
       // calculate the statistics for the array slice
       if ( calcstats ) {
+        if ( channel == 10 ) {
+          ASKAPLOG_INFO_STR(logger, "outPix size channel 10 " << outPix.size());
+        }
         statsAndMask->calculate(outImgName,channel,outPix);
       }
       if (accumulator.outWgtDuplicates()[outImgName]) {
