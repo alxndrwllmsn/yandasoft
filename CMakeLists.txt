@@ -280,17 +280,17 @@ set_target_properties(yandasoft PROPERTIES
 add_library(askap::yandasoft ALIAS yandasoft)
 
 target_link_libraries(yandasoft PUBLIC
-	lofar::Common
-	lofar::Blob
-	askap::askap
-	askap::scimath
-	askap::imagemath
-	askap::accessors
-	askap::parallel
-	${log4cxx_LIBRARY}
-	${CASACORE_LIBRARIES}
-	${COMPONENTS_LIBRARY}
-	${Boost_LIBRARIES}
+  lofar::Common
+  lofar::Blob
+  askap::askap
+  askap::scimath
+  askap::imagemath
+  askap::accessors
+  askap::parallel
+  ${log4cxx_LIBRARY}
+  ${CASACORE_LIBRARIES}
+  ${COMPONENTS_LIBRARY}
+  ${Boost_LIBRARIES}
   ${GSL_LIBRARIES}
 )
 
