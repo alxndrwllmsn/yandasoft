@@ -1,11 +1,7 @@
 /// @file
-/// @brief Interface class to an object function working on UVWeights
-/// @details The derived classes of this interface are the ones which actually calculate
-/// robust or other weights from the accumulated grid of weights. All operations are expected
-/// to be in situ. The object function is called in the finalise method of the builder class.
-/// At this stage we assume that all frequency planes and all indices can be processed independently
-/// (and potentially in parallel). Therefore, this method works with the matrix interface rather than
-/// the cube (low-level access is needed for performance here).
+/// @brief Class calculating robust weights from the grid of weights
+/// @details This is an implementation of UVWeight calculator interface making robust weights.
+/// The math follows the original code by Daniel Mitchell, who presumably checked it against casa.
 ///
 /// @copyright (c) 2023 CSIRO
 /// Australia Telescope National Facility (ATNF)
@@ -31,29 +27,26 @@
 ///
 /// @author Max Voronkov <maxim.voronkov@csiro.au>
 
-#ifndef ASKAP_SYNTHESIS_GRIDDING_I_UV_WEIGHT_CALCULATOR_H
-#define ASKAP_SYNTHESIS_GRIDDING_I_UV_WEIGHT_CALCULATOR_H
+#ifndef ASKAP_SYNTHESIS_GRIDDING_ROBUST_UV_WEIGHT_CALCULATOR_H
+#define ASKAP_SYNTHESIS_GRIDDING_ROBUST_UV_WEIGHT_CALCULATOR_H
 
-// casa includes
-#include <casacore/casa/aipstype.h>
-#include <casacore/casa/Arrays/Matrix.h>
+// own includes
+#include <askap/gridding/IUVWeightCalculator.h>
 
 namespace askap {
 
 namespace synthesis {
 
-/// @brief Interface class to an object function working on UVWeights
-/// @details The derived classes of this interface are the ones which actually calculate
-/// robust or other weights from the accumulated grid of weights. All operations are expected
-/// to be in situ. The object function is called in the finalise method of the builder class.
-/// At this stage we assume that all frequency planes and all indices can be processed independently
-/// (and potentially in parallel). Therefore, this method works with the matrix interface rather than
-/// the cube (low-level access is needed for performance here).
+/// @brief Class calculating robust weights from the grid of weights
+/// @details This is an implementation of UVWeight calculator interface making robust weights.
+/// The math follows the original code by Daniel Mitchell, who presumably checked it against casa.
 /// @ingroup gridding
-struct IUVWeightCalculator { 
+struct RobustUVWeightCalculator : virtual public IUVWeightCalculator {
 
-   /// @brief virtual destructor to keep the compiler happy
-   ~IUVWeightCalculator();
+   /// @brief initialise the calculator, set desired robustness
+   /// @details
+   /// @param[in] robustness robustness parameter
+   RobustUVWeightCalculator(float robustness) : itsRobustness(robustness) {}
 
    /// @brief perform processing for the given weight (single grid slice along the 3rd axis)
    /// @details For performance reasons, slices along the 3rd axis are taken inside finalise method
@@ -61,11 +54,15 @@ struct IUVWeightCalculator {
    /// At this stage, we can guarantee that supplied matrix has contiguous storage.
    /// @param[in] wt weight to work with (it is modified in situ).
    /// @note The shape is supposed to stay intact.
-   virtual void process(casacore::Matrix<float> &wt) const = 0;
+   virtual void process(casacore::Matrix<float> &wt) const;
+private:
+   /// @brief robustness parameter
+   /// @note it is made const because we don't need to change it after construction (can be changed if needed)
+   const float itsRobustness;
 };
 
 } // namespace synthesis
 
 } // namespace askap
 
-#endif // #ifndef ASKAP_SYNTHESIS_GRIDDING_I_UV_WEIGHT_CALCULATOR_H
+#endif // #ifndef ASKAP_SYNTHESIS_GRIDDING_ROBUST_UV_WEIGHT_CALCULATOR_H

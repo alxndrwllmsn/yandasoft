@@ -33,6 +33,7 @@
 #include "FrequencyMapperTest.h"
 #include "NonLinearWSamplingTest.h"
 #include "UVWeightTest.h"
+#include "UVWeightCalculatorTest.h"
 
 int main(int argc, char *argv[])
 {
@@ -42,6 +43,7 @@ int main(int argc, char *argv[])
     runner.addTest( askap::synthesis::FrequencyMapperTest::suite());
     runner.addTest( askap::synthesis::NonLinearWSamplingTest::suite());
     runner.addTest( askap::synthesis::UVWeightTest::suite());
+    runner.addTest( askap::synthesis::UVWeightCalculatorTest::suite());
 
     bool wasSucessful = runner.run();
 

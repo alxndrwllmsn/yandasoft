@@ -152,6 +152,21 @@ namespace askap
       /// @param[in] acc const accessor to work with
       virtual void initIndices(const accessors::IConstDataAccessor& acc);
 
+      /// @brief obtain current field index
+      /// @details This method returns field index corresponding to the last call of initIndices
+      /// (i.e this method can only be called after initIndices is called, otherwise the result is undefined).
+      /// The meaning of the index and boundaries are determined in derived classes and only used here for 
+      /// uv-weight selection purposes. Note, that the implementation and the current interface are somewhat deficient.
+      /// In principle, the measurement set standard (and data accessor implementation) do not require all entries in the
+      /// single accessor to correspond to the same field (or share the same beam footprint). But our code never writes MSs
+      /// which would result in different fields being in the same accessor. Therefore, we return a single index here
+      /// rather than a vector, one for each row; and this also allows us to have better caching. Also, we could've had
+      /// this method non-virtual and try to cast the type to AProjectGridderBase where the field index is obtained. But
+      /// doing it via a virtual function (at the right place of the class hierarchy, so it is not really a fat interface),
+      /// seems to be a cleaner way of doing it.
+      /// @return field index for the current accessor (passed to initIndices)
+      virtual casacore::uInt currentFieldIndex() const override final { return AProjectGridderBase::currentField(); }
+
       /// Index into convolution function
       /// @param row Row number
       /// @param pol Polarization id
