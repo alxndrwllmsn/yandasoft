@@ -122,7 +122,7 @@ void StatsAndMask::calculate(const std::string& name, Channel channel, const cas
             index += 1;
         }
     }
-    nonMaskArray.resize(index);
+    nonMaskArray.resize(index,true);
 
     Stats stats;
     if ( nonMaskArray.size() > 0 ) {
@@ -315,7 +315,7 @@ void StatsAndMask::writeStatsToImageTable(const std::string& name)
     casacore::Vector<casacore::Float> maxvalVect(rows);
     casacore::Vector<casacore::Float> minvalVect(rows);
     auto index = static_cast<unsigned long> (0);
-    ASKAPLOG_INFO_STR(logger,"writeStatsToImageTable - rows: " << rows);
+    ASKAPLOG_DEBUG_STR(logger,"writeStatsToImageTable - rows: " << rows);
     for ( const auto& kvp : itsStatsPerChannelMap ) {
         const auto& statsPerChan = kvp.second;
         chanVect[index] = statsPerChan.channel;
@@ -362,7 +362,7 @@ void StatsAndMask::writeStatsToImageTable(const std::string& name)
     if ( boost::shared_ptr<IImageAccess<>> imageCube = itsImageCube.lock() ) {
         imageCube->setInfo(name,statsRecord);
     }
-    ASKAPLOG_INFO_STR(logger,"writeStatsToImageTable - exit: " << rows);
+    ASKAPLOG_DEBUG_STR(logger,"writeStatsToImageTable - exit: " << rows);
 }
 
 /// @brief This method writes the statistics to the image cube
@@ -401,15 +401,14 @@ void StatsAndMask::writeStatsToFile(const std::string& catalogue)
         for ( const auto& kvp : itsStatsPerChannelMap ) {
             const auto& statsPerChan = kvp.second;
             ofile << std::setw(10) << statsPerChan.channel;
-            ofile << std::setw(15) << std::fixed <<  std::setprecision(5) << statsPerChan.freq;
-
-            ofile << std::setw(10) << std::fixed << std::setprecision(5) << statsPerChan.mean;
-            ofile << std::setw(10) << std::fixed << std::setprecision(5) << statsPerChan.std;
-            ofile << std::setw(10) << std::fixed << std::setprecision(5) << statsPerChan.median;
-            ofile << std::setw(10) << std::fixed << std::setprecision(5) << statsPerChan.madfm;
-            ofile << std::setw(10) << std::fixed << std::setprecision(5) << statsPerChan.onepc;
-            ofile << std::setw(10) << std::fixed << std::setprecision(5) << statsPerChan.minval;
-            ofile << std::setw(10) << std::fixed << std::setprecision(5) << statsPerChan.maxval;
+            ofile << std::setw(15) << std::fixed <<  std::setprecision(6) << statsPerChan.freq;
+            ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.mean;
+            ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.std;
+            ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.median;
+            ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.madfm;
+            ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.onepc;
+            ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.minval;
+            ofile << std::setw(10) << std::fixed << std::setprecision(3) << statsPerChan.maxval;
             ofile << std::endl;
         }
         
