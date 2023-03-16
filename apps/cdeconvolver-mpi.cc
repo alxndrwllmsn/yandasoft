@@ -88,9 +88,6 @@ class CdeconvolverApp : public askap::Application
         int itsBeamReferenceChannel;
         LOFAR::ParameterSet itsParset;
 
-        const bool itsInterp = true;
-        static void interpolateEdgeValues(casacore::Vector<casacore::DComplex> &func);
-
         void getRealFFT(casacore::Array<casacore::Float> &fArray, casacore::Array<casacore::Complex> &cArray);
 
         // Precondition and deconvolve the inputs to produce the outputs, note inputs are modified (used as scratch)
