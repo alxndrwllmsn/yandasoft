@@ -19,4 +19,4 @@ set ( BASE_IMAGEMATH_TAG           ef785687a800db6fa9681aff7094ad7e91a2f2f6 CACH
 set ( BASE_ASKAPPARRALLEL_TAG      tags/1.5.0                               CACHE  STRING    "base-askapparrallel version"      FORCE )
 set ( BASE_SCIMATH_TAG             tags/1.9.0                               CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.6.0                               CACHE  STRING    "base-components version"          FORCE )
-set ( BASE_ACCESSORS_TAG           09eedcf287441e8984c65c1012d5e605f429eda9 CACHE  STRING    "base-accessors version"           FORCE )
+set ( BASE_ACCESSORS_TAG           feature/AXA-2116-update-for-doppler-direction CACHE  STRING    "base-accessors version"           FORCE )

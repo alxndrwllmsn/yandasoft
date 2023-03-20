@@ -147,8 +147,15 @@ void CalcCore::doCalc()
 
         if (!combineChannels) {
             if (dopplerTracking) {
-                sel->chooseFrequencies(1, casacore::MVFrequency(itsFrequency), casacore::MVFrequency(0),
-                    casacore::MFrequency::castType(getFreqRefFrame().getType()));
+                // To allow a doppler tracking reference position to be specified we need
+                // a chooseFrequencies function that takes a MFrequency with reference frame
+                std::vector<string> direction = parset().getStringVector("dopplertracking.direction",{},false);
+                casacore::MFrequency::Ref freqRef = getFreqRefFrame();
+                if (direction.size() == 3) {
+                    casacore::MeasFrame frame(asMDirection(direction));
+                    freqRef.set(frame);
+                }
+                sel->chooseFrequencies(1, casacore::MFrequency(casacore::MVFrequency(itsFrequency),freqRef), casacore::MVFrequency(0));
             } else {
                 sel->chooseChannels(1, itsChannel);
             }

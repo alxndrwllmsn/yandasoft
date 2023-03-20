@@ -170,6 +170,15 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     const bool dopplerTracking = itsParset.getBool("dopplertracking",false);
     const bool usetmpfs = itsParset.getBool("usetmpfs", false);
     ASKAPCHECK(!dopplerTracking || !usetmpfs,"Doppler tracking and usetmpfs cannot be used together");
+    if (dopplerTracking) {
+        std::vector<string> direction = itsParset.getStringVector("dopplertracking.direction",{},false);
+        if (direction.size() == 3) {
+            casacore::MDirection itsVelRefDir(asMDirection(direction));
+            ASKAPLOG_INFO_STR(logger,"Velocity reference direction =  "<<printDirection(itsVelRefDir.getValue()));
+        } else {
+            ASKAPLOG_INFO_STR(logger,"Using default velocity reference direction ( = pointing/field centre)");
+        }
+    }
 }
 
 ContinuumWorker::~ContinuumWorker()
