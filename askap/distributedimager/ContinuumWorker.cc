@@ -726,6 +726,7 @@ void ContinuumWorker::processChannels()
 
     // write out the beam log
     ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
+
     logBeamInfo();
     logWeightsInfo();
 
@@ -1418,6 +1419,7 @@ void ContinuumWorker::processChannels()
 
   // write out the beam log
   ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
+  itsComms.barrier(itsComms.theWorkers());
   logBeamInfo();
   logWeightsInfo();
 
