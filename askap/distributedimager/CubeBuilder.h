@@ -58,6 +58,11 @@ class CubeBuilder {
                     const std::string& name = "",
                     const bool uvcoord = false);
 
+        CubeBuilder(const LOFAR::ParameterSet& parset,
+                    const casacore::IPosition & shape,
+                    const casacore::CoordinateSystem & coordSys,
+                    const std::string& name = "");
+
         CubeBuilder(const LOFAR::ParameterSet& parset,const std:: string& name);
 
         /// Destructor
@@ -83,7 +88,8 @@ class CubeBuilder {
                                  const casacore::Quantity& inc);
 
         void addBeam(casacore::Vector<casacore::Quantum<double> > &beam);
-        void setUnits(const std::string &units);
+        void setUnits(const std::string &units)
+        { itsCube->setUnits(itsFilename, units); }
         void setDateObs(const casacore::MVEpoch &dateObs);
         void writeImageHistory(const std::vector<std::string>& historyLines);
 
@@ -96,7 +102,7 @@ class CubeBuilder {
         boost::shared_ptr<accessors::IImageAccess<T>> imageHandler();
 
         boost::optional<float> oversamplingFactor();
-        
+
 
     private:
 
