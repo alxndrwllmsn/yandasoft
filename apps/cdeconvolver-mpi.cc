@@ -36,7 +36,6 @@
 #include <stdexcept>
 #include <iostream>
 #include <string>
-//#include <tuple>
 #include <utility>
 
 // ASKAPsoft includes
@@ -49,7 +48,6 @@
 #include <askap/measurementequation/WienerPreconditioner.h>
 #include <askap/measurementequation/GaussianTaperPreconditioner.h>
 #include <askap/deconvolution/DeconvolverFactory.h>
-//#include <askap/deconvolution/DeconvolverHelpers.h>
 #include <askap/deconvolution/DeconvolverBasisFunction.h>
 #include <askap/deconvolution/DeconvolverMultiTermBasisFunction.h>
 #include <askap/deconvolution/DeconvolverHogbom.h>
@@ -170,6 +168,8 @@ class CdeconvolverApp : public askap::Application
             }
 
             const string imageType = subset.getString("imagetype","fits");
+            // Now set it in the parset to avoid change of default at lower levels
+            subset.replace("imagetype",imageType);
             // CASA images need to be written one process at a time, for fits we have a choice
             // options "serial", "parallel"
             const bool serialWrite = subset.getString("imageaccess.write","serial")=="serial" ||
@@ -184,7 +184,7 @@ class CdeconvolverApp : public askap::Application
             ASKAPCHECK(writeResidual||writePsf||writeModel||writeRestored,"Need to request at least one output image");
 
             // get the calcstats flag from the parset. if it is true, then this task also calculates the image statistics
-            const bool calcstats = subset.getBool("calcstats", true);
+            const bool calcstats = subset.getBool("calcstats", false);
             // file to store the statistics (optional)
             const std::string outputStats = subset.getString("outputStats","");
 
@@ -533,6 +533,9 @@ class CdeconvolverApp : public askap::Application
                 comms.receive((void *) &buf,sizeof(int),from);
             }
 
+            writeBeamInfo(comms);
+            writeWeightsInfo(comms);
+
             if ( calcstats && writeRestored ) {
               // Since the processing of the image channels is distributed among the MPI ranks,
               // the master has to collect all the stats from the worker ranks prior to writing
@@ -548,8 +551,6 @@ class CdeconvolverApp : public askap::Application
               }
             }
 
-            writeBeamInfo(comms);
-            writeWeightsInfo(comms);
             stats.logSummary();
             comms.barrier();
             return 0;
