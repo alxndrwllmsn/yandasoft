@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-set (VERSION "1.9.0")
+set (VERSION "1.10.0")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
 # ASKAP Integration (askapsoft)
@@ -280,18 +280,18 @@ set_target_properties(yandasoft PROPERTIES
 add_library(askap::yandasoft ALIAS yandasoft)
 
 target_link_libraries(yandasoft PUBLIC
-	lofar::Common
-	lofar::Blob
-	askap::askap
-	askap::scimath
-	askap::imagemath
-	askap::accessors
-	askap::parallel
-	${log4cxx_LIBRARY}
-	${CASACORE_LIBRARIES}
-	${COMPONENTS_LIBRARY}
-	${Boost_LIBRARIES}
-        ${GSL_LIBRARIES}
+  lofar::Common
+  lofar::Blob
+  askap::askap
+  askap::scimath
+  askap::imagemath
+  askap::accessors
+  askap::parallel
+  ${log4cxx_LIBRARY}
+  ${CASACORE_LIBRARIES}
+  ${COMPONENTS_LIBRARY}
+  ${Boost_LIBRARIES}
+  ${GSL_LIBRARIES}
 )
 
 target_compile_definitions(yandasoft PUBLIC
@@ -307,6 +307,7 @@ target_include_directories(yandasoft PUBLIC
   ${COMPONENTS_INCLUDE_DIRS}
   ${log4cxx_INCLUDE_DIRS}
   ${CASACORE_INCLUDE_DIRS}
+  ${GSL_INCLUDE_DIRS}
 )
 
 if (MPI_FOUND)

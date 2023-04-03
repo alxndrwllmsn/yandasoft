@@ -27,6 +27,7 @@
 #include <askap/scimath/utils/PolConverter.h>
 #include <askap/scimath/fitting/Axes.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
+#include <askap/imagemath/linmos/LinmosImageRegrid.h>
 #include <askap/scimath/utils/PaddingUtils.h>
 #include <askap/gridding/SupportSearcher.h>
 #include <casacore/lattices/LatticeMath/Fit2D.h>
@@ -46,7 +47,7 @@ ASKAP_LOGGER(logger, ".measurementequation.synthesisparamshelper");
 
 #include <casacore/images/Images/PagedImage.h>
 #include <casacore/images/Images/TempImage.h>
-#include <casacore/images/Images/ImageRegrid.h>
+//#include <casacore/images/Images/ImageRegrid.h>
 #include <casacore/scimath/Mathematics/Interpolate2D.h>
 #include <casacore/lattices/Lattices/ArrayLattice.h>
 #include <casacore/coordinates/Coordinates/CoordinateSystem.h>
@@ -937,13 +938,13 @@ namespace askap
             casacore::Array<casacore::Complex> Agrid(image.shape());
             casacore::ArrayLattice<casacore::Complex> Lgrid(Agrid);
 
-            // copy image into a complex scratch space
-            casacore::convertArray<casacore::Complex,float>(Agrid, image);
-
             // renormalise based on the imminent padding
             if (norm) {
-                Agrid *= static_cast<float>(osfactor*osfactor);
+                image *= static_cast<float>(osfactor*osfactor);
             }
+
+            // copy image into a complex scratch space
+            casacore::convertArray<casacore::Complex,float>(Agrid, image);
 
             // fft to uv
             casacore::LatticeFFT::cfft2d(Lgrid, casacore::True);
@@ -1200,9 +1201,9 @@ namespace askap
       boost::shared_ptr<casacore::TempImage<float> > outRef = tempImage(sinkParam,name); // outRef
 
       // regridder
-      casacore::ImageRegrid<float> regridder;
+      askap::imagemath::LinmosImageRegrid<float> regridder;
 
-      const casacore::Interpolate2D::Method method = casacore::Interpolate2D::CUBIC;
+      const askap::imagemath::Interpolate2D::Method method = askap::imagemath::Interpolate2D::CUBIC;
       const casacore::uInt decimate = 1;
       casacore::IPosition itsAxes = IPosition::makeAxisPath(outRef->shape().nonDegenerate().nelements());
 
@@ -1210,7 +1211,7 @@ namespace askap
       // output array. I dont think it combines - I think it just replaces. The output can be empty.
 
       regridder.regrid(*outRef, method,
-                          itsAxes, *inRef, false, decimate,true,true,true);
+                          itsAxes, *inRef, false, decimate,true,true);
 
       // now we have to insert the regridded image into the pixels of the output ...
       update(sinkParam,name,*outRef);
@@ -1541,7 +1542,7 @@ namespace askap
            // we have to figure out the name
            psfName = findPSF(ip);
        }
-       ASKAPCHECK(psfName != "", "Unable to find psf paramter to fit, params="<<ip);
+       ASKAPCHECK(psfName != "", "Unable to find psf parameter to fit, params="<<ip);
        ASKAPLOG_INFO_STR(logger, "Fitting 2D Gaussian into PSF parameter "<<psfName);
 
        casacore::Array<imtype> psfArray = ip.valueT(psfName);
