@@ -111,6 +111,13 @@ struct UVWeightCollection : public boost::noncopyable {
    /// @return true, if the weight with the given index is present (and, therefore, get method can be used for it)
    bool exists(casacore::uInt index) const;
   
+   /// @brief merge content from another collection
+   /// @details This method is equivalent to a set of get and add calls done for all indices present in the input collection.
+   /// Weights corresponding to new indices (i.e. not present in this class at the time of running this method) are added by
+   /// reference. In the typical use case of this method this would be equivalent to the ownership transfer of the particular 
+   /// weight cube.
+   /// @param[in] src input collection to merge from
+   void merge(const UVWeightCollection &src);
 
    /// do we need pixel by pixel direct access?
 

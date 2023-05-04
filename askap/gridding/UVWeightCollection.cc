@@ -125,6 +125,27 @@ bool UVWeightCollection::exists(casacore::uInt index) const
    return ci != itsData.end();
 }
 
+/// @brief merge content from another collection
+/// @details This method is equivalent to a set of get and add calls done for all indices present in the input collection.
+/// Weights corresponding to new indices (i.e. not present in this class at the time of running this method) are added by
+/// reference. In the typical use case of this method this would be equivalent to the ownership transfer of the particular 
+/// weight cube.
+/// @param[in] src input collection to merge from
+void UVWeightCollection::merge(const UVWeightCollection &src)
+{
+   for (std::map<casacore::uInt, casacore::Cube<float> >::const_iterator ci = src.itsData.begin(); ci != src.itsData.end(); ++ci) {
+        std::map<casacore::uInt, casacore::Cube<float> >::iterator match = itsData.find(ci->first);
+        if (match != itsData.end()) {
+            // check matching shape, although we could've left this to the array but the error message will be less readable
+            ASKAPCHECK(match->second.shape() == ci->second.shape(), "UVWeight shape mismatch in an attempt to merge two collections, input shape = "
+                       <<ci->second.shape()<<" existing element with index = "<<ci->first<<" has shape "<<match->second.shape());
+            match->second += ci->second;
+        } else {
+            itsData.emplace(*ci);
+        }
+   }
+}
+
 } // namespace synthesis
 
 } // namespace askap

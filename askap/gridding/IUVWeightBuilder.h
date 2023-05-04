@@ -1,6 +1,6 @@
 /// @file
 /// @brief Interface class to create/write UVWeights
-/// @details This interface is could to be used inside the gridder to structure access 
+/// @details This interface is to be used inside the gridder to structure access 
 /// to uv weights when they are created (in traditional weighting). An alternative gridder-less
 /// implementation is also possible (essentially replicating the functionality of the box gridder
 /// without the rest of the overhead of a gridder class). The weight access itself 
@@ -53,7 +53,7 @@ namespace askap {
 namespace synthesis {
 
 /// @brief Interface class to create/write UVWeights
-/// @details This interface is could to be used inside the gridder to structure access 
+/// @details This interface is to be used inside the gridder to structure access 
 /// to uv weights when they are created (in traditional weighting). An alternative gridder-less
 /// implementation is also possible (essentially replicating the functionality of the box gridder
 /// without the rest of the overhead of a gridder class). The weight access itself 
@@ -76,7 +76,7 @@ struct IUVWeightBuilder : virtual public IUVWeightAccessor {
    /// @param[in] vSize size in the direction of v-coordinate
    /// @param[in] nPlanes number of planes for the given weight (3rd dimension)
    /// @note This class is agnostic about the physical pixel sizes (e.g. uv cell size) -
-   /// we assume it is always the same as the setup of the gridder
+   /// we assume it is always the same as in the setup of the gridder
    virtual void initialise(casacore::uInt uSize, casacore::uInt vSize, casacore::uInt nPlanes) = 0;
 
    /// @brief obtain weight grid for writing for the given metadata (indices)

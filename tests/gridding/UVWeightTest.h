@@ -50,6 +50,7 @@ class UVWeightTest : public CppUnit::TestFixture
    CPPUNIT_TEST(testUVWeightCollection);
    CPPUNIT_TEST_EXCEPTION(testUVWeightCollectionBadIndex, AskapError);
    CPPUNIT_TEST_EXCEPTION(testUVWeightCollectionBadIndexConstAccess, AskapError);
+   CPPUNIT_TEST(testUVWeightCollectionMerge);
    CPPUNIT_TEST(testIndexTranslation);
    CPPUNIT_TEST(testGenericUVWeightAccessor);
    CPPUNIT_TEST_SUITE_END();
@@ -153,6 +154,68 @@ public:
        UVWeightCollection collection;
        collection.add(3u, 5u,7u, 1u);
        getWeightViaConstInterface(collection, 1u, 0u, 0u, 0u);
+   }
+  
+   void testUVWeightCollectionMerge() {
+       UVWeightCollection collection;
+       collection.add(3u, 5u,7u, 1u);
+
+       casacore::Cube<float> wtCube(10,15,1, 1.);
+       collection.add(1u, wtCube);
+        
+       // second collection
+       UVWeightCollection collection2;
+       casacore::Cube<float> wtCube2(10,15,1, 2.);
+       collection2.add(1u, wtCube2);
+
+       casacore::Cube<float> wtCube3(3,5,1, 3.);
+       collection2.add(2u, wtCube3);
+
+       // merge
+       collection.merge(collection2);
+
+       // set values to check the behaviour w.r.t. the reference semantics, where applicable
+       wtCube(5,7,0) = 0.5;
+       wtCube2(5,7,0) = 0.25;
+       wtCube3(2,3,0) = 0.125;
+
+       // test sparse indices
+       for (casa::uInt index = 0; index < 4u; ++index) {
+            CPPUNIT_ASSERT(collection.exists(index) == (index != 0));
+            CPPUNIT_ASSERT(collection2.exists(index) == ((index != 0) && (index != 3)));
+       }
+       // test shapes (this relies on the non-const interface)
+       CPPUNIT_ASSERT(collection.get(1u).shape() == casacore::IPosition(3, 10, 15, 1));
+       CPPUNIT_ASSERT(collection.get(2u).shape() == casacore::IPosition(3, 3, 5, 1));
+       CPPUNIT_ASSERT(collection.get(3u).shape() == casacore::IPosition(3, 5, 7, 1));
+
+       // test values
+       for (casacore::uInt u = 0; u < wtCube.nrow(); ++u) {
+           for (casacore::uInt v = 0; v < wtCube.ncolumn(); ++v) {
+                if ((u < 5u) && (v<7u)) {
+                    const float value = collection.get(3u)(u, v, 0u);
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(0., value, 1e-6);
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(0., getWeightViaConstInterface(collection, 3u, u,v, 0u), 1e-6);
+                }
+
+                if ((u < 3u) && (v<5u)) {
+                    const float value = collection.get(2u)(u, v, 0u);
+                    const float expected = (u == 2) && (v == 3) ? 0.125 : 3.;
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, value, 1e-6);
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, getWeightViaConstInterface(collection, 2u, u,v, 0u), 1e-6);
+                }
+                
+                const float expectedAfterMerge = (u == 5) && (v == 7) ? 0.5 : 3.;
+                const float actualAfterMerge = collection.get(1u)(u, v, 0u);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expectedAfterMerge, actualAfterMerge, 1e-6);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expectedAfterMerge, getWeightViaConstInterface(collection, 1u, u,v, 0u), 1e-6);
+                const float expectedSrc = (u == 5) && (v == 7) ? 0.25 : 2.;
+                const float actualSrc = collection2.get(1u)(u, v, 0u);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expectedSrc, actualSrc, 1e-6);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expectedSrc, getWeightViaConstInterface(collection2, 1u, u,v, 0u), 1e-6);
+           }
+       }
+  
    }
 
    void testIndexTranslation() {
