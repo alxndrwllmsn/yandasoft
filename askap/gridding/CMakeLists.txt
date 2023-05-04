@@ -31,6 +31,7 @@ MPIWProjectVisGridder.cc
 UVWeightCollection.cc
 IUVWeightAccessor.cc
 GenericUVWeightAccessor.cc
+GenericUVWeightBuilder.cc
 IUVWeightCalculator.cc
 IUVWeightIndexTranslator.cc
 GenericUVWeightIndexTranslator.cc
@@ -80,6 +81,7 @@ UVWeight.h
 IUVWeightAccessor.h
 IUVWeightBuilder.h
 GenericUVWeightAccessor.h
+GenericUVWeightBuilder.h
 IUVWeightCalculator.h
 IUVWeightIndexTranslator.h
 UVWeightIndexTranslationHelper.h
