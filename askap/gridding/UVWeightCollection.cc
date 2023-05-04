@@ -146,6 +146,21 @@ void UVWeightCollection::merge(const UVWeightCollection &src)
    }
 }
 
+/// @brief obtain a set of indices in this collection
+/// @details As the indices are sparse we need a way to obtain a list of indices in the given collection. The C++ way of 
+/// doing it is to have begin/end iterators. However, to do this without exposing internal structure (i.e. the map class) 
+/// would require a specialised iterator type. For now just build and return a set of indices for simplicity although it
+/// would imply more overhead. In practice, the number of indices we use is expected to be small, so it is hard to justify
+/// extra complexity at this stage.
+std::set<casacore::uInt> UVWeightCollection::indices() const
+{
+   std::set<casacore::uInt> result;
+   for (std::map<casacore::uInt, casacore::Cube<float> >::const_iterator ci = itsData.begin(); ci != itsData.end(); ++ci) {
+        result.insert(ci->first);
+   }
+   return result;
+}
+
 } // namespace synthesis
 
 } // namespace askap
