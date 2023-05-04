@@ -53,7 +53,7 @@ using namespace askap::synthesis;
 /// @param[in] parset parameter set
 MEParallelApp::MEParallelApp(askap::askapparallel::AskapParallel& comms, const LOFAR::ParameterSet& parset, bool useFloat) :
    MEParallel(comms,parset,useFloat), itsDataColName(parset.getString("datacolumn", "DATA")),
-   itsUVWMachineCacheSize(1), itsUVWMachineCacheTolerance(1e-6)
+   itsUVWMachineCacheSize(1), itsUVWMachineCacheTolerance(1e-6), itsMasterDoesWork(parset.getBool("masterDoesWork",false))
 {
    // set up image handler, needed for both master and worker
    SynthesisParamsHelper::setUpImageHandler(parset);
@@ -62,12 +62,14 @@ MEParallelApp::MEParallelApp(askap::askapparallel::AskapParallel& comms, const L
    SynthesisParamsHelper::setDefaultFreqFrame(getFreqRefFrame());
 
    // MV: we used to have column selection inside the following if-statement as
-   // only workers access measurement sets in proper master-worker design. 
+   // only workers access measurement sets in proper master-worker design.
    // New imager violates it, hence technically it should not have been derived from
-   // mw-framework classes! Some technical debt here. Moving its initialisation to the 
+   // mw-framework classes! Some technical debt here. Moving its initialisation to the
    // initalisation at construction solves the immediate problem, however ms substitution
    // still will not work correctly (and never was).
-   if (itsComms.isWorker()) {
+   if (doWork()) {
+       const int nProcs = nWorkers();
+       const int rank = workerRank();
        /// Get the list of measurement sets
        itsMs = parset.getStringVector("dataset");
 //       ASKAPCHECK(itsMs.size()>0, "Need dataset specification");
@@ -76,27 +78,26 @@ MEParallelApp::MEParallelApp(askap::askapparallel::AskapParallel& comms, const L
            ASKAPLOG_WARN_STR(logger,"dataset not present or empty");
        }
        else {
-           const int nProcs = itsComms.nProcs();
 
            if (itsMs.size() == 1) {
                const string tmpl=itsMs[0];
-               if (nProcs>2) {
-                   itsMs.resize(nProcs-1);
+               if (nProcs > 1) {
+                   itsMs.resize(nProcs);
                }
-               for (int i=0; i<nProcs-1; ++i) {
+               for (int i=0; i<nProcs; ++i) {
                    itsMs[i] = substitute(tmpl);
-                   if ((itsComms.rank() - 1) == i) {
+                   if (rank == i) {
                        ASKAPLOG_INFO_STR(logger, "Measurement set "<<tmpl<<
-                               " for rank "<<i+1<<" is substituted by "<<itsMs[i]);
+                               " for rank "<<itsComms.rank()<<" is substituted by "<<itsMs[i]);
                    }
                }
            } else {
                ASKAPLOG_INFO_STR(logger,
-                       "Skip measurment set substitution, names are given explicitly: "<<itsMs);
+                       "Skip measurement set substitution, names are given explicitly: "<<itsMs);
            }
            if (nProcs>1) {
-               if (int(itsMs.size()) != (nProcs-1)) {
-                   ASKAPLOG_WARN_STR(logger,"Running in parallel, data set per node usually required");
+               if (int(itsMs.size()) != (nProcs)) {
+                   ASKAPLOG_WARN_STR(logger,"Running in parallel, dataset per rank usually required");
                }
            }
        }

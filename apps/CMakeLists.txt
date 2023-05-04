@@ -34,10 +34,11 @@ mslist
 msmerge
 mstabtest
 noiseadder
-opcal 
+opcal
 randomgains
 smear
 tCFGeneration
+tCompareMSData
 tConvolve
 tConvolveBLAS
 tConvolveCASA
