@@ -51,6 +51,7 @@ class UVWeightTest : public CppUnit::TestFixture
    CPPUNIT_TEST_EXCEPTION(testUVWeightCollectionBadIndex, AskapError);
    CPPUNIT_TEST_EXCEPTION(testUVWeightCollectionBadIndexConstAccess, AskapError);
    CPPUNIT_TEST(testUVWeightCollectionMerge);
+   CPPUNIT_TEST(testUVWeightCollectionIndices);
    CPPUNIT_TEST(testIndexTranslation);
    CPPUNIT_TEST(testGenericUVWeightAccessor);
    CPPUNIT_TEST_SUITE_END();
@@ -216,6 +217,18 @@ public:
            }
        }
   
+   }
+
+   void testUVWeightCollectionIndices() {
+       UVWeightCollection collection;
+       collection.add(3u, 5u,7u, 1u);
+       collection.add(1u, 3u, 10u, 1u);
+       std::set<casacore::uInt> indices = collection.indices();
+       // test sparse indices
+       for (casa::uInt index = 0; index < 4u; ++index) {
+            CPPUNIT_ASSERT(collection.exists(index) == (index % 2 == 1));
+            CPPUNIT_ASSERT((indices.find(index) == indices.end()) == (index % 2 == 0));
+       }
    }
 
    void testIndexTranslation() {
