@@ -125,7 +125,7 @@ class CdeconvolverApp : public askap::Application
             //  if rank >= rem: first_chan = (div + 1) * rem + (div * (rank - rem))
             //                  num_chans = div
             // and that reduces to what's below
-            auto first_chan = rank * div + (rank < rem ? div : rem);
+            auto first_chan = rank * div + (rank < rem ? rank : rem);
             auto num_chans = div + (rank < rem);
             return std::make_pair(first_chan, num_chans);
         }
