@@ -41,7 +41,7 @@ namespace synthesis {
 /// @details The default translation of indices is set up by this method. Also, by default, all 
 /// coefficients are zero which means that only index 0 will be used from the collection. 
 /// A different index translation class can be assigned via the appropriate setter method of UVWeightIndexTranslationHelper.
-/// Unlike with weight accessor class, the builder ows a collection. It is setup on demand using parameters passed in 
+/// Unlike with weight accessor class, the builder owes the collection. It is setup on demand using parameters passed in 
 /// the initialised method. The translated index is coeffBeam * beam + coeffField * field + coeffSource * source
 /// @param[in] coeffBeam beam index coefficient
 /// @param[in] coeffField field index coefficient
@@ -114,7 +114,7 @@ UVWeight GenericUVWeightBuilder::addWeight(casacore::uInt beam, casacore::uInt f
    ASKAPCHECK(itsUSize > 0u && itsVSize > 0u && itsNPlanes > 0u, "New weight grid is requested (beam = "<<beam<<", field = "<<field<<", source = "<<source<<" (index = "<<index<<
               ") but default shape is not set, perhaps initialise method has not been called");
    itsWeights.add(index, itsUSize, itsVSize, itsNPlanes);
-   // the reference to the cube returned by get will be wrapped into a UVWeight object explicitly
+   // the reference to the cube returned by get will be wrapped into a UVWeight object implicitly
    return itsWeights.get(index);
 }
 

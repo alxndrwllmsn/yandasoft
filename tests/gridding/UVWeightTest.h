@@ -30,6 +30,7 @@
 #include <askap/gridding/UVWeightCollection.h>
 #include <askap/gridding/GenericUVWeightIndexTranslator.h>
 #include <askap/gridding/GenericUVWeightAccessor.h>
+#include <askap/gridding/GenericUVWeightBuilder.h>
 #include <askap/gridding/UVWeightIndexTranslationHelper.h>
 
 #include <cppunit/extensions/HelperMacros.h>
@@ -54,6 +55,10 @@ class UVWeightTest : public CppUnit::TestFixture
    CPPUNIT_TEST(testUVWeightCollectionIndices);
    CPPUNIT_TEST(testIndexTranslation);
    CPPUNIT_TEST(testGenericUVWeightAccessor);
+   CPPUNIT_TEST(testGenericUVWeightBuilder);
+   CPPUNIT_TEST(testGenericUVWeightBuilderMerge);
+   CPPUNIT_TEST(testGenericUVWeightBuilderFinalise);
+   CPPUNIT_TEST_EXCEPTION(testGenericUVWeightBuilderUninitialised, AskapError);
    CPPUNIT_TEST_SUITE_END();
 public:
    
@@ -289,6 +294,148 @@ public:
        
    }
 
+   void testGenericUVWeightBuilder() {
+       const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder(new GenericUVWeightBuilder(0u, 0u, 0u));
+       // cast to the interface to exercise polymorphic behaviour
+       const boost::shared_ptr<IUVWeightBuilder> builder = genericBuilder;
+       CPPUNIT_ASSERT(builder);
+       builder->initialise(10u,15u,1u);
+       // get UVWeight object via the builder interface for some arbitrary beam, field and source/facet (to check translation)
+       UVWeight wt = builder->addWeight(35u, 2u, 1u);
+       CPPUNIT_ASSERT(!wt.empty());
+       // check that dimensions are as setup by the initialise method
+       CPPUNIT_ASSERT_EQUAL(10u, wt.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt.nPlane());
+       wt(5,7,0) += 0.5;
+       // getUVWeight object for different (but still rather arbitrary) beam, field and source/facet to check that it maps to the same grid
+       UVWeight wt2 = builder->addWeight(5u, 1u, 2u);
+       // check that dimensions are as setup by the initialise method
+       CPPUNIT_ASSERT_EQUAL(10u, wt2.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt2.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt2.nPlane());
+       wt2(5,7,0) += 0.5;
+
+       // test values 
+       for (casacore::uInt u = 0; u < wt.uSize(); ++u) {
+           for (casacore::uInt v = 0; v < wt.vSize(); ++v) {
+                const float expected = (u == 5) && (v == 7) ? 1. : 0.;
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, wt(u, v, 0u), 1e-6);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, wt2(u, v, 0u), 1e-6);
+           }
+       }
+   }
+
+   void testGenericUVWeightBuilderMerge() {
+       // first builder is beam aware
+       const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder1(new GenericUVWeightBuilder(1u, 0u, 0u));
+       // cast to the interface to exercise polymorphic behaviour
+       const boost::shared_ptr<IUVWeightBuilder> builder1 = genericBuilder1;
+       CPPUNIT_ASSERT(builder1);
+       builder1->initialise(10u,15u,1u);
+
+       // another builder, but this one puts everything on the same grid
+       const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder2(new GenericUVWeightBuilder(0u, 0u, 0u));
+       // cast to the interface to exercise polymorphic behaviour
+       const boost::shared_ptr<IUVWeightBuilder> builder2 = genericBuilder2;
+       CPPUNIT_ASSERT(builder2);
+       builder2->initialise(10u,15u,1u);
+
+       // get UVWeight object via the builder interface for some arbitrary field and source/facet, beam index will translate directly into weight grid index
+       UVWeight wt1 = builder1->addWeight(0u, 2u, 1u);
+       // check that dimensions are as setup by the initialise method
+       CPPUNIT_ASSERT_EQUAL(10u, wt1.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt1.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt1.nPlane());
+       wt1(5,7,0) += 0.5;
+       // same for different beam, this should refer to an independent grid
+       UVWeight wt2 = builder1->addWeight(5u, 2u, 1u);
+       CPPUNIT_ASSERT_EQUAL(10u, wt2.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt2.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt2.nPlane());
+       wt2(5,7,0) += 1.5;
+       // now use the other builder which ignores all indices and uses index = 0 for all
+       UVWeight wt3 = builder2->addWeight(35u, 2u, 1u);
+       CPPUNIT_ASSERT_EQUAL(10u, wt3.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt3.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt3.nPlane());
+       wt3(5,7,0) += 2.;
+       // now merge 
+       builder1->merge(*builder2);
+
+       // check the results (use read/write interface as one day we may remove read-only one for builders)
+ 
+       // access beam=0 grid (note, builder1 is beam-aware)
+       UVWeight wt4 = builder1->addWeight(0u, 3u, 5u);
+       // access beam=5 grid
+       UVWeight wt5 = builder1->addWeight(5u, 5u, 3u);
+       CPPUNIT_ASSERT_EQUAL(wt4.uSize(), wt5.uSize());
+       CPPUNIT_ASSERT_EQUAL(wt4.vSize(), wt5.vSize());
+       CPPUNIT_ASSERT_EQUAL(wt4.nPlane(), wt5.nPlane());
+       CPPUNIT_ASSERT_EQUAL(10u, wt4.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt4.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt4.nPlane());
+
+       for (casacore::uInt u = 0; u < wt4.uSize(); ++u) {
+           for (casacore::uInt v = 0; v < wt4.vSize(); ++v) {
+                const float expected4 = (u == 5) && (v == 7) ? 2.5 : 0.;
+                const float expected5 = (u == 5) && (v == 7) ? 1.5 : 0.;
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expected4, wt4(u, v, 0u), 1e-6);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expected5, wt5(u, v, 0u), 1e-6);
+           }
+       }
+   }
+
+   void testGenericUVWeightBuilderFinalise() {
+       // builder is beam aware, use it to set up two weight grids
+       const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder(new GenericUVWeightBuilder(1u, 0u, 0u));
+       // cast to the interface to exercise polymorphic behaviour
+       const boost::shared_ptr<IUVWeightBuilder> builder = genericBuilder;
+       CPPUNIT_ASSERT(builder);
+       builder->initialise(10u,15u,1u);
+       // don't need the result, the call will setup new grid with zero weights with flat index=35u.
+       builder->addWeight(35u, 2u, 1u);
+       // same for different index
+       builder->addWeight(5u, 2u, 1u);
+  
+       TestFinaliseClass tfc;
+       UVWeightCollection& collection = builder->finalise(tfc);
+
+       // check results via the collection reference
+       std::set<casacore::uInt> indices = collection.indices();
+       CPPUNIT_ASSERT(indices.find(5u) != indices.end());
+       CPPUNIT_ASSERT(indices.find(35u) != indices.end());
+       CPPUNIT_ASSERT_EQUAL(size_t(2u), indices.size());
+       const UVWeight wt1 = collection.get(5u);
+       const UVWeight wt2 = collection.get(35u);
+
+       CPPUNIT_ASSERT_EQUAL(wt1.uSize(), wt2.uSize());
+       CPPUNIT_ASSERT_EQUAL(wt1.vSize(), wt2.vSize());
+       CPPUNIT_ASSERT_EQUAL(wt1.nPlane(), wt2.nPlane());
+       CPPUNIT_ASSERT_EQUAL(10u, wt1.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt1.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt1.nPlane());
+
+       for (casacore::uInt u = 0; u < wt1.uSize(); ++u) {
+           for (casacore::uInt v = 0; v < wt1.vSize(); ++v) {
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(2., wt1(u, v, 0u), 1e-6);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(2., wt2(u, v, 0u), 1e-6);
+           }
+       }
+       
+   }
+
+   void testGenericUVWeightBuilderUninitialised() {
+       // setup the builder, parameters don't matter really
+       const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder(new GenericUVWeightBuilder(0u, 0u, 0u));
+       // cast to the interface to exercise polymorphic behaviour
+       const boost::shared_ptr<IUVWeightBuilder> builder = genericBuilder;
+       CPPUNIT_ASSERT(builder);
+       // don't care about the result, but calling addWeight for uninitialised builder which doesn't have the appropriate grid (e.g. as a result of
+       // merge) should cause an exception
+       builder->addWeight(35u, 2u, 1u);
+   }
+
 protected:
 
    float getWeightViaConstInterface(const UVWeightCollection &collection, casacore::uInt index, casacore::uInt u, casacore::uInt v, casacore::uInt plane) {
@@ -297,6 +444,14 @@ protected:
    }
 
    struct VoidClass {
+   };
+
+   struct TestFinaliseClass : public IUVWeightCalculator {
+       /// @brief override method to do processing for the given weight 
+       /// @param[in] wt weight to work with (it is modified in situ).
+       virtual void process(casacore::Matrix<float> &wt) const override final {
+           wt.set(2.);
+       };
    };
 
 };

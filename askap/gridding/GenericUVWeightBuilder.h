@@ -62,7 +62,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// @details The default translation of indices is set up by this method. Also, by default, all 
    /// coefficients are zero which means that only index 0 will be used from the collection. 
    /// A different index translation class can be assigned via the appropriate setter method of UVWeightIndexTranslationHelper.
-   /// Unlike with weight accessor class, the builder ows a collection. It is setup on demand using parameters passed in 
+   /// Unlike with weight accessor class, the builder owes the collection. It is setup on demand using parameters passed in 
    /// the initialised method. The translated index is coeffBeam * beam + coeffField * field + coeffSource * source
    /// @param[in] coeffBeam beam index coefficient
    /// @param[in] coeffField field index coefficient
