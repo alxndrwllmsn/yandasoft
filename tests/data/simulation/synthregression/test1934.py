@@ -52,7 +52,22 @@ spr.addToParset("Cimager.dataset=1934pt0.ms")
 spr.runImager()
 analyseResult(spr)
 
+print("Nyquist gridding for central pointing")
+os.system("rm -rf *.1934.*")
+spr.initParset()
+spr.addToParset("Cimager.dataset=1934pt0.ms")
+#for some reason it crashes with combinechannels=true for this dataset
+#spr.addToParset("Cimager.combinechannels=true")
+#but without combinechannels it is too slow. Image only 10 channels for this test
+spr.addToParset("Cimager.Channels=[10,90]")
+spr.addToParset("Cimager.Images.nyquistgridding=true")
+# it fails for ncycles=0 for the new imager
+spr.addToParset("Cimager.ncycles=1")
+spr.runNewImagerParallel(nProcs=2)
+analyseResult(spr)
+
 print("Offset pointing")
+os.system("rm -rf *.1934.*")
 spr.initParset()
 spr.addToParset("Cimager.dataset=1934pt1.ms")
 spr.runImager()
