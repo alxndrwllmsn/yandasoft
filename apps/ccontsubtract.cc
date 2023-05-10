@@ -1,6 +1,6 @@
 /// @file
 ///
-/// Application to subtract continuum 
+/// Application to subtract continuum
 /// Control parameters are passed in from a LOFAR ParameterSet file.
 ///
 /// @copyright (c) 2007 CSIRO
@@ -59,7 +59,12 @@ class CcontsubtractApp : public askap::Application
 
             try {
                 LOFAR::ParameterSet subset(config().makeSubset("CContSubtract."));
-
+                // Perform %w or %r substitutions for all keys.
+                if (comms.isParallel()) {
+                    for (LOFAR::ParameterSet::iterator it = subset.begin(); it != subset.end(); ++it) {
+                        it->second = LOFAR::ParameterValue(comms.substitute(it->second));
+                    }
+                }
                 // We cannot issue log messages until MPI is initialized!
                 ContSubtractParallel csub(comms, subset);
 
