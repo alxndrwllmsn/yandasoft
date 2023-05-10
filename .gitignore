@@ -42,3 +42,5 @@ tests/data/simulation/synthregression/temp_parset.in
 tests/data/simulation/synthregression/weights.field1/
 tests/data/simulation/synthregression/wtermtest.pyc
 tests/data/simulation/synthregression/__pycache__/
+tests/data/simulation/synthregression/1934pt0.ms/
+tests/data/simulation/synthregression/1934pt1.ms/
