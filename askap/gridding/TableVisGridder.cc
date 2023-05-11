@@ -759,7 +759,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                    ASKAPCHECK(convFunc.nrow() % 2 == 1,
                            "Expect convolution function with an odd number of pixels for each axis, CF["<<
                            cInd<<"] has shape="<<convFunc.shape());
-;
+
                    // we now use support size for this given plane in the CF cache; itsSupport is a maximum
                    // support across all CFs (this allows plane-dependent support size)
                    const int support = (int(convFunc.nrow()) - 1) / 2;
@@ -1276,7 +1276,7 @@ void TableVisGridder::initialiseWeightBuilder()
 {
   if (itsUVWeightBuilder && !isPSFGridder() && !isPCFGridder()) {
       ASKAPCHECK(itsShape.nelements()>=2, "Shape has not been initialised before initialiseWeightBuilder is called");
-      itsUVWeightBuilder->initialise(itsShape[0], itsShape[1], itsShape.nelements() >= 3 ? itsShape[2] : 1u);
+      itsUVWeightBuilder->initialise(itsShape[0], itsShape[1], itsShape.nelements() > 3 ? itsShape[3] : 1u);
   } 
 }
 
