@@ -79,7 +79,7 @@ using namespace askap::synthesis;
 class CcalApplyApp : public askap::Application
 {
     public:
-        virtual int run(int argc, char* argv[])
+        virtual int run(int argc, char* argv[]) override
         {
             // This class must have scope outside the main try/catch block
             askap::askapparallel::AskapParallel comms(argc, const_cast<const char**>(argv));

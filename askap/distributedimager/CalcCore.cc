@@ -263,16 +263,16 @@ casacore::Array<casacore::Complex> CalcCore::getPCFGrid() {
     std::vector<std::string>::const_iterator it=completions.begin();
     const string imageName("image"+(*it));
     boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPreconGridder(imageName));
-    ASKAPCHECK(tvg,"PreconGridder not defined, make sure preservecf is set to true")
-
-    return tvg->getGrid();
+    //ASKAPCHECK(tvg,"PreconGridder not defined, make sure preservecf is set to true")
+    ASKAPLOG_WARN_STR(logger,"PreconGridder not defined, make sure preservecf is set to true");
+    return (tvg ? tvg->getGrid() : casacore::Array<casacore::Complex>());
 }
 casacore::Array<casacore::Complex> CalcCore::getPSFGrid() {
 
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
     boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-// We will need to loop over all completions i.e. all sources
+    // We will need to loop over all completions i.e. all sources
     const std::vector<std::string> completions(itsModel->completions("image"));
 
     std::vector<std::string>::const_iterator it=completions.begin();

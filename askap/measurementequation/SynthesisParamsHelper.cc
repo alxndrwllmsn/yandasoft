@@ -969,7 +969,7 @@ namespace askap
     /// @return downsampled image
     /// @todo move osfactor to itsOsFactor to enforce consistency between oversample() & downsample()?
     /// @todo use scimath::PaddingUtils::fftPad? Downsampling may not be supported at this stage
-    void SynthesisParamsHelper::downsample(casacore::Array<float> &image, const float osfactor)
+    void SynthesisParamsHelper::downsample(casacore::Array<float> &image, const float osfactor, const bool norm)
     {
 
         ASKAPCHECK(osfactor >= 1.0,
@@ -993,8 +993,10 @@ namespace askap
             // extract the central portion of the Fourier grid
             Agrid = scimath::PaddingUtils::extract(AgridOS,osfactor);
 
-            // renormalise based on the imminent padding
-            //Agrid /= static_cast<float>(osfactor*osfactor);
+            if (norm) {
+                // renormalise based on unpadding
+                Agrid /= static_cast<float>(osfactor*osfactor);
+            }
 
             // ifft back to image and return the real part
             casacore::ArrayLattice<casacore::Complex> Lgrid(Agrid);

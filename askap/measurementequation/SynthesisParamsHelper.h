@@ -332,7 +332,7 @@ namespace askap
         /// @brief remove Fourier zero-padding region to re-establish original resolution after cleaning
         /// @param[in] osfactor extra oversampling factor
         /// @todo move osfactor to itsOsFactor to enforce consistency between oversample() & downsample()
-        static void downsample(casacore::Array<float> &pixelArrayOS, const float osfactor=1.);
+        static void downsample(casacore::Array<float> &pixelArrayOS, const float osfactor=1., const bool norm=false);
 
         /// @brief determine sampling to use for nyquistgridding
         /// @param[in] advice VisMetaDataStats object used to get max U, V, W
