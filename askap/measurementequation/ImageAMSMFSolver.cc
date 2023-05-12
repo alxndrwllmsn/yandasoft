@@ -579,7 +579,7 @@ namespace askap
                     // Will need downsampling if params are stored with lower resolution
                     if (itsExtraOversamplingFactor) {
                         Array<Float> tmpImg = dirtyVec(order);
-                        SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor);
+                        SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor,true);
                         ASKAPLOG_DEBUG_STR(logger, "Dirty(" << order << ") shape = " << dirtyVec(order).shape());
                         saveArrayIntoParameter(ip, thisOrderParam, planeIter.shape(), "residual",
                             unpadImage(tmpImg), planeIter.position());
@@ -591,7 +591,7 @@ namespace askap
                         if (itsExtraOversamplingFactor) {
                             ASKAPLOG_DEBUG_STR(logger, "PSF(" << order << ") shape = " << psfVec(order).shape());
                             Array<Float> tmpImg = psfVec(order);
-                            SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor);
+                            SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor,true);
                             saveArrayIntoParameter(ip, thisOrderParam, planeIter.shape(), "psf.image",
                                 unpadImage(tmpImg), planeIter.position());
                         } else {
@@ -601,7 +601,7 @@ namespace askap
                         if(order==0&&maskArray.nelements()) {
                             if (itsExtraOversamplingFactor) {
                                 Array<Float> tmpImg = maskArray;
-                                SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor);
+                                SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor,true);
                                 saveArrayIntoParameter(ip, thisOrderParam, planeIter.shape(), "mask",
                                     unpadImage(tmpImg), planeIter.position());
                             } else {
