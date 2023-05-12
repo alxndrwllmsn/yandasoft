@@ -324,14 +324,18 @@ namespace askap
           const std::vector<std::string>& historyLines = std::vector<std::string> {});
 
         /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
+        /// @param[in] pixelArray the array to oversample
         /// @param[in] osfactor extra oversampling factor
+        /// @param[in] norm bool true if we want to renormalise the array (e.g., keep psf peak at 1)
         /// @todo add PaddingUtils support for N other than 2 (e.g. 2.5 for 5x syn beam os if gridding at Nyquist)
         /// @todo move osfactor to itsOsFactor to enforce consistency between oversample() & downsample()
         static void oversample(casacore::Array<float> &pixelArray, const float osfactor=1., const bool norm=true);
 
         /// @brief remove Fourier zero-padding region to re-establish original resolution after cleaning
+        /// @param[in] pixelArray the array to downsample
         /// @param[in] osfactor extra oversampling factor
         /// @todo move osfactor to itsOsFactor to enforce consistency between oversample() & downsample()
+        /// @param[in] norm bool true if we want to renormalise the array (e.g., keep psf peak at 1)
         static void downsample(casacore::Array<float> &pixelArrayOS, const float osfactor=1., const bool norm=false);
 
         /// @brief determine sampling to use for nyquistgridding
