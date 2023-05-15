@@ -38,6 +38,7 @@ GenericUVWeightIndexTranslator.cc
 RobustUVWeightCalculator.cc
 ConjugatesAdderFFT.cc
 CompositeUVWeightCalculator.cc
+UVWeightGridder.cc
 )
 
 install (FILES
@@ -89,6 +90,7 @@ GenericUVWeightIndexTranslator.h
 RobustUVWeightCalculator.h
 ConjugatesAdderFFT.h
 CompositeUVWeightCalculator.h
+UVWeightGridder.h
 DESTINATION include/askap/gridding
 )
 
