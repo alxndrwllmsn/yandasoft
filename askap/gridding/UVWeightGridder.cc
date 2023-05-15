@@ -35,6 +35,10 @@ namespace askap {
 
 namespace synthesis {
 
+/// @brief default constructor
+/// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
+UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.)
+{}
 
 /// @brief Initialise the gridding and the associated builder class
 /// @details This method is supposed to be called before gridding first data. For convenience parameters resemble those
@@ -71,6 +75,34 @@ casacore::MVDirection UVWeightGridder::getTangentPoint() const
    const casacore::Quantum<double> refLat(refVal[1], "rad");
    const casacore::MVDirection out(refLon, refLat);
    return out;
+}
+
+// (MV): code duplication with the gridder classes tells me that we probably need to move it to Axes (and getTangentPoint too)
+// there is a complication with shape and padding, though
+
+/// @brief obtain the centre of the image
+/// @details This method extracts RA and DEC axes from itsAxes and
+/// forms a direction measure corresponding to the middle of each axis.
+/// @return direction measure corresponding to the image centre
+casacore::MVDirection UVWeightGridder::getImageCentre() const
+{
+   ASKAPCHECK(itsAxes.hasDirection(),"Direction axis is missing. axes="<<itsAxes);
+   casacore::MDirection out;
+   casacore::Vector<casacore::Double> centrePixel(2);
+   ASKAPDEBUGASSERT(itsShape.nelements()>=2);
+   ASKAPDEBUGASSERT(paddingFactor()>0);
+   for (size_t dim=0; dim<2; ++dim) {
+        centrePixel[dim] = double(itsShape[dim])/2./double(paddingFactor());
+   }
+   // MV: note, there were experiments running gridder code under OpenMP which would hit the issue with the lack of
+   // thread safety for casacore routines. To abstract this out, syncHelper was written but it is a bit ugly to
+   // include it outside of TableVisGridder. If thread safety is required here, one would need to change this code
+   // to the way similar to TableVisGridder and probably made the access to syncHelper via a proper singleton pattern.
+   // At this stage, I don't think we ever run this part from multiple threads, so I use casacore pixel to world conversion
+   // directly.
+   ASKAPCHECK(itsAxes.directionAxis().toWorld(out, centrePixel),
+        "Unable to obtain world coordinates for the centre of the image. Something is wrong with the coordinate system");
+   return out.getValue();
 }
 
 } // namespace synthesis

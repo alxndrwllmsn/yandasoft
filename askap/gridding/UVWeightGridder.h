@@ -55,6 +55,10 @@ namespace synthesis {
 /// @ingroup gridding
 struct UVWeightGridder  {
 
+   /// @brief default constructor
+   /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
+   UVWeightGridder();
+
    // need to think whether we should provide a constructor which sets the builder to the generic version up front. At least it would be a handy short-cut for now.
 
    /// @brief assign uv weight builder
@@ -86,7 +90,38 @@ struct UVWeightGridder  {
    /// by the builder and this class is unchanged except for various caches (like frequency mapper)
    void accumulate(accessors::IConstDataAccessor& acc) const;
 
-   /*
+   // as mentioned in the notes for the accumulate method, it may be more correct (from design-purist point of view)
+   // to delegate all data selection at the accessor level. However, gridders implement some selection (and some is
+   // even implicit like wmax rejection which would be very difficult to take into account in a generic way). So
+   // we lack this functionality in the accessor selection. To move foward faster, I (MV) will copy some of this
+   // gridder functionality here. It can be removed later on, if we ever had a cleaner redesign of gridder classes.
+
+   /// @brief set the largest angular separation between the pointing centre and the image centre
+   /// @details If the threshold is positive, it is interpreted as the largest allowed angular
+   /// separation between the beam (feed in the accessor terminology) pointing centre and the
+   /// image centre. This option matches the gridder option - We need it to allow imaging of a subset of data 
+   /// (i.e. a smaller field of view) and reject all pointings located outside this smaller image. All accessor rows with
+   /// pointingDir1 separated from the image centre by more than this threshold will be ignored in accumulate.
+   /// If the threshold is negative (default), no data rejection based on the pointing direction is done.
+   /// The class is initialised by default with a negative threshold, i.e. all data are used by default.
+   /// @param[in] threshold largest allowed angular separation in radians, use negative value to select all data
+   void inline maxPointingSeparation(double threshold = -1.) { itsMaxPointingSeparation = threshold; }
+
+protected:
+
+   /// @brief obtain the tangent point
+   /// @details This method extracts the tangent point (reference position) from the
+   /// coordinate system.
+   /// @return direction measure corresponding to the tangent point
+   casacore::MVDirection getTangentPoint() const;
+
+   /// @brief obtain the centre of the image
+   /// @details This method extracts RA and DEC axes from itsAxes and
+   /// forms a direction measure corresponding to the middle of each axis.
+   /// @return direction measure corresponding to the image centre
+   casacore::MVDirection getImageCentre() const;
+
+   
    // check whether we need to keep padding factor like the gridder does, may be it is sufficient to pass it to initialise method
    // and later use the shape or cell size  
 
@@ -95,14 +130,6 @@ struct UVWeightGridder  {
    /// by this class is slightly larger than what the user has requested.
    /// @return current padding factor
    float inline paddingFactor() const { return itsPaddingFactor;}
-   */
-
-   /// @brief obtain the tangent point
-   /// @details  This method extracts the tangent point (reference position) from the
-   /// coordinate system.
-   /// @return direction measure corresponding to the tangent point
-   casacore::MVDirection getTangentPoint() const;
-
 
 private:
 
@@ -116,6 +143,13 @@ private:
    /// @details It is needed for proper cell sizes, etc and set via the initialise method
    askap::scimath::Axes itsAxes;
 
+   /// @brief shape of the associated image
+   /// @note it includes extra dimensions the gridder would deal with
+   casacore::IPosition itsShape;
+
+   /// @brief internal padding factor, 1 by default
+   float itsPaddingFactor;    
+
    /// @brief cell sizes in wavelengths along the U direction
    double itsUCellSize;
 
@@ -127,6 +161,17 @@ private:
    /// gridder class doesn't make much sense without the builder set. Therefore, accumulate method
    /// throws an exception if this is the case at that stage.
    boost::shared_ptr<IUVWeightBuilder> itsUVWeightBuilder;
+
+   /// @brief largest angular separation between the pointing centre and the image centre
+   /// @details If the value is positive, it is interpreted as the largest allowed angular
+   /// separation between the beam (feed in the accessor terminology) pointing centre and the
+   /// image centre. It is intended to allow imaging of a subset of data (i.e. smaller field of view)
+   /// and reject all pointings located outside this smaller image. All accessor rows with
+   /// pointingDir1 separated from the image centre by more than this threshold are ignored.
+   /// If the value is negative, no data rejection based on the pointing direction is done.
+   /// Values are in radians.
+   double itsMaxPointingSeparation;
+
 
 };
 
