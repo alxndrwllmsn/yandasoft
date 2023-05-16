@@ -37,7 +37,8 @@ namespace synthesis {
 
 /// @brief default constructor
 /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
-UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.)
+UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.), 
+       itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true)
 {}
 
 /// @brief Initialise the gridding and the associated builder class

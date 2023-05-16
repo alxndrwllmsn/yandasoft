@@ -91,7 +91,7 @@ struct UVWeightGridder  {
    void accumulate(accessors::IConstDataAccessor& acc) const;
 
    // as mentioned in the notes for the accumulate method, it may be more correct (from design-purist point of view)
-   // to delegate all data selection at the accessor level. However, gridders implement some selection (and some is
+   // to delegate all data selection to the accessor level. However, gridders implement some selection (and some is
    // even implicit like wmax rejection which would be very difficult to take into account in a generic way). So
    // we lack this functionality in the accessor selection. To move foward faster, I (MV) will copy some of this
    // gridder functionality here. It can be removed later on, if we ever had a cleaner redesign of gridder classes.
@@ -106,6 +106,13 @@ struct UVWeightGridder  {
    /// The class is initialised by default with a negative threshold, i.e. all data are used by default.
    /// @param[in] threshold largest allowed angular separation in radians, use negative value to select all data
    void inline maxPointingSeparation(double threshold = -1.) { itsMaxPointingSeparation = threshold; }
+
+   /// @brief set or reset flag controlling selection of the representative beam and pointing
+   /// @details Change itsDoBeamAndFieldSelection
+   /// @param[in] doSelection new value of the flag
+   void inline useAllDataForPSF(const bool doSelection) { itsDoBeamAndFieldSelection = doSelection;}
+
+
 
 protected:
 
@@ -172,6 +179,38 @@ private:
    /// Values are in radians.
    double itsMaxPointingSeparation;
 
+   // the following fields are used to implement functionality similar to representative 
+   // feed and field selection for PSF in the ordinary gridders (i.e. if multiple 
+   // beams and pointings are gridded onto the same grid, we don't want them all to contribute
+   // to the uv-weight).
+
+   /// @brief true if no visibilities have been accumulated since the last initialise
+   /// @details By default, we only take the first encountered beam (feed in the accessor 
+   /// terminology) and field (it is an approximation that they all are the same). This flag
+   /// is reset in the initialise call enabling reuse of the object with potentially different 
+   /// representative feed and field.
+   mutable bool itsFirstAccumulatedVis;
+
+   /// @brief an index of the beam (feed in accessor) which is accepted
+   /// @details This data member is initialized when the first visibility is accumulated,
+   /// only this beam (feed in the accessor terminology) contributes to the weight
+   /// @note the value only makes sense if itsFirstAccumulatedVis is false and itsDoBeamAndFieldSelection is true
+   mutable casacore::uInt itsSelectedBeam;
+
+   /// @brief pointing direction of the beam which is accepted
+   /// @details This data member is initialized when the first visibility is accumulated
+   /// enabling selection of the particular field contributing to the weight
+   /// @note the value only makes sense if itsFirstAccumulatedVis is false and itsDoBeamAndFieldSelection is true
+   mutable casacore::MVDirection itsSelectedPointing;
+
+   /// @brief flag controlling data selection for accumulation
+   /// @details By default we only accumulate a representative beam (feed in the accessor terminology)
+   /// and field to construct the weight. For research purposes we need an option which allows us to take all 
+   /// available data into account. Setting this is flag to false will result in itsSelectedBeam and itsSelectedPointing 
+   /// being ignored. The default value is true.
+   /// @note The flag fulfilling the similar role in the ordinary gridders is defined in the opposite 
+   /// sense (false to do the selection).
+   bool itsDoBeamAndFieldSelection;
 
 };
 
