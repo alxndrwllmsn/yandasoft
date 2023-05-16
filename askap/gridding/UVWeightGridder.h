@@ -112,9 +112,32 @@ struct UVWeightGridder  {
    /// @param[in] doSelection new value of the flag
    void inline useAllDataForPSF(const bool doSelection) { itsDoBeamAndFieldSelection = doSelection;}
 
-
+   /// @brief assign source index to be used for all future accumulated weights
+   /// @details This is essentially an arbitrary index (zero by default) which is passed to the
+   /// builder class as the 3rd parameter. There is no particular need to have it in our current use cases,
+   /// it has been added because gridder classes support it for various research-related experiments.
+   void setSourceIndex(casacore::uInt index) { itsSourceIndex = index; }
 
 protected:
+
+   /// @brief obtain current field index
+   /// @details Although it is not great, we use the fact that only one field (i.e. dish pointing)
+   /// can be represented by a single accessor. It is the case in the current implementation, but
+   /// is not, strictly speaking, required by the interface or MS standard. In principle, only potentially
+   /// bad performance stops us doing it per row rather than per accessor, so the limitation is not fundamental.
+   /// This method returns the field 
+   /// corresponding to the accessor passed during the last call to indexField.
+   /// @return current field index
+   inline casacore::uInt currentField() const { return itsCurrentField; }
+  
+   /// @brief checks whether the current field has been updated
+   /// @details See currentField for the description of limitations. This method detects field changes in the field pointing (and numbers them in the 
+   /// order they are encountered). If at a later stage we find that the fields need to be numbered in a particular way, this can be implemented.
+   /// @note To match implementation of the gridder classes, we detect changes in the pointing of the first encountered beam. It has implications if
+   /// either 3rd axis is operated in a non-tracking way or accessor row structure is different from one iteration to another. I (MV) suspect it was done
+   /// this way because in early days we're trying to simulate equatorial vs. alt-az mounts and, technically, physical beam pointing matters.
+   /// @param[in] acc input const accessor to analyse
+   void indexField(const accessors::IConstDataAccessor &acc);
 
    /// @brief obtain the tangent point
    /// @details This method extracts the tangent point (reference position) from the
@@ -212,6 +235,15 @@ private:
    /// sense (false to do the selection).
    bool itsDoBeamAndFieldSelection;
 
+   /// @brief current "source index" to be passed to the builder class
+   /// @details This is essentially an arbitrary index (zero by default) which is passed to the
+   /// builder class as the 3rd parameter. There is no particular need to have it in our current use cases,
+   /// it has been added because gridder classes support it for various research-related experiments.
+   casacore::uInt itsSourceIndex;
+
+   /// @brief cache for the current field index
+   /// @details See indexField for more info
+   mutable casacore::uInt itsCurrentField;
 };
 
 } // namespace synthesis

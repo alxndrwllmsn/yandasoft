@@ -38,7 +38,7 @@ namespace synthesis {
 /// @brief default constructor
 /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
 UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.), 
-       itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true)
+       itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u)
 {}
 
 /// @brief Initialise the gridding and the associated builder class
@@ -60,6 +60,17 @@ void UVWeightGridder::initialise(const scimath::Axes& axes, const casacore::IPos
 /// (as this would be a separate iteration over the data anyway). The method is 'const' because the actual accumulation is done
 /// by the builder and this class is unchanged except for various caches (like frequency mapper)
 void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
+{
+}
+
+/// @brief checks whether the current field has been updated
+/// @details See currentField for the description of limitations. This method detects field changes in the field pointing (and numbers them in the 
+/// order they are encountered). If at a later stage we find that the fields need to be numbered in a particular way, this can be implemented.
+/// @note To match implementation of the gridder classes, we detect changes in the pointing of the first encountered beam. It has implications if
+/// either 3rd axis is operated in a non-tracking way or accessor row structure is different from one iteration to another. I (MV) suspect it was done
+/// this way because in early days we're trying to simulate equatorial vs. alt-az mounts and, technically, physical beam pointing matters.
+/// @param[in] acc input const accessor to analyse
+void UVWeightGridder::indexField(const accessors::IConstDataAccessor &acc)
 {
 }
 
