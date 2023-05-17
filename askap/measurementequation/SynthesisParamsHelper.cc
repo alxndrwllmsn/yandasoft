@@ -1006,6 +1006,28 @@ namespace askap
 
     }
 
+    /// @brief Find number no smaller than given one, with only factors of 2,3,5,7
+    /// @param[in] int integer number
+    /// @return int smallest number with only factors of 2,3,5,7 >= given number
+    int nextFactor2357(int n)
+    {
+        vector<int> factors = {2, 3, 5, 7};
+        int next_number = n + (n % 2);
+        while (true) {
+            int temp = next_number;
+            for (auto factor : factors) {
+                while (temp % factor == 0) {
+                    temp /= factor;
+                }
+            }
+            if (temp == 1) {
+                return next_number;
+            }
+            next_number += 2;
+        }
+    }
+
+
     /// @brief determine sampling to use for nyquistgridding
     /// @param[in] advice VisMetaDataStats object used to get max U, V, W
     /// @param[in/out] parset to read and modify (setting extraoversampling and changing cellsize and shape/subshape)
@@ -1054,8 +1076,8 @@ namespace askap
             // now tweak the ratio to result in an integer number of pixels and reset the gridding cell size
             ASKAPDEBUGASSERT(extraOsFactor >= 1);
             int nPix = static_cast<int>(ceil(imSize[0]/extraOsFactor));
-            // also ensure that it is even
-            nPix += nPix % 2;
+            // ensure we only use factors of 2, 3, 5 and 7 to avoid slow FFT issues AXA-2430
+            nPix = nextFactor2357(nPix);
 
             int nSubPix = 0;
             if (parset.isDefined("Images.subshape")) {
@@ -1070,8 +1092,8 @@ namespace askap
                 }
                 nSubPix = static_cast<int>(ceil(subSize[0]/extraOsFactor));
                 ASKAPDEBUGASSERT(nSubPix > 1);
-                // ensure that it is even
-                nSubPix += nSubPix % 2;
+                // ensure we only use factors of 2, 3, 5 and 7 to avoid slow FFT issues AXA-2430
+                nSubPix = nextFactor2357(nSubPix);
                 // reset the extra multiplicative factor
                 extraOsFactor = static_cast<double>(subSize[0]) / nSubPix;
                 nPix = nSubPix * factor;
