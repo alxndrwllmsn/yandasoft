@@ -41,6 +41,9 @@
 #include <askap/gridding/FrequencyMapper.h>
 #include <askap/scimath/fitting/Axes.h>
 
+// std includes
+#include <vector>
+
 // boost includes (although it would be included through interfaces)
 #include <boost/shared_ptr.hpp>
 
@@ -107,6 +110,14 @@ struct UVWeightGridder  {
    /// @param[in] threshold largest allowed angular separation in radians, use negative value to select all data
    void inline maxPointingSeparation(double threshold = -1.) { itsMaxPointingSeparation = threshold; }
 
+   /// @brief set the pointing tolerance for field change detection
+   /// @details Fields are indexed in the framework but physically are represented by pointing directions which are 
+   /// continuous (and could even represent drift scans or observations without 3rd axis tracking). This method sets the
+   /// tolerance controlling when the pointing would be considered new.
+   /// @param[in] pointingTol new pointing tolerance in radians
+   /// @note The default tolerance is 10^{-4} radians to match rather implicit default in the gridders
+   void inline pointingTolerance(double pointingTol) { itsPointingTolerance = pointingTol; }
+
    /// @brief set or reset flag controlling selection of the representative beam and pointing
    /// @details Change itsDoBeamAndFieldSelection. By default it is true, i.e. only the first encountered beam and field is accumulated.
    /// This has to be disabled if multiple weight grids are built (e.g. one per beam) and all data are present in the same accessor (as opposed
@@ -140,7 +151,7 @@ protected:
    /// either 3rd axis is operated in a non-tracking way or accessor row structure is different from one iteration to another. I (MV) suspect it was done
    /// this way because in early days we're trying to simulate equatorial vs. alt-az mounts and, technically, physical beam pointing matters.
    /// @param[in] acc input const accessor to analyse
-   void indexField(const accessors::IConstDataAccessor &acc);
+   void indexField(const accessors::IConstDataAccessor &acc) const;
 
    /// @brief obtain the tangent point
    /// @details This method extracts the tangent point (reference position) from the
@@ -247,6 +258,20 @@ private:
    /// @brief cache for the current field index
    /// @details See indexField for more info
    mutable casacore::uInt itsCurrentField;
+
+   // it may be worth adding an option to always return zero field index (i.e. what we'd normally have for non-mosaicing gridders)
+
+   /// @brief known pointings of the first encountered beam
+   /// @details The index in this vector is the field index. We can convert the code to use the same approach
+   /// as AProjectGridderBase limiting how much the vector can grow if this is found to be necessary. The reason
+   /// AProjectGridderBase uses more complicated approach is because it creates basis for convolution functions cache as well.
+   /// Unlimited growth of this vector may become a problem for non-standard operations of the 3rd axis mount or a
+   /// telescope with off-axis beams and alt-az mount.
+   mutable std::vector<casacore::MVDirection> itsKnownPointings;
+
+   /// @brief pointing tolerance in radians used to index fields
+   /// @details See pointingTolerance for more info.
+   double itsPointingTolerance;
 };
 
 } // namespace synthesis

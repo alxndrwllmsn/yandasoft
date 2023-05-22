@@ -29,7 +29,15 @@
 /// @author Max Voronkov <maxim.voronkov@csiro.au>
 
 // own includes
+#include <askap/askap_synthesis.h>
+#include <askap/askap/AskapLogging.h>
+
 #include <askap/gridding/UVWeightGridder.h>
+#include <askap/askap/AskapUtil.h>
+#include <askap/askap/AskapError.h>
+#include <askap/scimath/utils/PaddingUtils.h>
+
+ASKAP_LOGGER(logger, ".gridding.uvweightgridder");
 
 namespace askap {
 
@@ -38,7 +46,8 @@ namespace synthesis {
 /// @brief default constructor
 /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
 UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.), 
-       itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u)
+       itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
+       itsPointingTolerance(0.0001)
 {}
 
 /// @brief Initialise the gridding and the associated builder class
@@ -51,6 +60,17 @@ UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), it
 /// @note this method plays the role of initialiseGrid in the gridder hierarchy
 void UVWeightGridder::initialise(const scimath::Axes& axes, const casacore::IPosition& shape)
 {
+   ASKAPDEBUGASSERT(shape.nelements()>=2);
+   itsShape = scimath::PaddingUtils::paddedShape(shape,paddingFactor());
+   // the following section has some code duplication with TableVisGridder::initialiseCellSize, perhaps some of it should be moved to Axes
+   itsAxes = axes;
+   ASKAPCHECK(itsAxes.hasDirection(), "Direction axis is missing. itsAxes:"<<itsAxes);
+   const casacore::Vector<casacore::Double> increments = itsAxes.directionAxis().increment();
+   ASKAPCHECK(increments.nelements() == 2, "Expect 2 elements in the increment vector, you have "<<increments);
+   itsUCellSize = 1./(increments[0]*double(itsShape[0]));
+   itsVCellSize = 1./(increments[1]*double(itsShape[1]));
+
+   // initialisation of the builder class comes here
 }
 
 /// @brief process the visibility data.
@@ -70,8 +90,27 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
 /// either 3rd axis is operated in a non-tracking way or accessor row structure is different from one iteration to another. I (MV) suspect it was done
 /// this way because in early days we're trying to simulate equatorial vs. alt-az mounts and, technically, physical beam pointing matters.
 /// @param[in] acc input const accessor to analyse
-void UVWeightGridder::indexField(const accessors::IConstDataAccessor &acc)
+void UVWeightGridder::indexField(const accessors::IConstDataAccessor &acc) const
 {
+  // the code below uses a different (and more simple) approach to that of AProjectGridderBase, but may cause problems if we ever process data
+  // with off-axis beams and non-standard operation of 3rd axis (or from an alt-az telescope).
+
+  ASKAPDEBUGASSERT(acc.nRow()>0);
+  const casacore::MVDirection firstPointing = acc.pointingDir1()(0);
+
+  // some speed-up can probably be achieved if we check itsCurrentField first (most likely the field won't change from accessor to accessor), but 
+  // on the other hand, it would only matter if we have many fields in the same measurement set/iteration
+
+  for (size_t field = 0; field < itsKnownPointings.size(); ++field) {
+       if (firstPointing.separation(itsKnownPointings[field])<itsPointingTolerance) {
+           itsCurrentField = field;
+           return;
+       }
+  }
+
+  itsKnownPointings.push_back(firstPointing);
+  ASKAPLOG_DEBUG_STR(logger, "Found new field " << itsKnownPointings.size() << " with beam 0 at "<<
+            printDirection(firstPointing));
 }
 
 /// @brief obtain the tangent point
