@@ -91,7 +91,7 @@ struct UVWeightGridder  {
    void accumulate(accessors::IConstDataAccessor& acc) const;
 
    // as mentioned in the notes for the accumulate method, it may be more correct (from design-purist point of view)
-   // to delegate all data selection to the accessor level. However, gridders implement some selection (and some is
+   // to delegate all the data selection to the accessor level. However, gridders implement some selection (and some is
    // even implicit like wmax rejection which would be very difficult to take into account in a generic way). So
    // we lack this functionality in the accessor selection. To move foward faster, I (MV) will copy some of this
    // gridder functionality here. It can be removed later on, if we ever had a cleaner redesign of gridder classes.
@@ -108,9 +108,12 @@ struct UVWeightGridder  {
    void inline maxPointingSeparation(double threshold = -1.) { itsMaxPointingSeparation = threshold; }
 
    /// @brief set or reset flag controlling selection of the representative beam and pointing
-   /// @details Change itsDoBeamAndFieldSelection
+   /// @details Change itsDoBeamAndFieldSelection. By default it is true, i.e. only the first encountered beam and field is accumulated.
+   /// This has to be disabled if multiple weight grids are built (e.g. one per beam) and all data are present in the same accessor (as opposed
+   /// to appear as a result of a merge).
    /// @param[in] doSelection new value of the flag
-   void inline useAllDataForPSF(const bool doSelection) { itsDoBeamAndFieldSelection = doSelection;}
+   /// @note this method is matching useAllDataForPSF in the gridder hierarchy, but the meaning of the flag was changed to the opposite
+   void inline doBeamAndFieldSelection(const bool doSelection) { itsDoBeamAndFieldSelection = doSelection;}
 
    /// @brief assign source index to be used for all future accumulated weights
    /// @details This is essentially an arbitrary index (zero by default) which is passed to the
@@ -120,7 +123,7 @@ struct UVWeightGridder  {
 
 protected:
 
-   /// @brief obtain current field index
+   /// @brief obtain the current field index
    /// @details Although it is not great, we use the fact that only one field (i.e. dish pointing)
    /// can be represented by a single accessor. It is the case in the current implementation, but
    /// is not, strictly speaking, required by the interface or MS standard. In principle, only potentially
