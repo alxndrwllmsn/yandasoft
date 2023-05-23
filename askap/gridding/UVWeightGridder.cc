@@ -70,7 +70,28 @@ void UVWeightGridder::initialise(const scimath::Axes& axes, const casacore::IPos
    itsUCellSize = 1./(increments[0]*double(itsShape[0]));
    itsVCellSize = 1./(increments[1]*double(itsShape[1]));
 
-   // initialisation of the builder class comes here
+   // now initialise the builder class
+   ASKAPCHECK(itsUVWeightBuilder, "Weight builder class is supposed to be set before initialise call!");
+   itsUVWeightBuilder->initialise(itsShape[0], itsShape[1], itsShape.nelements() > 3 ? itsShape[3] : 1u);
+
+   // to setup accumulation of the first encountered field
+   itsFirstAccumulatedVis = true;
+   // I (MV) am not sure we need to reset the list of known pointings which is used to index fields. However, this only matters if we're
+   // going to reuse the weight gridder and run it multiple times for different data.
+   itsKnownPointings.clear();
+
+   // frequency mapping (similar to TableVisGridder::initialiseFreqMapping)
+   if (itsAxes.has("FREQUENCY") && itsShape.nelements()>=4) {
+      itsFreqMapper.setupImage(itsAxes, itsShape[3]);
+   } else {
+      ASKAPLOG_DEBUG_STR(logger, "Forced to use single spectral plane weight gridding (either "
+               "FREQUENCY axis or the number of channels are missing");
+      itsFreqMapper.setupSinglePlaneGridding();
+   }
+
+   ASKAPLOG_DEBUG_STR(logger, "UV Weight building is initialised assuming the tangent centre is "<<
+        printDirection(getTangentPoint())<<" and the image centre "<<
+        printDirection(getImageCentre()));
 }
 
 /// @brief process the visibility data.
@@ -81,6 +102,112 @@ void UVWeightGridder::initialise(const scimath::Axes& axes, const casacore::IPos
 /// by the builder and this class is unchanged except for various caches (like frequency mapper)
 void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
 {
+   // it may be worth thinking about the mode where we don't bother figuring out field index but rather use 0
+   // (although this index can always be ignored anyway by the builder class). This behaviour would mimic what we have in the
+   // non-mosaicing gridders.
+   indexField(acc);
+
+   ASKAPCHECK(itsUVWeightBuilder, "weight builder is supposed to be set before calling to accumulate");
+
+   const casacore::MVDirection imageCentre = getImageCentre();
+   const casacore::MVDirection tangentPoint = getTangentPoint();
+   ASKAPDEBUGASSERT(itsShape.nelements() >= 2);
+
+   // the following code is borrowed from gridder, but OpenMP sections are removed (less benefits for weight gridding as the
+   // effective "CF" is small and builder interface as it is doesn't support multithreaded weight addition)
+   const casacore::Vector<casacore::RigidVector<double, 3> > &outUVW = acc.rotatedUVW(tangentPoint);
+
+   const casacore::uInt nSamples = acc.nRow();
+   const casacore::uInt nChan = acc.nChannel();
+   const casacore::uInt nPol = acc.nPol();
+   ASKAPCHECK(nPol > 0, "Accessor passed to the accumulate method should have at least one polarisation product");
+
+   const casacore::Vector<casacore::Double>& frequencyList = acc.frequency();
+   itsFreqMapper.setupMapping(frequencyList);
+
+   // now loop over samples and add them to the grid
+   ASKAPDEBUGASSERT(casa::uInt(nChan) <= frequencyList.nelements());
+   const casa::Cube<casa::Bool>& flagCube = acc.flag();
+   const casa::Cube<casa::Complex>& noiseCube = acc.noise();
+
+   UVWeight uvWeightRW;
+   for (casacore::uInt i=0; i<nSamples; ++i) {
+        if (itsMaxPointingSeparation > 0.) {
+           // need to reject samples, if too far from the image centre
+           const casacore::MVDirection thisPointing  = acc.pointingDir1()(i);
+           if (imageCentre.separation(thisPointing) > itsMaxPointingSeparation) {
+               continue;
+           }
+        }
+        uvWeightRW = itsUVWeightBuilder->addWeight(acc.feed1()(i), itsCurrentField, itsSourceIndex);
+        ASKAPDEBUGASSERT(uvWeightRW.uSize() == itsShape[0]);
+        ASKAPDEBUGASSERT(uvWeightRW.vSize() == itsShape[1]);
+        if (itsFirstAccumulatedVis) {
+            if (itsDoBeamAndFieldSelection) {
+                itsSelectedBeam = acc.feed1()(i);
+                itsSelectedPointing = acc.dishPointing1()(i);
+                ASKAPLOG_DEBUG_STR(logger, "Using the data for beam "<<itsSelectedBeam<<
+                  " and field at "<<printDirection(itsSelectedPointing)<<" for uv weight construction");
+            } else {
+               ASKAPLOG_DEBUG_STR(logger, "All data are used for uv weight construction");
+            }
+            itsFirstAccumulatedVis = false;
+        }
+
+        // the tolerance is hard coded the same way as in the proper gridders
+        // although in principle we can make it configurable. Also note that itsPointingTolerance
+        // is used for different purpose (and with offset beams). But there is no huge reason why
+        // these tolerances should be different. We just have to match whatever the ordinary gridder 
+        // is doing, at least for now
+        if (itsDoBeamAndFieldSelection && ((itsSelectedBeam != acc.feed1()(i)) ||
+            (itsSelectedPointing.separation(acc.dishPointing1()(i)) > 1e-6))) {
+            continue;
+        }
+
+        for (casacore::uInt chan=0; chan<nChan; ++chan) {
+             const double reciprocalToWavelength = frequencyList[chan]/casacore::C::c;
+             if (chan == 0) {
+                // check for ridiculous frequency to pick up a possible error with input file,
+                // not essential for processing as such
+                ASKAPCHECK((reciprocalToWavelength>0.1) && (reciprocalToWavelength<30000),
+                    "Check frequencies in the input file as the order of magnitude is likely to be wrong, "
+                    "comment this statement in the code if you're trying something non-standard. Frequency = "<<
+                    frequencyList[chan]/1e9<<" GHz");
+             }
+             /// Scale U,V to integer pixels, ignore fractional terms and dependence on oversampling factor in the current code (see AXA-2485)
+             const double uScaled=reciprocalToWavelength * outUVW(i)(0) / itsUCellSize;
+             const int iu = askap::nint(uScaled);
+             const double vScaled=reciprocalToWavelength * outUVW(i)(1) / itsVCellSize;
+             const int iv = askap::nint(vScaled);
+
+             // mimic the behaviour of the orginary gridder w.r.t. partial polarisation, i.e. ignore the whole sample
+             bool allPolGood=true;
+             for (casacore::uInt pol=0; pol<nPol; ++pol) {
+                  if (flagCube(i, chan, pol)) {
+                      allPolGood=false;
+                      break;
+                  }
+             }
+             if (allPolGood && itsFreqMapper.isMapped(chan)) {
+                 // obtain which channel of the weight grid this accessor channel is mapped to
+                 const int imageChan = itsFreqMapper(chan);
+                 ASKAPDEBUGASSERT(imageChan < uvWeightRW.nPlane());
+                 // there is a short-cut here as we ignore the actual polarisation product produced for weight calculation. If X and Y have 
+                 // notably different noise this could get us into trouble.
+
+                 // we can run it through the converter, say for stokes I, but the estimate probably won't be better anyway, so keep it simple
+                 const float visNoise = casacore::square(casacore::real(noiseCube(i, chan, 0))) + casacore::square(casacore::real(noiseCube(i, chan, nPol-1)));
+                 const float visNoiseWt = (visNoise > 0.) ? 1./visNoise : 0.;
+                 ASKAPCHECK(visNoiseWt>0., "Weight is supposed to be a positive number; visNoiseWt="<<
+                            visNoiseWt<<" visNoise="<<visNoise);
+
+                 ASKAPDEBUGASSERT(iu < uvWeightRW.uSize());
+                 ASKAPDEBUGASSERT(iv < uvWeightRW.vSize());
+
+                 uvWeightRW(iu,iv,imageChan) += visNoiseWt;
+             }
+        }
+   }
 }
 
 /// @brief checks whether the current field has been updated

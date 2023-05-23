@@ -132,6 +132,12 @@ struct UVWeightGridder  {
    /// it has been added because gridder classes support it for various research-related experiments.
    void setSourceIndex(casacore::uInt index) { itsSourceIndex = index; }
 
+   /// @brief set padding factor
+   /// @details This method can be used to update padding factor (should be the same value as used by the ordinary gridder).
+   /// @param[in] padding new padding factor (the default is 1.)
+   /// @note It is worth checking whether we can avoid storing this factor and just pass it to initialise method
+   void setPaddingFactor(float padding) { itsPaddingFactor = padding; }
+
 protected:
 
    /// @brief obtain the current field index
@@ -166,7 +172,7 @@ protected:
    casacore::MVDirection getImageCentre() const;
 
    
-   // check whether we need to keep padding factor like the gridder does, may be it is sufficient to pass it to initialise method
+   // check whether we need to keep the padding factor like the gridder does, may be it is sufficient to pass it to initialise method
    // and later use the shape or cell size  
 
    /// @brief obtain padding factor
