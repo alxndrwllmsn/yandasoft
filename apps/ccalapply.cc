@@ -63,6 +63,7 @@
 #include <askap/measurementequation/CalibrationApplicatorME.h>
 #include <askap/measurementequation/CalibrationIterator.h>
 #include <askap/parallel/ParallelWriteIterator.h>
+#include <askap/utils/TilingUtils.h>
 
 // casacore includes
 #include <casacore/casa/OS/Timer.h>
@@ -88,7 +89,9 @@ class CcalApplyApp : public askap::Application
                 StatReporter stats;
                 LOFAR::ParameterSet subset(config().makeSubset("Ccalapply."));
 
-                itsDistribute = comms.isParallel() ? subset.getBool("distribute", true) : false;
+                // distribute by channel with master writing if parallel except if
+                // we have specified Tile based distribution instead
+                itsDistribute = comms.isParallel() ? subset.getBool("distribute", !subset.isDefined("Tiles")) : false;
 
                 if (itsDistribute) {
                     ASKAPLOG_INFO_STR(logger, "Data will be distributed between "<<(comms.nProcs() - 1)<<" workers, master will write data");
@@ -138,7 +141,7 @@ class CcalApplyApp : public askap::Application
                         calculationTime += timer.real();
                     }
                     ASKAPLOG_INFO_STR(logger, "Time spent in calculation and data movement (but excluding I/O): "<<calculationTime<<" seconds");
-                } else {
+                } else if (itsDistribute) {
                     // server code. Note, noise is not propagated back (as for the serial case)
                     ParallelWriteIterator::masterIteration(comms, getDataIterator(subset, comms), ParallelWriteIterator::SYNCFLAG | ParallelWriteIterator::READ);
                 }
@@ -237,11 +240,14 @@ class CcalApplyApp : public askap::Application
             return calME;
         }
 
-        IDataSharedIter getDataIterator(const LOFAR::ParameterSet& parset, const askap::askapparallel::AskapParallel &comms) const
+        IDataSharedIter getDataIterator(LOFAR::ParameterSet& parset, const askap::askapparallel::AskapParallel &comms) const
         {
+            // do substitutions
             const string ms = itsDistribute ? parset.getString("dataset") : comms.substitute(parset.getString("dataset"));
-            TableDataSource ds(ms);
-
+            if (parset.isDefined("Tiles")) {
+                parset.replace("Tiles",comms.substitute(parset.getString("Tiles")));
+            }
+            TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS);
             IDataSelectorPtr sel=ds.createSelector();
             sel << parset;
             IDataConverterPtr conv=ds.createConverter();
@@ -249,6 +255,15 @@ class CcalApplyApp : public askap::Application
             conv->setDirectionFrame(casa::MDirection::Ref(casa::MDirection::J2000));
             // ensure that time is counted in seconds since 0 MJD
             conv->setEpochFrame();
+
+            // do automatic distribution over tiles if requested and
+            //   if not distributing in other ways (by channel or ms)
+            const bool distributeByTile = !itsDistribute && comms.isParallel() && parset.isDefined("Tiles") &&
+                parset.getString("Tiles")=="auto" &&
+                parset.getString("dataset")==comms.substitute(parset.getString("dataset"));
+            if (distributeByTile) {
+                utils::distributeByTile(sel, "DATA", comms.nProcs(), comms.rank());
+            }
 
             if (parset.isDefined("maxchunkrows")) {
                 const casa::uInt maxChunkSize = parset.getUint32("maxchunkrows");
