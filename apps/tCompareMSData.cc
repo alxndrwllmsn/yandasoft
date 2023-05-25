@@ -113,6 +113,39 @@ bool doCompare(LOFAR::ParameterSet parset, const std::string &name1, const std::
     return true;
 }
 
+bool doCompareFlags(LOFAR::ParameterSet parset, const std::string &name1, const std::string &name2, bool detail = false) {
+    TableDataSource ds1(name1,TableDataSource::MEMORY_BUFFERS);
+    IDataSelectorPtr sel1=ds1.createSelector();
+    sel1 << parset;
+    IDataConverterPtr conv1=ds1.createConverter();
+    conv1->setFrequencyFrame(casa::MFrequency::Ref(casa::MFrequency::TOPO),"MHz");
+    IDataSharedIter it1=ds1.createIterator(sel1,conv1);
+    TableDataSource ds2(name2,TableDataSource::MEMORY_BUFFERS);
+    IDataSelectorPtr sel2=ds2.createSelector();
+    sel2 << parset;
+    IDataConverterPtr conv2=ds2.createConverter();
+    conv2->setFrequencyFrame(casa::MFrequency::Ref(casa::MFrequency::TOPO),"MHz");
+    IDataSharedIter it2=ds2.createIterator(sel2,conv2);
+    size_t cnt=0;
+    bool match = true;
+    ASKAPLOG_INFO_STR(logger, "Checking for exact match of flags");
+
+    for (it1.init(),it2.init();it1.hasMore()&&it2.hasMore()&&match;it1.next(),it2.next(),++cnt) {
+        match &= allEQ(it1->flag(),it2->flag());
+    }
+    ASKAPLOG_INFO_STR(logger, "Completed "<<cnt<<" iterations");
+    if (match && (it1.hasMore() || it2.hasMore())) {
+        ASKAPLOG_WARN_STR(logger, "Inputs do not have the same number of integrations");
+        return false;
+    }
+    if (match) {
+        ASKAPLOG_INFO_STR(logger,"The flag columns in the two MSs match");
+    } else {
+        ASKAPLOG_WARN_STR(logger,"The flag columns in the two MSs do not match");
+    }
+    return match;
+}
+
 /// @brief application class
 class CompareMSDataApp : public askap::Application
 {
@@ -134,7 +167,10 @@ class CompareMSDataApp : public askap::Application
                 const bool detail = config().getBool("detail",false);
                 const float tolerance = config().getFloat("tolerance",2.0e-6);
                 ASKAPLOG_INFO_STR(logger,"Comparing DATA column of "<<ms[0]<<" and "<<ms[1]);
-                const bool match = doCompare(config(), ms[0],ms[1],detail,tolerance);
+                bool match = doCompare(config(), ms[0],ms[1],detail,tolerance);
+                if (config().getBool("compareflag",false)) {
+                    match &= doCompareFlags(config(), ms[0],ms[1],false);
+                }
                 stats.logSummary();
                 return (match ? 0 : 1);
 
