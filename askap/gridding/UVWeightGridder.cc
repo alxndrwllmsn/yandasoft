@@ -176,9 +176,9 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
              }
              /// Scale U,V to integer pixels, ignore fractional terms and dependence on oversampling factor in the current code (see AXA-2485)
              const double uScaled=reciprocalToWavelength * outUVW(i)(0) / itsUCellSize;
-             const int iu = askap::nint(uScaled);
+             const int iu = askap::nint(uScaled) + itsShape(0) / 2;
              const double vScaled=reciprocalToWavelength * outUVW(i)(1) / itsVCellSize;
-             const int iv = askap::nint(vScaled);
+             const int iv = askap::nint(vScaled) + itsShape(1) / 2;
 
              // mimic the behaviour of the orginary gridder w.r.t. partial polarisation, i.e. ignore the whole sample
              bool allPolGood=true;
@@ -188,7 +188,8 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
                       break;
                   }
              }
-             if (allPolGood && itsFreqMapper.isMapped(chan)) {
+             if (allPolGood && itsFreqMapper.isMapped(chan) &&
+                 (iu >= 0) && (iv >= 0) && (iu < itsShape(0)) && (iv < itsShape(1))) {
                  // obtain which channel of the weight grid this accessor channel is mapped to
                  const int imageChan = itsFreqMapper(chan);
                  ASKAPDEBUGASSERT(imageChan < uvWeightRW.nPlane());
