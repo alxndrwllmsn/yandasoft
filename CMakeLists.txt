@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-set (VERSION "1.9.0")
+set (VERSION "1.10.1")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
 # ASKAP Integration (askapsoft)
@@ -132,7 +132,7 @@ FetchContent_Declare(base-imagemath
 # -------- base-askapparallel --------
 FetchContent_Declare(base-askapparallel
   GIT_REPOSITORY    ${ASKAPSDP_GIT_URL}/base-askapparallel.git
-  GIT_TAG           ${BASE_ASKAPPARRALLEL_TAG}
+  GIT_TAG           ${BASE_ASKAPPARALLEL_TAG}
   SOURCE_DIR        base-askapparallel
 )
 
@@ -280,18 +280,18 @@ set_target_properties(yandasoft PROPERTIES
 add_library(askap::yandasoft ALIAS yandasoft)
 
 target_link_libraries(yandasoft PUBLIC
-	lofar::Common
-	lofar::Blob
-	askap::askap
-	askap::scimath
-	askap::imagemath
-	askap::accessors
-	askap::parallel
-	${log4cxx_LIBRARY}
-	${CASACORE_LIBRARIES}
-	${COMPONENTS_LIBRARY}
-	${Boost_LIBRARIES}
-        ${GSL_LIBRARIES}
+  lofar::Common
+  lofar::Blob
+  askap::askap
+  askap::scimath
+  askap::imagemath
+  askap::accessors
+  askap::parallel
+  ${log4cxx_LIBRARY}
+  ${CASACORE_LIBRARIES}
+  ${COMPONENTS_LIBRARY}
+  ${Boost_LIBRARIES}
+  ${GSL_LIBRARIES}
 )
 
 target_compile_definitions(yandasoft PUBLIC
@@ -307,6 +307,7 @@ target_include_directories(yandasoft PUBLIC
   ${COMPONENTS_INCLUDE_DIRS}
   ${log4cxx_INCLUDE_DIRS}
   ${CASACORE_INCLUDE_DIRS}
+  ${GSL_INCLUDE_DIRS}
 )
 
 if (MPI_FOUND)

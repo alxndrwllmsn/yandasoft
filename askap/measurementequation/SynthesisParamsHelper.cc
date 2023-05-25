@@ -914,8 +914,10 @@ namespace askap
 
 
     /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
+    /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
+    /// @param[in] image the array to oversample
     /// @param[in] osfactor extra oversampling factor
-    /// @param[in] image input image to be oversampled
+    /// @param[in] norm bool true if we want to renormalise the array (e.g., keep psf peak at 1)
     /// @return oversampled image
     /// @todo move osfactor to itsOsFactor to enforce consistency between oversample() & downsample()?
     /// @todo use scimath::PaddingUtils::fftPad? Works with imtype rather than float so template there or here?
@@ -938,13 +940,13 @@ namespace askap
             casacore::Array<casacore::Complex> Agrid(image.shape());
             casacore::ArrayLattice<casacore::Complex> Lgrid(Agrid);
 
-            // copy image into a complex scratch space
-            casacore::convertArray<casacore::Complex,float>(Agrid, image);
-
             // renormalise based on the imminent padding
             if (norm) {
-                Agrid *= static_cast<float>(osfactor*osfactor);
+                image *= static_cast<float>(osfactor*osfactor);
             }
+
+            // copy image into a complex scratch space
+            casacore::convertArray<casacore::Complex,float>(Agrid, image);
 
             // fft to uv
             casacore::LatticeFFT::cfft2d(Lgrid, casacore::True);
@@ -964,12 +966,14 @@ namespace askap
     }
 
     /// @brief remove Fourier zero-padding region to re-establish original resolution after cleaning
+    /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
+    /// @param[in] image the array to oversample
     /// @param[in] osfactor extra oversampling factor
-    /// @param[in] image input oversampled image
+    /// @param[in] norm bool true if we want to renormalise the array (e.g., keep psf peak at 1)
     /// @return downsampled image
     /// @todo move osfactor to itsOsFactor to enforce consistency between oversample() & downsample()?
     /// @todo use scimath::PaddingUtils::fftPad? Downsampling may not be supported at this stage
-    void SynthesisParamsHelper::downsample(casacore::Array<float> &image, const float osfactor)
+    void SynthesisParamsHelper::downsample(casacore::Array<float> &image, const float osfactor, const bool norm)
     {
 
         ASKAPCHECK(osfactor >= 1.0,
@@ -993,8 +997,10 @@ namespace askap
             // extract the central portion of the Fourier grid
             Agrid = scimath::PaddingUtils::extract(AgridOS,osfactor);
 
-            // renormalise based on the imminent padding
-            //Agrid /= static_cast<float>(osfactor*osfactor);
+            if (norm) {
+                // renormalise based on unpadding
+                Agrid /= static_cast<float>(osfactor*osfactor);
+            }
 
             // ifft back to image and return the real part
             casacore::ArrayLattice<casacore::Complex> Lgrid(Agrid);
@@ -1004,6 +1010,27 @@ namespace askap
         image.resize(Agrid.shape());
         image = real(Agrid);
 
+    }
+
+    /// @brief Find number no smaller than given one, with only factors of 2,3,5,7
+    /// @param[in] int integer number
+    /// @return int smallest number with only factors or 2,3,5,7 >= given number
+    int nextFactor2357(int n)
+    {
+        vector<int> factors = {2, 3, 5, 7};
+        int next_number = n + (n % 2);
+        while (true) {
+            int temp = next_number;
+            for (auto factor : factors) {
+                while (temp % factor == 0) {
+                    temp /= factor;
+                }
+            }
+            if (temp == 1) {
+                return next_number;
+            }
+            next_number += 2;
+        }
     }
 
     /// @brief determine sampling to use for nyquistgridding
@@ -1054,8 +1081,8 @@ namespace askap
             // now tweak the ratio to result in an integer number of pixels and reset the gridding cell size
             ASKAPDEBUGASSERT(extraOsFactor >= 1);
             int nPix = static_cast<int>(ceil(imSize[0]/extraOsFactor));
-            // also ensure that it is even
-            nPix += nPix % 2;
+            // ensure we only use factors of 2, 3, 5 and 7 to avoid slow FFT issues AXA-2430
+            nPix = nextFactor2357(nPix);
 
             int nSubPix = 0;
             if (parset.isDefined("Images.subshape")) {
@@ -1064,14 +1091,14 @@ namespace askap
                 ASKAPCHECK(subSize[0] > 1, "subshape image size too small: "<<subSize[0]);
                 const int factor = static_cast<int>(ceil(static_cast<double>(imSize[0])/subSize[0]));
                 if (imSize[0] % subSize[0] != 0) {
-                    // adjust imSize to be a mulitple of subSize
+                    // adjust imSize to be a multiple of subSize
                     imSize[0] = subSize[0] * factor;
                     ASKAPLOG_INFO_STR(logger, "Adjusting imsize to be a multiple of subsize - factor: "<<factor);
                 }
                 nSubPix = static_cast<int>(ceil(subSize[0]/extraOsFactor));
                 ASKAPDEBUGASSERT(nSubPix > 1);
-                // ensure that it is even
-                nSubPix += nSubPix % 2;
+                // ensure we only use factors of 2, 3, 5 and 7 to avoid slow FFT issues AXA-2430
+                nSubPix = nextFactor2357(nSubPix);
                 // reset the extra multiplicative factor
                 extraOsFactor = static_cast<double>(subSize[0]) / nSubPix;
                 nPix = nSubPix * factor;
@@ -1542,7 +1569,7 @@ namespace askap
            // we have to figure out the name
            psfName = findPSF(ip);
        }
-       ASKAPCHECK(psfName != "", "Unable to find psf paramter to fit, params="<<ip);
+       ASKAPCHECK(psfName != "", "Unable to find psf parameter to fit, params="<<ip);
        ASKAPLOG_INFO_STR(logger, "Fitting 2D Gaussian into PSF parameter "<<psfName);
 
        casacore::Array<imtype> psfArray = ip.valueT(psfName);

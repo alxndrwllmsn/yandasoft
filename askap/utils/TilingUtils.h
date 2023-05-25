@@ -1,4 +1,6 @@
-/// @copyright (c) 2007 CSIRO
+/// @file TilingUtils.h
+///
+/// @copyright (c) 2023 CSIRO
 /// Australia Telescope National Facility (ATNF)
 /// Commonwealth Scientific and Industrial Research Organisation (CSIRO)
 /// PO Box 76, Epping NSW 1710, Australia
@@ -20,32 +22,27 @@
 /// along with this program; if not, write to the Free Software
 /// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 ///
+/// @author Mark Wieringa <mark.wieringa@csiro.au>
+///
 
-// ASKAPsoft includes
-#include <askap/askap/AskapTestRunner.h>
+#ifndef ASKAP_YANDASOFT_TILING_UTILS_H
+#define ASKAP_YANDASOFT_TILING_UTILS_H
 
-// just to avoid template compilation which will not work without logging
-#define A_PROJECT_GRIDDER_BASE_TCC
+#include <askap/dataaccess/IConstDataSource.h>
 
-// Test includes
-#include "TableVisGridderTest.h"
-#include "SupportSearcherTest.h"
-#include "FrequencyMapperTest.h"
-#include "NonLinearWSamplingTest.h"
-#include "UVWeightTest.h"
-#include "UVWeightCalculatorTest.h"
+#include <string>
 
-int main(int argc, char *argv[])
-{
-    askapdev::testutils::AskapTestRunner runner(argv[0]);
-    runner.addTest( askap::synthesis::TableVisGridderTest::suite());
-    runner.addTest( askap::synthesis::SupportSearcherTest::suite());
-    runner.addTest( askap::synthesis::FrequencyMapperTest::suite());
-    runner.addTest( askap::synthesis::NonLinearWSamplingTest::suite());
-    runner.addTest( askap::synthesis::UVWeightTest::suite());
-    runner.addTest( askap::synthesis::UVWeightCalculatorTest::suite());
 
-    bool wasSucessful = runner.run();
+namespace askap {
+namespace utils {
 
-    return wasSucessful ? 0 : 1;
+/// @brief set selection to distribute work over ranks by tiles
+/// @param[in] IDataSelectorPtr sel : shared pointer to data selector
+/// @param[in] string column : name of column to inspect (usually DATA or FLAG)
+/// @param[in] uint nRanks: number of MPI ranks
+/// @param[in] uint rank : MPI rank of current process
+void distributeByTile(accessors::IDataSelectorPtr& sel, const std::string& column, uint nRanks, uint rank);
+
 }
+}
+#endif

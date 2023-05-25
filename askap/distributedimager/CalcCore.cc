@@ -147,8 +147,15 @@ void CalcCore::doCalc()
 
         if (!combineChannels) {
             if (dopplerTracking) {
-                sel->chooseFrequencies(1, casacore::MVFrequency(itsFrequency), casacore::MVFrequency(0),
-                    casacore::MFrequency::castType(getFreqRefFrame().getType()));
+                // To allow a doppler tracking reference position to be specified we need
+                // a chooseFrequencies function that takes a MFrequency with reference frame
+                std::vector<string> direction = parset().getStringVector("dopplertracking.direction",{},false);
+                casacore::MFrequency::Ref freqRef = getFreqRefFrame();
+                if (direction.size() == 3) {
+                    casacore::MeasFrame frame(asMDirection(direction));
+                    freqRef.set(frame);
+                }
+                sel->chooseFrequencies(1, casacore::MFrequency(casacore::MVFrequency(itsFrequency),freqRef), casacore::MVFrequency(0));
             } else {
                 sel->chooseChannels(1, itsChannel);
             }
@@ -176,6 +183,15 @@ void CalcCore::doCalc()
             // Also this is why you cannot get at the grid from outside FFT equation
             boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
             ASKAPDEBUGASSERT(fftEquation);
+// DAM TRADITIONAL
+            if (parset().isDefined("gridder.robustness")) {
+                const float robustness = parset().getFloat("gridder.robustness");
+                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+                // also check that it is spectral line? Or do that earlier
+                //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
+                //  - won't work with Taylor terms
+                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
+            }
             fftEquation->useAlternativePSF(parset());
             fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
             itsEquation = fftEquation;
@@ -195,6 +211,12 @@ void CalcCore::doCalc()
             boost::shared_ptr<ImageFFTEquation> fftEquation( \
             new ImageFFTEquation (*itsModel, calIter, gridder()));
             ASKAPDEBUGASSERT(fftEquation);
+// DAM TRADITIONAL
+            if (parset().isDefined("gridder.robustness")) {
+                const float robustness = parset().getFloat("gridder.robustness");
+                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
+            }
             fftEquation->useAlternativePSF(parset());
             fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
             itsEquation = fftEquation;
@@ -241,9 +263,9 @@ casacore::Array<casacore::Complex> CalcCore::getPCFGrid() {
     std::vector<std::string>::const_iterator it=completions.begin();
     const string imageName("image"+(*it));
     boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPreconGridder(imageName));
-    ASKAPCHECK(tvg,"PreconGridder not defined, make sure preservecf is set to true")
-
-    return tvg->getGrid();
+    //ASKAPCHECK(tvg,"PreconGridder not defined, make sure preservecf is set to true")
+    ASKAPLOG_WARN_STR(logger,"PreconGridder not defined, make sure preservecf is set to true");
+    return (tvg ? tvg->getGrid() : casacore::Array<casacore::Complex>());
 }
 casacore::Array<casacore::Complex> CalcCore::getPSFGrid() {
 

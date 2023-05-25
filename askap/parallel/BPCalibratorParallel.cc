@@ -114,7 +114,7 @@ BPCalibratorParallel::BPCalibratorParallel(askap::askapparallel::AskapParallel& 
           const LOFAR::ParameterSet& parset) : MEParallelApp(comms,emptyDatasetKeyword(parset),false),
       itsPerfectModel(new scimath::Params()), itsRefAntenna(-1), itsSolutionID(-1),
       itsSolveLeakage(false), itsSolveBandpass(false), itsStoreLeakage(false), itsStoreBandpass(false),
-      itsPerformGainThresholding(parset.getBool("threshold.gain.enable", false)), 
+      itsPerformGainThresholding(parset.getBool("threshold.gain.enable", false)),
       itsExpectedGainAmplitude(parset.getDouble("threshold.gain.expected", 1.)),
       itsPerformLeakageThresholding(parset.getBool("threshold.leakage.enable", false)),
       itsUseXPolOnly(parset.getBool("xpol_only", false))
@@ -150,7 +150,7 @@ BPCalibratorParallel::BPCalibratorParallel(askap::askapparallel::AskapParallel& 
   ASKAPCHECK(itsSolveLeakage || itsSolveBandpass,"Need to specify solve=leakages or solve=bandpass");
   if (itsUseXPolOnly) {
       ASKAPCHECK(itsSolveLeakage && !itsSolveBandpass, "xpol_only = true option is allowed for leakage-only solutions");
-      ASKAPLOG_INFO_STR(logger, "Parallel-hand products will be ignored when making equations"); 
+      ASKAPLOG_INFO_STR(logger, "Parallel-hand products will be ignored when making equations");
   }
 
   if ((itsStoreLeakage != itsSolveLeakage) && (itsStoreBandpass != itsSolveBandpass)) {
@@ -172,7 +172,7 @@ BPCalibratorParallel::BPCalibratorParallel(askap::askapparallel::AskapParallel& 
       itsLeakageTolerance = parset.getDouble(tolerancePar);
       ASKAPLOG_INFO_STR(logger, "For each beam and channel, the whole solution will be flagged invalid for antennas with leakages deviating by more than "<<
            itsLeakageTolerance<<" from zero");
-  }    
+  }
   const std::string stOverridePar("solution_time");
   if (parset.isDefined(stOverridePar)) {
       itsSolutionTimeOverride = parset.getDouble(stOverridePar);
@@ -589,30 +589,30 @@ void BPCalibratorParallel::writeModel(const std::string &)
            if (itsPerformGainThresholding) {
                const std::string xGainPar = accessors::CalParamNameHelper::paramName(paramType.first.antenna(), paramType.first.beam(), casacore::Stokes::XX);
                const std::string yGainPar = accessors::CalParamNameHelper::paramName(paramType.first.antenna(), paramType.first.beam(), casacore::Stokes::YY);
-               if ((casacore::abs(casacore::abs(itsModel->complexValue(xGainPar)) - itsExpectedGainAmplitude) >= itsGainAmplitudeTolerance) || 
+               if ((casacore::abs(casacore::abs(itsModel->complexValue(xGainPar)) - itsExpectedGainAmplitude) >= itsGainAmplitudeTolerance) ||
                    (casacore::abs(casacore::abs(itsModel->complexValue(yGainPar)) - itsExpectedGainAmplitude) >= itsGainAmplitudeTolerance)) {
                     toBeStored = false;
                }
            }
        } else {
          ++nDiscardedIntentionally;
-       } 
+       }
        if (toBeStored) {
            if (itsPerformLeakageThresholding) {
                const std::string leakagePar1 = accessors::CalParamNameHelper::paramName(paramType.first.antenna(), paramType.first.beam(), casacore::Stokes::XY);
                const std::string leakagePar2 = accessors::CalParamNameHelper::paramName(paramType.first.antenna(), paramType.first.beam(), casacore::Stokes::YX);
-               if ((casacore::abs(itsModel->complexValue(leakagePar1)) >= itsLeakageTolerance) || 
+               if ((casacore::abs(itsModel->complexValue(leakagePar1)) >= itsLeakageTolerance) ||
                    (casacore::abs(itsModel->complexValue(leakagePar2)) >= itsLeakageTolerance)) {
                     toBeStored = false;
                }
            }
-       }    
+       }
        if (toBeStored) {
            if (!itsSolAcc) {
                // this is the first attempt to write calibration information - set up the accessor
                // solution accessor shared pointer acts as a flag that we need to set everything up
                ASKAPLOG_DEBUG_STR(logger, "About to set the solution accessor");
-               ASKAPDEBUGASSERT(itsComms.isMaster()); 
+               ASKAPDEBUGASSERT(itsComms.isMaster());
                // obtain solution ID only once, the results can come in random order and the
                // accessor is responsible for aggregating all of them together. This is done based on this ID.
                itsSolutionID = itsSolutionSource->newSolutionID(solutionTime());
@@ -648,7 +648,7 @@ void BPCalibratorParallel::createCalibrationME(const accessors::IDataSharedIter 
    boost::shared_ptr<PreAvgCalMEBase> preAvgME;
    // solve as normal gains (rather than bandpass) because only one channel is supposed to be selected
    // this also opens a possibility to use several (e.g. 54 = coarse resolution) channels to get one gain
-   // solution which is then replicated to all channels involved. 
+   // solution which is then replicated to all channels involved.
    if (itsSolveBandpass && !itsSolveLeakage) {
           preAvgME.reset(new CalibrationME<NoXPolGain, PreAvgCalMEBase>());
    } else if (itsSolveLeakage && !itsSolveBandpass) {
@@ -740,7 +740,7 @@ void BPCalibratorParallel::rotatePhases()
 /// equations. This method extracts start time from NE. Because NEs are not
 /// shipped to the master for bp-calibrator, if called on master the method looks
 /// for a different fixed keyword in the model (which should be created on the worker
-/// before the model is sent to master). 
+/// before the model is sent to master).
 /// @return solution time (seconds since 0 MJD)
 /// @note if no start/stop time metadata are present in the normal equations or model
 /// this method returns 0. In addition, if itsSolutionTimeOverride field is defined,
@@ -789,7 +789,7 @@ void BPCalibratorParallel::calcOne(const std::string& ms, const casacore::uInt c
   // First time around we need to generate the equation
   if (!itsEquation) {
       ASKAPLOG_INFO_STR(logger, "Creating measurement equation" );
-      accessors::TableDataSource ds(ms, accessors::TableDataSource::DEFAULT, dataColumn());
+      accessors::TableDataSource ds(ms, accessors::TableDataSource::MEMORY_BUFFERS, dataColumn());
       ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
       accessors::IDataSelectorPtr sel=ds.createSelector();
       sel << parset();

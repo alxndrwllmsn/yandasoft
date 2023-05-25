@@ -6,6 +6,7 @@ add_sources_to_yandasoft(
 	SkyCatalogTabWriter.cc
     DelaySolverImpl.cc
     StatsAndMask.cc
+	TilingUtils.cc
 )
 
 install (FILES
@@ -16,5 +17,6 @@ install (FILES
 	SkyCatalogTabWriter.h
     DelaySolverImpl.h
     StatsAndMask.h
+	TilingUtils.h
     DESTINATION include/askap/utils
 )

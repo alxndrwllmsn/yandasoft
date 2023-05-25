@@ -221,7 +221,7 @@ static void getFullShapeAndCoord(const accessors::IImageAccess<casacore::Float>&
   ASKAPCHECK(inblc[3]>=0 && inblc[3]<shape[3], "Start channel is outside the number of channels or negative, shape: "<<shape);
   ASKAPCHECK(trc[3]<=shape[3], "Subcube extends beyond the original cube, shape:"<<shape);
 
-  ASKAPLOG_INFO_STR(logger, " - Corners " << "input bottom lc  = " << inblc << ", input top rc = " << intrc << "\n");
+  ASKAPLOG_DEBUG_STR(logger, " - Corners " << "input bottom lc  = " << inblc << ", input top rc = " << intrc << "\n");
   inCoordSysVec.push_back(iacc.coordSysSlice(inImgName,inblc,intrc));
   // reset the shape to be the size ...
   intrc = shape;

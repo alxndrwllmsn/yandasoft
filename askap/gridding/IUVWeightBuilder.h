@@ -46,6 +46,7 @@
 #include <askap/gridding/UVWeight.h>
 #include <askap/gridding/IUVWeightAccessor.h>
 #include <askap/gridding/IUVWeightCalculator.h>
+#include <askap/gridding/UVWeightCollection.h>
 
 namespace askap {
 
@@ -94,8 +95,6 @@ struct IUVWeightBuilder : virtual public IUVWeightAccessor {
    /// reuse IUVWeightAccessor::getWeight method for this purpose. But for the sake of clarity, make a separate method for now.
    /// It can be called multiple times for the same indices, if necessary. The new grid will be created on demand.
    virtual UVWeight addWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) = 0;
-
-   // prob. need to factor out index translation into a separate class (out of the reader interface implementation) and reuse it here
 
    /// @brief merge with other builder
    /// @details This method is expected to be used in conjunction with the EstimatorAdapter and normal equation tree reduction

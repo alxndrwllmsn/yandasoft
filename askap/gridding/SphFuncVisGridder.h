@@ -82,6 +82,17 @@ namespace askap
 			    /// @return a shared pointer to the gridder instance
 			    static IVisGridder::ShPtr createGridder(const LOFAR::ParameterSet& parset);
 
+				/// @brief Correct for gridding convolution function
+				/// @details Doing the Spheroidal grid correction is used in
+				/// various places, this static function makes it more widely available
+				/// @param image image to be corrected
+				/// @param[in] sf spheroidal function to use
+				/// @param[in] support support size in pixels (spheroidal
+				/// function with m=2*support will be generated)
+				/// @param[in] interpolate if true, interpolate the edge values
+				static void correctConvolution(casacore::Array<imtype>& image,
+					scimath::SpheroidalFunction& sf, int support = 3,
+					bool interpolate = true);
 
 			protected:
 				/// @brief Initialize the convolution function
@@ -117,7 +128,7 @@ namespace askap
                 /// will use neighbouring values to estimate it (to 2nd order).
                 /// @param[in] func vector to be interpolated
                 template<typename T>
-                void interpolateEdgeValues(casacore::Vector<T> &func);
+                static void interpolateEdgeValues(casacore::Vector<T> &func);
 
 			private:
 
