@@ -574,7 +574,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           getFullShapeAndCoord(iacc,*it,channel,trc,nchanCube,inShapeVec,inCoordSysVec);
         } else {
           // runs the second pass in the trimming case
-          getTrimmedShapeAndCoord(iacc,*it,inputBlcTrcMap,channel,inShapeVec,inCoordSysVec);
+          getFullShapeAndCoord(iacc,*it,channel,trc,nchanCube,inShapeVec,inCoordSysVec);
           getTrimmedShapeAndCoord(iacc,*it,inputBlcTrcMap,channel,inTrimmedShapeVec,inTrimmedCoordSysVec);
         }
       } // got the input shapes for this output image
