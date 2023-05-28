@@ -21,7 +21,7 @@
 /// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 ///
 
-//#include <askap/gridding/BoxVisGridder.h>
+#include <askap/gridding/BoxVisGridder.h>
 #include <askap/gridding/SphFuncVisGridder.h>
 #include <askap/gridding/AWProjectVisGridder.h>
 #include <askap/gridding/AProjectWStackVisGridder.h>
@@ -66,8 +66,8 @@ namespace askap
     {
 
       CPPUNIT_TEST_SUITE(TableVisGridderTest);
-      //      CPPUNIT_TEST(testForwardBox);
-      //      CPPUNIT_TEST(testReverseBox);
+      CPPUNIT_TEST(testForwardBox);
+      CPPUNIT_TEST(testReverseBox);
       CPPUNIT_TEST(testCreateAbstract);
       CPPUNIT_TEST(testUnknownGridder);
       CPPUNIT_TEST(testForwardSph);
@@ -91,7 +91,7 @@ namespace askap
       CPPUNIT_TEST_SUITE_END();
 
   private:
-      //      boost::shared_ptr<BoxVisGridder> itsBox;
+      boost::shared_ptr<BoxVisGridder> itsBox;
       boost::shared_ptr<SphFuncVisGridder> itsSphFunc;
       boost::shared_ptr<AWProjectVisGridder> itsAWProject;
       boost::shared_ptr<WProjectVisGridder> itsWProject;
@@ -204,7 +204,7 @@ namespace askap
         ComponentEquation ce(ip, idi);
         ce.predict();
 
-	//        itsBox.reset(new BoxVisGridder());
+	itsBox.reset(new BoxVisGridder());
         itsSphFunc.reset(new SphFuncVisGridder());
         boost::shared_ptr<IBasicIllumination> illum(new DiskIllumination(120.0, 10.0));
         // illumination models can easily be shared between gridders if parameters,
@@ -235,19 +235,21 @@ namespace askap
       {
       }
 
-      //      void testReverseBox()
-      //      {
-      //        itsBox->initialiseGrid(*itsAxes, itsModel->shape(), true);
-      //        itsBox->grid(idi);
-      //        itsBox->finaliseGrid(*itsModel);
-      //        itsBox->finalisePSF(*itsModelPSF);
-      //        itsBox->finaliseWeights(*itsModelWeights);
-      //      }
-      //      void testForwardBox()
-      //      {
-      //        itsBox->initialiseDegrid(*itsAxes, *itsModel);
-      //        itsBox->degrid(idi);
-      //      }
+      void testReverseBox()
+      {
+         itsBox->initialiseGrid(*itsAxes, itsModel->shape(), false);
+         itsBox->grid(*idi);
+         itsBox->finaliseGrid(*itsModel);
+         itsBox->finaliseWeights(*itsModelWeights);
+         itsBox->initialiseGrid(*itsAxes, itsModel->shape(), true);
+         itsBox->grid(*idi);
+         itsBox->finaliseGrid(*itsModelPSF);
+      }
+      void testForwardBox()
+      {
+         itsBox->initialiseDegrid(*itsAxes, *itsModel);
+         itsBox->degrid(*idi);
+      }
 
       void testCreateAbstract()
       {
