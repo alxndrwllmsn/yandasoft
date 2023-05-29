@@ -197,7 +197,10 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
                  // notably different noise this could get us into trouble.
 
                  // we can run it through the converter, say for stokes I, but the estimate probably won't be better anyway, so keep it simple
-                 const float visNoise = casacore::square(casacore::real(noiseCube(i, chan, 0))) + casacore::square(casacore::real(noiseCube(i, chan, nPol-1)));
+                 // the check for more than one polarisation could in principle be optimised (e.g. scaling factor could be defined outside the loop) or even removed
+                 // completely as absolute scaling is not important for uv-weights (but it is handy to get the matching behaviour to the case when the weights are 
+                 // generated during the gridding)
+                 const float visNoise = casacore::square(casacore::real(noiseCube(i, chan, 0))) + (nPol > 1u ? casacore::square(casacore::real(noiseCube(i, chan, nPol-1))) : 0.f);
                  const float visNoiseWt = (visNoise > 0.) ? 1./visNoise : 0.;
                  ASKAPCHECK(visNoiseWt>0., "Weight is supposed to be a positive number; visNoiseWt="<<
                             visNoiseWt<<" visNoise="<<visNoise);

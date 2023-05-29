@@ -412,12 +412,13 @@ namespace askap
         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder1(new GenericUVWeightBuilder(0u, 0u, 0u));
         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder2(new GenericUVWeightBuilder(0u, 0u, 0u));
 
-        itsSphFunc->setUVWeightBuilder(genericBuilder1);
+        itsBox->setUVWeightBuilder(genericBuilder1);
 
         // now, a normal gridding job as for the individual gridder tests
-        itsSphFunc->initialiseGrid(*itsAxes, itsModel->shape(), false);
-        itsSphFunc->grid(*idi);
+        itsBox->initialiseGrid(*itsAxes, itsModel->shape(), false);
+        itsBox->grid(*idi);
 
+        // and the same via the specialised weight griddder which doesn't have overheads of the normal gridder
         UVWeightGridder wtg;
         wtg.setUVWeightBuilder(genericBuilder2);
         wtg.initialise(*itsAxes, itsModel->shape());
@@ -442,10 +443,10 @@ namespace askap
  
         for (casacore::uInt iu = 0u; iu < wt1.uSize(); ++iu) {
              for (casacore::uInt iv = 0u; iv < wt1.vSize(); ++iv) {
-                  // need to reinstate box gridder, it looks like the condition for which I submitted AXA-2485 
+                  // note, need to use the box gridder above, otherwise, it looks like the condition for which I submitted AXA-2485 
                   // is triggered often and as a result weight grids don't match. The other option may be to use
                   // a mosaicing gridder and set oversampling factor to 1.
-                  //CPPUNIT_ASSERT_DOUBLES_EQUAL(wt1(iu,iv,0u), wt2(iu,iv,0u), 1e-6);
+                  CPPUNIT_ASSERT_DOUBLES_EQUAL(wt1(iu,iv,0u), wt2(iu,iv,0u), 1e-6);
              }
         }
       }
