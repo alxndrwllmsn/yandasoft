@@ -59,6 +59,11 @@ namespace askap {
 /// value = bounding box (ie a pair of blc and trc)
 using ImageBlcTrcMapT =  std::map<std::string,std::pair<casacore::IPosition,casacore::IPosition>>;
 
+// @brief - calculates the bounding box of the array where the pixel value is true
+// param[in] outMask - casacore array
+// param[in] outImgName - name of the output image associated with the bounding box
+// param[in] nchanCube - number of channel in the bounding box
+// param[out] boundingBoxMap - a map of output image name (key) and a pair of blc/trc
 void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& outImgName, 
                  const int nchanCube, ImageBlcTrcMapT& boundingBoxMap)
 {
@@ -135,6 +140,11 @@ void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& ou
                         << ", trc: " << trc);
 }
 
+/// @brief - distributes the content of what is it the map (boundingBoxPerOutput) from the master to the workers
+/// @param[in] comms - MPI communicator object
+/// @param[in] boundingBoxPerOutput - a map consisting of the bounding box (blc/trc pair) per output image.
+///            The map is empty for the workers before the call and get filled up with the content of the
+///            master after the call.
 void distributeBlcTrc(askap::askapparallel::AskapParallel &comms, ImageBlcTrcMapT& boundingBoxPerOutput)
 {
 
@@ -214,6 +224,14 @@ void distributeBlcTrc(askap::askapparallel::AskapParallel &comms, ImageBlcTrcMap
   }
 }
 
+/// @brief get the shape and coord of the input image
+/// @param[in] iacc - image access object
+/// @param[in] inImgName - input image name
+/// @param[in] channel - channel number
+/// @param[in] trc - trc position
+/// @param[out] nchanCube - number of channels in the image
+/// @param[out] inShapeVec - a vector to store the shape of the image
+/// @param[out] inCoordSysVec - a vector to store the coord sys of the image
 static void getFullShapeAndCoord(const accessors::IImageAccess<casacore::Float>& iacc,
                                  const std::string& inImgName, const int channel,
                                  const casacore::IPosition& trc,
@@ -244,6 +262,15 @@ static void getFullShapeAndCoord(const accessors::IImageAccess<casacore::Float>&
   inShapeVec.push_back(shape3);
 }
 
+/// @brief get the shape and coord of the input image within the bounding box
+/// @param[in] iacc - image access object
+/// @param[in] inImgName - input image name
+/// @param[in] inputBlcTrcMap - a lookup map of the image blc/trc
+/// @param[in] channel - channel number
+/// @param[in] trc - trc position
+/// @param[out] nchanCube - number of channels in the image
+/// @param[out] inShapeVec - a vector to store the shape of the image
+/// @param[out] inCoordSysVec - a vector to store the coord sys of the image
 static void getTrimmedShapeAndCoord(const accessors::IImageAccess<casacore::Float>& iacc,
                                     const std::string& inImgName,
                                     const ImageBlcTrcMapT& inputBlcTrcMap, const int channel,
@@ -263,7 +290,27 @@ static void getTrimmedShapeAndCoord(const accessors::IImageAccess<casacore::Floa
   inShapeVec.push_back(trimmedShape);
 }
 
-/// @param[in] parset subset with parameters
+/// @brief - linmos imaging main function.
+/// @detail - This is the main function of the linmos imaging code. 
+///           When the trimming flag is set, (i) the function calculates the input and output
+///           image bounding boxes if the findSmallestBoundingBox is also set. If the 
+///           findSmallestBoundingBox is not set, it uses the input bounding box determined 
+///           in (i) to set the input parameters and the output bounding box to set the output
+///           parameters if the trimming type is aggressive
+///           When the trimming flag is not set, the function utilises the the input images to compute
+///           the size of the output image.
+/// @param[in] parset - the program input parameters
+/// @param[in] comms - MPI communicator
+/// @param[in/out] boundingBoxMap - output bounding box. If indSmallestBoundingBox is set, the 
+///                master updates/fills it with the new values. Otherwise, it is utilised by the
+///                function to set the size of the output image is trimming type is "aggressive".
+/// @param[in] findSmallestBoundingBox - if true, this function uses only the master to work out
+///            the input and output bounding boxes. if false, it does the imaging using the 
+///            boundingBoxMap and inputBlcTrcMap provided.
+/// @param[in] trimming - whether the function does the trimming or not.
+/// @param[in/out] inputBlcTrcMap - input bounding box. If indSmallestBoundingBox is set, the
+///                master updates/fills it with the new values. Otherwise, it is utilised by the
+///                function to set the size of the input image.
 static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::AskapParallel &comms, 
                      ImageBlcTrcMapT& boundingBoxMap, bool findSmallestBoundingBox, const bool trimming,
                      ImageBlcTrcMapT& inputBlcTrcMap) {
