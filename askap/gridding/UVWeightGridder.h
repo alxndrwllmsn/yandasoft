@@ -121,7 +121,8 @@ struct UVWeightGridder  {
    /// @brief set or reset flag controlling selection of the representative beam and pointing
    /// @details Change itsDoBeamAndFieldSelection. By default it is true, i.e. only the first encountered beam and field is accumulated.
    /// This has to be disabled if multiple weight grids are built (e.g. one per beam) and all data are present in the same accessor (as opposed
-   /// to appear as a result of a merge).
+   /// to appear as a result of a merge). In such configuration, beam index is translated to the appropriate weight grid index and so each 
+   /// weight grid gets its own data. However, if the selection is done, all but one of such grids will be zero.
    /// @param[in] doSelection new value of the flag
    /// @note this method is matching useAllDataForPSF in the gridder hierarchy, but the meaning of the flag was changed to the opposite
    void inline doBeamAndFieldSelection(const bool doSelection) { itsDoBeamAndFieldSelection = doSelection;}
@@ -132,7 +133,7 @@ struct UVWeightGridder  {
    /// it has been added because gridder classes support it for various research-related experiments.
    void setSourceIndex(casacore::uInt index) { itsSourceIndex = index; }
 
-   /// @brief set padding factor
+   /// @brief the set padding factor
    /// @details This method can be used to update padding factor (should be the same value as used by the ordinary gridder).
    /// @param[in] padding new padding factor (the default is 1.)
    /// @note It is worth checking whether we can avoid storing this factor and just pass it to initialise method

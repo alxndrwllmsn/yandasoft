@@ -76,6 +76,7 @@ namespace askap
       CPPUNIT_TEST(testBuildingUVWeight);
       CPPUNIT_TEST(testUVWeightBuilderInit);
       CPPUNIT_TEST(testUVWeightGridder);
+      CPPUNIT_TEST(testUVWeightGridderBeamAndFieldSelection);
       CPPUNIT_TEST(testForwardAWProject);
       CPPUNIT_TEST(testReverseAWProject);
       CPPUNIT_TEST(testForwardWProject);
@@ -449,6 +450,82 @@ namespace askap
                   CPPUNIT_ASSERT_DOUBLES_EQUAL(wt1(iu,iv,0u), wt2(iu,iv,0u), 1e-6);
              }
         }
+      }
+
+      // test selection of representative beam and field for the uv-weight gridder 
+      // (specialised gridder used in traditional weighting). Note, it may be more correct to have uv-weight gridder tested in 
+      // its own file, but it is handy to reuse infrastructure related to tests of gridder-based approaches (like simulated accessors, etc)
+      void testUVWeightGridderBeamAndFieldSelection() {
+         // this test needs to modify the content of the test accessor, so get the appropriate reference and work with it
+         boost::shared_ptr<accessors::DataIteratorStub> di = idi.dynamicCast<accessors::DataIteratorStub>();
+         CPPUNIT_ASSERT(di);
+         // it looks like stubbed accessor field is public in the iterator stub. Probably ok, given this class exists largely for tests. 
+         // But it would be better to have a separate method to get stubbed accessor and keep the field itself private 
+         // (and, in principle, the appropriate reference can be obtained via standard interface and dynamic cast).
+         accessors::DataAccessorStub& accStub = di->itsAccessor;
+
+         // now setup two uv-weight gridders, one which ignores all indices and the other which takes them into account
+
+         // this builder ingores indices (because all coefficients are zero)
+         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder1(new GenericUVWeightBuilder(0u, 0u, 0u));
+
+         // this builder maps beam, field, source to the grid index
+         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder2(new GenericUVWeightBuilder(1u, 10u, 100u));
+
+         UVWeightGridder wtg1;
+         wtg1.setUVWeightBuilder(genericBuilder1);
+
+         UVWeightGridder wtg2;
+         wtg2.setUVWeightBuilder(genericBuilder2);
+
+         // we don't really use the 3rd index (named "source") now, but this is a nice opportunity to test it to ensure the code works as expected
+         // (the first one should be ignored, the second one will cause all indices to be incremented by 100u).
+         wtg1.setSourceIndex(2u);
+         wtg2.setSourceIndex(1u);
+
+         // initialise both gridders (and builders indirectly)
+         wtg1.initialise(*itsAxes, itsModel->shape());
+         wtg2.initialise(*itsAxes, itsModel->shape());
+
+         // first, accumulate the default accessor by both gridders
+         wtg1.accumulate(accStub);
+         wtg2.accumulate(accStub);
+        
+         // test the current state. Note, although getWeight method does not really have to be implemented for builders (nor,
+         // the builder is required to be derived from the accessor interface, we have it this way for the GenericUVWeightBuilder class. 
+         // This helps with the test because we don't have to finalise to check the state. And if index is wrong an exception will be thrown.
+         // The alternative is to call finalise multiple times (which we can, technically), although this is, strictly speaking, not the
+         // expected use case either. But the appropriate calculator class can be written for the test which can leave the weight intact
+         // (and therefore, the next accumulate call easy to understand)
+         {
+            UVWeight wt1 = genericBuilder1->getWeight(0u,0u,0u);
+            UVWeight wt2 = genericBuilder2->getWeight(0u,0u,1u);
+            CPPUNIT_ASSERT_EQUAL(wt1.uSize(), wt2.uSize());
+            CPPUNIT_ASSERT_EQUAL(wt1.vSize(), wt2.vSize());
+            CPPUNIT_ASSERT_EQUAL(wt1.nPlane(), wt2.nPlane());
+            for (casacore::uInt plane = 0; plane < wt1.nPlane(); ++plane) {
+                 for (casacore::uInt u = 0; u < wt1.uSize(); ++u) {
+                      for (casacore::uInt v = 0; v < wt1.vSize(); ++v) {
+                           CPPUNIT_ASSERT_DOUBLES_EQUAL(wt1(u,v,plane), wt2(u,v,plane), 1e-6);
+                      }
+                 }
+            }
+         }
+         
+         // all results have been checked, so run finalise and explore the content of each collection
+         // (to ensure that all indices are accounted for). For this particular test we don't
+         // care about the calculator class type or actual weights (they're already checked above). 
+         // Therefore, use TestUVWeightCalculator which just checks that the shape matches the 
+         // expected shape passed at construction and sets the central pixel to 100.
+         TestUVWeightCalculator calc(itsModel->shape().getFirst(2));
+         const UVWeightCollection& wts1 = genericBuilder1->finalise(calc);
+         const UVWeightCollection& wts2 = genericBuilder2->finalise(calc);
+
+         // check existance of the appropriate planes and the correct size of the collection
+         CPPUNIT_ASSERT(wts1.exists(0u));
+         CPPUNIT_ASSERT(wts2.exists(100u));
+         CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts1.indices().size());
+         CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts2.indices().size());
       }
 
       void testReverseAWProject()
