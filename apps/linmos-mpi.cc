@@ -745,7 +745,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
             casacore::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
             trimmedShape[3] = 1; 
             // we cant use here: accumulator.setInputParameters(inTrimmedShapeVec[img], inTrimmedCoordSysVec[img], img);
-            // because for conservative and aggressive cases here because inTrimmedShapeVec and inTrimmedCoordSysVec
+            // for both conservative and aggressive cases here because inTrimmedShapeVec and inTrimmedCoordSysVec
             // are empty for conservative trimming type
             if ( trimmingType == "aggressive" ) {
                 accumulator.setInputParameters(inTrimmedShapeVec[img], inTrimmedCoordSysVec[img], img);
@@ -758,11 +758,6 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           }
 
           Array<float> inPix = iacc.read(inImgName,blc,trc);
-          if ( trimming && findSmallestBoundingBox ) {
-            inPix.resize(iacc.shape(inImgName));
-          } else {
-            inPix = iacc.read(inImgName,blc,trc);
-          }
 
           if (parset.getBool("removebeam",false)) {
 
