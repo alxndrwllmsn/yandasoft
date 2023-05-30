@@ -139,9 +139,6 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
                continue;
            }
         }
-        uvWeightRW = itsUVWeightBuilder->addWeight(acc.feed1()(i), itsCurrentField, itsSourceIndex);
-        ASKAPDEBUGASSERT(uvWeightRW.uSize() == itsShape[0]);
-        ASKAPDEBUGASSERT(uvWeightRW.vSize() == itsShape[1]);
         if (itsFirstAccumulatedVis) {
             if (itsDoBeamAndFieldSelection) {
                 itsSelectedBeam = acc.feed1()(i);
@@ -163,6 +160,10 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
             (itsSelectedPointing.separation(acc.dishPointing1()(i)) > 1e-6))) {
             continue;
         }
+
+        uvWeightRW = itsUVWeightBuilder->addWeight(acc.feed1()(i), itsCurrentField, itsSourceIndex);
+        ASKAPDEBUGASSERT(uvWeightRW.uSize() == itsShape[0]);
+        ASKAPDEBUGASSERT(uvWeightRW.vSize() == itsShape[1]);
 
         for (casacore::uInt chan=0; chan<nChan; ++chan) {
              const double reciprocalToWavelength = frequencyList[chan]/casacore::C::c;
