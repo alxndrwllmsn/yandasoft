@@ -49,6 +49,7 @@
 #include <askap/gridding/GenericUVWeightBuilder.h>
 #include <askap/gridding/UVWeightGridder.h>
 #include <askap/gridding/ConjugatesAdderFFT.h>
+#include <askap/scimath/utils/PaddingUtils.h>
 
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -421,13 +422,15 @@ namespace askap
 
       void testUVWeightGridder() {
         // this test could really be in a separate file as it is not about TableVisGridder, but it is handy to have it here
-        // to be able to reuse setup done for other tests
+        // to be able to reuse the setup done for other tests
+        const float padding = 1.2f;
 
         // set up two identical builders, one to be used with normal gridder and another with specialised UVWeightGridder
         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder1(new GenericUVWeightBuilder(0u, 0u, 0u));
         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder2(new GenericUVWeightBuilder(0u, 0u, 0u));
 
         itsBox->setUVWeightBuilder(genericBuilder1);
+        itsBox->setPaddingFactor(padding);
 
         // now, a normal gridding job as for the individual gridder tests
         itsBox->initialiseGrid(*itsAxes, itsModel->shape(), false);
@@ -435,6 +438,7 @@ namespace askap
 
         // and the same via the specialised weight griddder which doesn't have overheads of the normal gridder
         UVWeightGridder wtg;
+        wtg.setPaddingFactor(padding);
         wtg.setUVWeightBuilder(genericBuilder2);
         wtg.initialise(*itsAxes, itsModel->shape());
         wtg.accumulate(*idi);
@@ -450,20 +454,14 @@ namespace askap
 
         UVWeight wt1 = wts1.get(0u);
         UVWeight wt2 = wts2.get(0u);
-        // compare the content of two weight grids
-        CPPUNIT_ASSERT_EQUAL(wt1.uSize(), wt2.uSize());
-        CPPUNIT_ASSERT_EQUAL(wt1.vSize(), wt2.vSize());
-        CPPUNIT_ASSERT_EQUAL(wt1.nPlane(), wt2.nPlane());
         CPPUNIT_ASSERT_EQUAL(1u, wt1.nPlane());
- 
-        for (casacore::uInt iu = 0u; iu < wt1.uSize(); ++iu) {
-             for (casacore::uInt iv = 0u; iv < wt1.vSize(); ++iv) {
-                  // note, need to use the box gridder above, otherwise, it looks like the condition for which I submitted AXA-2485 
-                  // is triggered often and as a result weight grids don't match. The other option may be to use
-                  // a mosaicing gridder and set oversampling factor to 1.
-                  CPPUNIT_ASSERT_DOUBLES_EQUAL(wt1(iu,iv,0u), wt2(iu,iv,0u), 1e-6);
-             }
-        }
+        // check that the size is padded as appropriate
+        const casacore::IPosition paddedShape = scimath::PaddingUtils::paddedShape(itsModel->shape(), padding);
+        CPPUNIT_ASSERT(paddedShape.nelements() >= 2);
+        CPPUNIT_ASSERT_EQUAL(static_cast<casacore::uInt>(paddedShape[0]), wt2.uSize());
+        CPPUNIT_ASSERT_EQUAL(static_cast<casacore::uInt>(paddedShape[1]), wt2.vSize());
+        // compare the content of the two weight grids
+        checkWeightGridsAreTheSame(wt1, wt2);
       }
 
       // test selection of representative beam and field for the uv-weight gridder 
