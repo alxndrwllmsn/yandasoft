@@ -21,7 +21,7 @@
 /// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 ///
 
-//#include <askap/gridding/BoxVisGridder.h>
+#include <askap/gridding/BoxVisGridder.h>
 #include <askap/gridding/SphFuncVisGridder.h>
 #include <askap/gridding/AWProjectVisGridder.h>
 #include <askap/gridding/AProjectWStackVisGridder.h>
@@ -46,6 +46,10 @@
 #include <askap/scimath/utils/ImageUtils.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/gridding/SupportSearcher.h>
+#include <askap/gridding/GenericUVWeightBuilder.h>
+#include <askap/gridding/UVWeightGridder.h>
+#include <askap/gridding/ConjugatesAdderFFT.h>
+#include <askap/scimath/utils/PaddingUtils.h>
 
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -63,8 +67,8 @@ namespace askap
     {
 
       CPPUNIT_TEST_SUITE(TableVisGridderTest);
-      //      CPPUNIT_TEST(testForwardBox);
-      //      CPPUNIT_TEST(testReverseBox);
+      CPPUNIT_TEST(testForwardBox);
+      CPPUNIT_TEST(testReverseBox);
       CPPUNIT_TEST(testCreateAbstract);
       CPPUNIT_TEST(testUnknownGridder);
       CPPUNIT_TEST(testForwardSph);
@@ -72,6 +76,9 @@ namespace askap
       CPPUNIT_TEST(testUVWeightApplication);
       CPPUNIT_TEST(testBuildingUVWeight);
       CPPUNIT_TEST(testUVWeightBuilderInit);
+      CPPUNIT_TEST(testUVWeightGridder);
+      CPPUNIT_TEST(testUVWeightGridderBeamAndFieldSelection);
+      CPPUNIT_TEST(testUVWeightGridderPointingRejection);
       CPPUNIT_TEST(testForwardAWProject);
       CPPUNIT_TEST(testReverseAWProject);
       CPPUNIT_TEST(testForwardWProject);
@@ -87,7 +94,7 @@ namespace askap
       CPPUNIT_TEST_SUITE_END();
 
   private:
-      //      boost::shared_ptr<BoxVisGridder> itsBox;
+      boost::shared_ptr<BoxVisGridder> itsBox;
       boost::shared_ptr<SphFuncVisGridder> itsSphFunc;
       boost::shared_ptr<AWProjectVisGridder> itsAWProject;
       boost::shared_ptr<WProjectVisGridder> itsWProject;
@@ -184,6 +191,20 @@ namespace askap
           casacore::IPosition itsExpectedShape;
       };
 
+      // helper method to compare two UVWeight grids
+      void checkWeightGridsAreTheSame(const UVWeight &wt1, const UVWeight &wt2) const {
+         CPPUNIT_ASSERT_EQUAL(wt1.uSize(), wt2.uSize());
+         CPPUNIT_ASSERT_EQUAL(wt1.vSize(), wt2.vSize());
+         CPPUNIT_ASSERT_EQUAL(wt1.nPlane(), wt2.nPlane());
+         for (casacore::uInt plane = 0; plane < wt1.nPlane(); ++plane) {
+              for (casacore::uInt u = 0; u < wt1.uSize(); ++u) {
+                   for (casacore::uInt v = 0; v < wt1.vSize(); ++v) {
+                        CPPUNIT_ASSERT_DOUBLES_EQUAL(wt1(u,v,plane), wt2(u,v,plane), 1e-6);
+                   }
+              }
+         }
+      }
+
   public:
       void setUp()
       {
@@ -200,7 +221,7 @@ namespace askap
         ComponentEquation ce(ip, idi);
         ce.predict();
 
-	//        itsBox.reset(new BoxVisGridder());
+	itsBox.reset(new BoxVisGridder());
         itsSphFunc.reset(new SphFuncVisGridder());
         boost::shared_ptr<IBasicIllumination> illum(new DiskIllumination(120.0, 10.0));
         // illumination models can easily be shared between gridders if parameters,
@@ -231,19 +252,21 @@ namespace askap
       {
       }
 
-      //      void testReverseBox()
-      //      {
-      //        itsBox->initialiseGrid(*itsAxes, itsModel->shape(), true);
-      //        itsBox->grid(idi);
-      //        itsBox->finaliseGrid(*itsModel);
-      //        itsBox->finalisePSF(*itsModelPSF);
-      //        itsBox->finaliseWeights(*itsModelWeights);
-      //      }
-      //      void testForwardBox()
-      //      {
-      //        itsBox->initialiseDegrid(*itsAxes, *itsModel);
-      //        itsBox->degrid(idi);
-      //      }
+      void testReverseBox()
+      {
+         itsBox->initialiseGrid(*itsAxes, itsModel->shape(), false);
+         itsBox->grid(*idi);
+         itsBox->finaliseGrid(*itsModel);
+         itsBox->finaliseWeights(*itsModelWeights);
+         itsBox->initialiseGrid(*itsAxes, itsModel->shape(), true);
+         itsBox->grid(*idi);
+         itsBox->finaliseGrid(*itsModelPSF);
+      }
+      void testForwardBox()
+      {
+         itsBox->initialiseDegrid(*itsAxes, *itsModel);
+         itsBox->degrid(*idi);
+      }
 
       void testCreateAbstract()
       {
@@ -396,6 +419,248 @@ namespace askap
 
         itsAProjectWStack->initialiseGrid(*itsAxes, itsModel->shape(), false);
         CPPUNIT_ASSERT_EQUAL(itsModel->shape().getFirst(3), wtBuilder->wtShape());       
+      }
+
+      void testUVWeightGridder() {
+        // this test could really be in a separate file as it is not about TableVisGridder, but it is handy to have it here
+        // to be able to reuse the setup done for other tests
+        const float padding = 1.2f;
+
+        // set up two identical builders, one to be used with normal gridder and another with specialised UVWeightGridder
+        const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder1(new GenericUVWeightBuilder(0u, 0u, 0u));
+        const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder2(new GenericUVWeightBuilder(0u, 0u, 0u));
+
+        itsBox->setUVWeightBuilder(genericBuilder1);
+        itsBox->setPaddingFactor(padding);
+
+        // now, a normal gridding job as for the individual gridder tests
+        itsBox->initialiseGrid(*itsAxes, itsModel->shape(), false);
+        itsBox->grid(*idi);
+
+        // and the same via the specialised weight griddder which doesn't have overheads of the normal gridder
+        UVWeightGridder wtg;
+        wtg.setPaddingFactor(padding);
+        wtg.setUVWeightBuilder(genericBuilder2);
+        wtg.initialise(*itsAxes, itsModel->shape());
+        wtg.accumulate(*idi);
+        // simple calculator (instead of writing a stubbed version we can run the real code and test it as well)
+        const ConjugatesAdderFFT calc;
+        const UVWeightCollection& wts1 = genericBuilder1->finalise(calc);
+        const UVWeightCollection& wts2 = genericBuilder2->finalise(calc);
+        // get weight for the 0th plane, this should be the only plane present in either collection
+        CPPUNIT_ASSERT(wts1.exists(0u));
+        CPPUNIT_ASSERT(wts2.exists(0u));
+        CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts1.indices().size());
+        CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts2.indices().size());
+
+        UVWeight wt1 = wts1.get(0u);
+        UVWeight wt2 = wts2.get(0u);
+        CPPUNIT_ASSERT_EQUAL(1u, wt1.nPlane());
+        // check that the size is padded as appropriate
+        const casacore::IPosition paddedShape = scimath::PaddingUtils::paddedShape(itsModel->shape(), padding);
+        CPPUNIT_ASSERT(paddedShape.nelements() >= 2);
+        CPPUNIT_ASSERT_EQUAL(static_cast<casacore::uInt>(paddedShape[0]), wt2.uSize());
+        CPPUNIT_ASSERT_EQUAL(static_cast<casacore::uInt>(paddedShape[1]), wt2.vSize());
+        // compare the content of the two weight grids
+        checkWeightGridsAreTheSame(wt1, wt2);
+      }
+
+      // test selection of representative beam and field for the uv-weight gridder 
+      // (specialised gridder used in traditional weighting). Note, it may be more correct to have uv-weight gridder tested in 
+      // its own file, but it is handy to reuse infrastructure related to tests of gridder-based approaches (like simulated accessors, etc)
+      void testUVWeightGridderBeamAndFieldSelection() {
+         // this test needs to modify the content of the test accessor, so get the appropriate reference and work with it
+         boost::shared_ptr<accessors::DataIteratorStub> di = idi.dynamicCast<accessors::DataIteratorStub>();
+         CPPUNIT_ASSERT(di);
+         // it looks like stubbed accessor field is public in the iterator stub. Probably ok, given this class exists largely for tests. 
+         // But it would be better to have a separate method to get stubbed accessor and keep the field itself private 
+         // (and, in principle, the appropriate reference can be obtained via standard interface and dynamic cast).
+         accessors::DataAccessorStub& accStub = di->itsAccessor;
+
+         // now setup three uv-weight gridders, one which ignores all indices, one which takes them into account and yet another one 
+         // with identical index translation but with beam and selection turned off
+
+         // this builder ingores indices (because all coefficients are zero)
+         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder1(new GenericUVWeightBuilder(0u, 0u, 0u));
+
+         // this builder maps beam, field, source to the grid index
+         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder2(new GenericUVWeightBuilder(1u, 10u, 100u));
+
+         // and this one is the same as above but will be used with the uv-weight gridder set up differently (with selection off)
+         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder3(new GenericUVWeightBuilder(1u, 10u, 100u));
+
+         UVWeightGridder wtg1;
+         wtg1.setUVWeightBuilder(genericBuilder1);
+
+         UVWeightGridder wtg2;
+         wtg2.setUVWeightBuilder(genericBuilder2);
+
+         UVWeightGridder wtg3;
+         wtg3.setUVWeightBuilder(genericBuilder3);
+         wtg3.doBeamAndFieldSelection(false);
+
+         // we don't really use the 3rd index (named "source") now, but this is a nice opportunity to test it to ensure the code works as expected
+         // (the first one should be ignored, the second one will cause all indices to be incremented by 100u, the last one will have all indices incremented by 300u).
+         wtg1.setSourceIndex(2u);
+         wtg2.setSourceIndex(1u);
+         wtg3.setSourceIndex(3u);
+
+         // initialise all gridders (and builders indirectly)
+         wtg1.initialise(*itsAxes, itsModel->shape());
+         wtg2.initialise(*itsAxes, itsModel->shape());
+         wtg3.initialise(*itsAxes, itsModel->shape());
+
+         // first, accumulate the default accessor by all gridders
+         wtg1.accumulate(accStub);
+         wtg2.accumulate(accStub);
+         wtg3.accumulate(accStub);
+        
+         // test the default state first. Note, although getWeight method does not really have to be implemented for builders (nor,
+         // the builder is required to be derived from the accessor interface, we have it this way for the GenericUVWeightBuilder class. 
+         // This helps with the test because we don't have to finalise to check the state. And if index is wrong an exception will be thrown.
+         // The alternative is to call finalise multiple times (which we can, technically), although this is, strictly speaking, not the
+         // expected use case either. But the appropriate calculator class can be written for the test which can leave the weight intact
+         // (and therefore, the next accumulate call easy to understand)
+         {
+            // after the first accumulate all grids should be the same, just located at different indices
+            const UVWeight wt1 = genericBuilder1->getWeight(0u,0u,0u);
+            const UVWeight wt2 = genericBuilder2->getWeight(0u,0u,1u);
+            const UVWeight wt3 = genericBuilder3->getWeight(0u,0u,3u);
+            checkWeightGridsAreTheSame(wt1, wt2);
+            checkWeightGridsAreTheSame(wt1, wt3);
+         }
+ 
+         // now change the beam index in the accessor stub and accumulate the same chunk of data
+         accStub.itsFeed1.set(2u);
+         accStub.itsFeed2.set(2u);
+         wtg1.accumulate(accStub);
+         wtg2.accumulate(accStub);
+         wtg3.accumulate(accStub);
+
+         // test the grids
+         {
+            // after the second accumulate only the content stored by builder 3 should change because the first two would 
+            // ignore everything which is not the first encountered feed and field
+            const UVWeight wt1 = genericBuilder1->getWeight(0u,0u,0u);
+            const UVWeight wt2 = genericBuilder2->getWeight(0u,0u,1u);
+            checkWeightGridsAreTheSame(wt1, wt2);
+            // original grid from the first accumulate for beam 0 in builder 2 should be the same as the grid for beam 2 in builder 3 
+            const UVWeight wt3 = genericBuilder3->getWeight(2u,0u,3u);
+            checkWeightGridsAreTheSame(wt2, wt3);
+            // beam zero grid for builder 3 should remain as before because the last accumulation step didn't have any data for this index
+            const UVWeight wt4 = genericBuilder3->getWeight(0u,0u,3u);
+            checkWeightGridsAreTheSame(wt2, wt4);
+         }
+
+         // now replace position (note, dish pointing and phase centre stored in pointing direction field of the accessor are used for different
+         // things, e.g. the latter is used to detect field changes while the former to select representative beam and field. This behaviour
+         // is matching that of gridders, although may be confusing here. We do not test those differences here as our normal use cases won't have
+         // the situation when one is changed without the other.
+         const casacore::MVDirection newPos(casacore::Quantity(135.0, "deg"), casacore::Quantity(-65., "deg"));
+         accStub.itsPointingDir1.set(newPos);
+         accStub.itsPointingDir2.set(newPos);
+         accStub.itsDishPointing1.set(newPos);
+         accStub.itsDishPointing2.set(newPos);
+         wtg1.accumulate(accStub);
+         wtg2.accumulate(accStub);
+         wtg3.accumulate(accStub);
+
+         // test the grids
+         {
+            // again after the third accumulate only the content stored by builder 3 should change because the first two would 
+            // ignore everything which is not the first encountered field
+            const UVWeight wt1 = genericBuilder1->getWeight(0u,0u,0u);
+            const UVWeight wt2 = genericBuilder2->getWeight(0u,0u,1u);
+            checkWeightGridsAreTheSame(wt1, wt2);
+            // original grid from the first accumulate for beam 0 in builder 2 should be the same as the grid for beam 2, field 1 in builder 3 
+            checkWeightGridsAreTheSame(wt2, genericBuilder3->getWeight(2u,1u,3u));
+            // beam zero and two grids for the 0th field  for builder 3 should remain as before because the last accumulation step 
+            // didn't have any data for these indices
+            checkWeightGridsAreTheSame(wt2, genericBuilder3->getWeight(0u,0u,3u));
+            checkWeightGridsAreTheSame(wt2, genericBuilder3->getWeight(2u,0u,3u));
+         }
+         
+         // all results have been checked, so run finalise and explore the content of each collection
+         // (to ensure that all indices are accounted for). For this particular test we don't
+         // care about the calculator class type or actual weights (they're already checked above). 
+         // Therefore, use TestUVWeightCalculator which just checks that the shape matches the 
+         // expected shape passed at construction and sets the central pixel to 100.
+         TestUVWeightCalculator calc(itsModel->shape().getFirst(2));
+         const UVWeightCollection& wts1 = genericBuilder1->finalise(calc);
+         const UVWeightCollection& wts2 = genericBuilder2->finalise(calc);
+         const UVWeightCollection& wts3 = genericBuilder3->finalise(calc);
+
+         // check existance of the appropriate planes and the correct size of the collection
+         CPPUNIT_ASSERT(wts1.exists(0u));
+         // for wts2 indices 102u and 112u will be missing because beam and field selection is on by default
+         // (and only the first encountered beam, which is beam 0, is processed; same applies to field 0)
+         // explicit tests for missing indices are redundant, but keep them here to aid understanding of the code
+         // for whoever needs to understand it
+         CPPUNIT_ASSERT(wts2.exists(100u));
+         CPPUNIT_ASSERT(!wts2.exists(102u));
+         CPPUNIT_ASSERT(!wts2.exists(112u));
+         CPPUNIT_ASSERT(wts3.exists(300u));
+         CPPUNIT_ASSERT(wts3.exists(302u));
+         CPPUNIT_ASSERT(wts3.exists(312u));
+         CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts1.indices().size());
+         CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts2.indices().size());
+         CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(3u), wts3.indices().size());
+      }
+
+      void testUVWeightGridderPointingRejection() {
+         // this test needs to modify the content of the test accessor, so get the appropriate reference and work with it
+         boost::shared_ptr<accessors::DataIteratorStub> di = idi.dynamicCast<accessors::DataIteratorStub>();
+         CPPUNIT_ASSERT(di);
+         // it looks like stubbed accessor field is public in the iterator stub. Probably ok, given this class exists largely for tests. 
+         // But it would be better to have a separate method to get stubbed accessor and keep the field itself private 
+         // (and, in principle, the appropriate reference can be obtained via standard interface and dynamic cast).
+         accessors::DataAccessorStub& accStub = di->itsAccessor;
+         // set pointing and phase centre to some other value (by default it is ra=0, dec=0, same as image centre)
+         const casacore::MVDirection newPos(casacore::Quantity(135.0, "deg"), casacore::Quantity(-65., "deg"));
+         accStub.itsPointingDir1.set(newPos);
+         accStub.itsPointingDir2.set(newPos);
+         accStub.itsDishPointing1.set(newPos);
+         accStub.itsDishPointing2.set(newPos);
+        
+         // this builder ingores indices (because all coefficients are zero) and also does not reject data based on field and beam indices
+         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder(new GenericUVWeightBuilder(0u, 0u, 0u));
+         UVWeightGridder wtg;
+         wtg.setUVWeightBuilder(genericBuilder);
+         wtg.doBeamAndFieldSelection(false);
+
+         wtg.initialise(*itsAxes, itsModel->shape());
+         wtg.accumulate(accStub);
+         
+         // check that the weight grid is not all zeros
+         const UVWeight wt = genericBuilder->getWeight(0u, 0u, 0u);
+         float sumWt = 0.f;
+         for (casacore::uInt iu = 0; iu < wt.uSize(); ++iu) {
+              for (casacore::uInt iv = 0; iv < wt.vSize(); ++iv) {
+                   sumWt += wt(iu,iv,0);
+              }
+         }
+         CPPUNIT_ASSERT(sumWt > 0.f);
+         // accumulate the same data chunk again, just to do another check that 'wt' is referenced to
+         // the actual storage
+         wtg.accumulate(accStub);
+         
+         // it is handy to have a copy at this point, doing it via merge allows us to test merge as well
+         // parameters (i.e. index coefficients) don't matter much as we won't grid anything into this instance
+         GenericUVWeightBuilder builderCopy(0u, 0u, 0u);
+         // calling addWeight will create a new empty grid in the copy builder and ensure there is no reference 
+         // semantics at the following merge
+         builderCopy.initialise(wt.uSize(), wt.vSize(), wt.nPlane());
+         builderCopy.addWeight(0u, 0u, 0u);
+         builderCopy.merge(*genericBuilder);
+
+         // now set the pointing tolerance (by default everything was accepted) - just over a degree
+         wtg.maxPointingSeparation(0.02);
+         // grid the same data chunk again, all samples should be ignored, so the copy should match the current weight grid
+         wtg.accumulate(accStub);
+         // also check that the indices are indeed ignored
+         checkWeightGridsAreTheSame(builderCopy.getWeight(0u,0u,0u), genericBuilder->getWeight(1u,2u,3u));
+         // also check the reference semantics
+         checkWeightGridsAreTheSame(builderCopy.getWeight(0u,0u,0u), wt);
       }
 
       void testReverseAWProject()
