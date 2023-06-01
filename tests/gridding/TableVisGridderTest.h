@@ -78,6 +78,7 @@ namespace askap
       CPPUNIT_TEST(testUVWeightBuilderInit);
       CPPUNIT_TEST(testUVWeightGridder);
       CPPUNIT_TEST(testUVWeightGridderBeamAndFieldSelection);
+      CPPUNIT_TEST(testUVWeightGridderPointingRejection);
       CPPUNIT_TEST(testForwardAWProject);
       CPPUNIT_TEST(testReverseAWProject);
       CPPUNIT_TEST(testForwardWProject);
@@ -604,6 +605,62 @@ namespace askap
          CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts1.indices().size());
          CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wts2.indices().size());
          CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(3u), wts3.indices().size());
+      }
+
+      void testUVWeightGridderPointingRejection() {
+         // this test needs to modify the content of the test accessor, so get the appropriate reference and work with it
+         boost::shared_ptr<accessors::DataIteratorStub> di = idi.dynamicCast<accessors::DataIteratorStub>();
+         CPPUNIT_ASSERT(di);
+         // it looks like stubbed accessor field is public in the iterator stub. Probably ok, given this class exists largely for tests. 
+         // But it would be better to have a separate method to get stubbed accessor and keep the field itself private 
+         // (and, in principle, the appropriate reference can be obtained via standard interface and dynamic cast).
+         accessors::DataAccessorStub& accStub = di->itsAccessor;
+         // set pointing and phase centre to some other value (by default it is ra=0, dec=0, same as image centre)
+         const casacore::MVDirection newPos(casacore::Quantity(135.0, "deg"), casacore::Quantity(-65., "deg"));
+         accStub.itsPointingDir1.set(newPos);
+         accStub.itsPointingDir2.set(newPos);
+         accStub.itsDishPointing1.set(newPos);
+         accStub.itsDishPointing2.set(newPos);
+        
+         // this builder ingores indices (because all coefficients are zero) and also does not reject data based on field and beam indices
+         const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder(new GenericUVWeightBuilder(0u, 0u, 0u));
+         UVWeightGridder wtg;
+         wtg.setUVWeightBuilder(genericBuilder);
+         wtg.doBeamAndFieldSelection(false);
+
+         wtg.initialise(*itsAxes, itsModel->shape());
+         wtg.accumulate(accStub);
+         
+         // check that the weight grid is not all zeros
+         const UVWeight wt = genericBuilder->getWeight(0u, 0u, 0u);
+         float sumWt = 0.f;
+         for (casacore::uInt iu = 0; iu < wt.uSize(); ++iu) {
+              for (casacore::uInt iv = 0; iv < wt.vSize(); ++iv) {
+                   sumWt += wt(iu,iv,0);
+              }
+         }
+         CPPUNIT_ASSERT(sumWt > 0.f);
+         // accumulate the same data chunk again, just to do another check that 'wt' is referenced to
+         // the actual storage
+         wtg.accumulate(accStub);
+         
+         // it is handy to have a copy at this point, doing it via merge allows us to test merge as well
+         // parameters (i.e. index coefficients) don't matter much as we won't grid anything into this instance
+         GenericUVWeightBuilder builderCopy(0u, 0u, 0u);
+         // calling addWeight will create a new empty grid in the copy builder and ensure there is no reference 
+         // semantics at the following merge
+         builderCopy.initialise(wt.uSize(), wt.vSize(), wt.nPlane());
+         builderCopy.addWeight(0u, 0u, 0u);
+         builderCopy.merge(*genericBuilder);
+
+         // now set the pointing tolerance (by default everything was accepted) - just over a degree
+         wtg.maxPointingSeparation(0.02);
+         // grid the same data chunk again, all samples should be ignored, so the copy should match the current weight grid
+         wtg.accumulate(accStub);
+         // also check that the indices are indeed ignored
+         checkWeightGridsAreTheSame(builderCopy.getWeight(0u,0u,0u), genericBuilder->getWeight(1u,2u,3u));
+         // also check the reference semantics
+         checkWeightGridsAreTheSame(builderCopy.getWeight(0u,0u,0u), wt);
       }
 
       void testReverseAWProject()
