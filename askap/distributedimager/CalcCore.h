@@ -113,6 +113,11 @@ namespace cp {
         /// data fields of this class such as itsChannel and itsFrequency
         accessors::IDataSharedIter makeDataIterator() const;
 
+        /// @brief create measurement equation 
+        /// @details This method creates measurement equation as appropriate (with calibration application or without) using
+        /// internal state of this class and the parset
+        void createMeasurementEquation();
+
     private:
 
         // Communications class

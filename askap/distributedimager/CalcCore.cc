@@ -156,6 +156,58 @@ accessors::IDataSharedIter CalcCore::makeDataIterator() const
    return itsDataSource.createIterator(sel, conv);
 }
 
+/// @brief create measurement equation 
+/// @details This method creates measurement equation as appropriate (with calibration application or without) using
+/// internal state of this class and the parset
+void CalcCore::createMeasurementEquation()
+{
+   // Setup data iterator
+   accessors::IDataSharedIter origIt = makeDataIterator();
+
+   ASKAPCHECK(itsModel, "Model not defined");
+   ASKAPCHECK(gridder(), "Prototype gridder not defined");
+
+   // iterator to be used for the equation, to be replaced with calibration iterator if necessary
+   accessors::IDataSharedIter it = origIt;
+   if (getSolutionSource()) {
+       ASKAPLOG_DEBUG_STR(logger, "Calibration will be performed using solution source");
+       const boost::shared_ptr<ICalibrationApplicator> calME(new CalibrationApplicatorME(getSolutionSource()));
+       // fine tune parameters
+       ASKAPDEBUGASSERT(calME);
+       calME->scaleNoise(parset().getBool("calibrate.scalenoise",false));
+       calME->allowFlag(parset().getBool("calibrate.allowflag",false));
+       calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
+       calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+
+       // calibration iterator to replace the original one for the purpose of measurement equation creation
+       const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
+       it = calIter;
+   } else {
+       ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
+   }
+   // now it contains the correct iterator to be passed to the FFT equation
+   ASKAPLOG_DEBUG_STR(logger, "building FFT/measurement equation" );
+   // the ImageFFTEquation actually clones the gridders and stores them internally
+   // which is good - but you do not get the expected behaviour here. You would think that
+   // this gridder is the one that is being used - unfortunately it is not.
+   // You therefore get no benefit from initialising the gridder.
+   // Also this is why you cannot get at the grid from outside FFT equation
+   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
+   ASKAPDEBUGASSERT(fftEquation);
+// DAM TRADITIONAL
+   if (parset().isDefined("gridder.robustness")) {
+       const float robustness = parset().getFloat("gridder.robustness");
+       ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+       // also check that it is spectral line? Or do that earlier
+       //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
+       //  - won't work with Taylor terms
+       fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
+   }
+   fftEquation->useAlternativePSF(parset());
+   fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+   // MV: it is not great that the code breaks encapsulation here by changing the data member of a base class, leave it as is for now
+   itsEquation = fftEquation;
+}
 
 void CalcCore::doCalc()
 {
@@ -166,65 +218,8 @@ void CalcCore::doCalc()
 
     ASKAPLOG_DEBUG_STR(logger, "Calculating NE .... for channel " << itsChannel);
     if (!itsEquation) {
-
-        // Setup data iterator
-        accessors::IDataSharedIter it = makeDataIterator();
-
-        ASKAPCHECK(itsModel, "Model not defined");
-        ASKAPCHECK(gridder(), "Prototype gridder not defined");
-        // calibration can go below if required
-
-        if (!getSolutionSource()) {
-            ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
-            ASKAPLOG_DEBUG_STR(logger, "building FFT/measurement equation" );
-            // the ImageFFTEquation actually clones the gridders and stores them internally
-            // which is good - but you do not get the expected behaviour here. You would think that
-            // this gridder is the one that is being used - unfortunately it is not.
-            // You therefore get no benefit from initialising the gridder.
-            // Also this is why you cannot get at the grid from outside FFT equation
-            boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
-            ASKAPDEBUGASSERT(fftEquation);
-// DAM TRADITIONAL
-            if (parset().isDefined("gridder.robustness")) {
-                const float robustness = parset().getFloat("gridder.robustness");
-                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
-                // also check that it is spectral line? Or do that earlier
-                //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
-                //  - won't work with Taylor terms
-                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
-            }
-            fftEquation->useAlternativePSF(parset());
-            fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
-            itsEquation = fftEquation;
-        } else {
-            ASKAPLOG_DEBUG_STR(logger, "Calibration will be performed using solution source");
-            boost::shared_ptr<ICalibrationApplicator> calME(\
-            new CalibrationApplicatorME(getSolutionSource()));
-            // fine tune parameters
-            ASKAPDEBUGASSERT(calME);
-            calME->scaleNoise(parset().getBool("calibrate.scalenoise",false));
-            calME->allowFlag(parset().getBool("calibrate.allowflag",false));
-            calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
-            calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
-
-            //
-            IDataSharedIter calIter(new CalibrationIterator(it,calME));
-            boost::shared_ptr<ImageFFTEquation> fftEquation( \
-            new ImageFFTEquation (*itsModel, calIter, gridder()));
-            ASKAPDEBUGASSERT(fftEquation);
-// DAM TRADITIONAL
-            if (parset().isDefined("gridder.robustness")) {
-                const float robustness = parset().getFloat("gridder.robustness");
-                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
-                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
-            }
-            fftEquation->useAlternativePSF(parset());
-            fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
-            itsEquation = fftEquation;
-        }
-
-    }
-    else {
+        createMeasurementEquation();
+    } else {
         ASKAPLOG_INFO_STR(logger, "Reusing measurement equation and updating with latest model images" );
         // Try changing this to reference instead of copy - passes tests
         //itsEquation->setParameters(*itsModel);
