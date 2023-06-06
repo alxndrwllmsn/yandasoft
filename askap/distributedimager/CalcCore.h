@@ -45,6 +45,9 @@
 #include <casacore/casa/Arrays/Vector.h>
 #include <askap/dataaccess/TableDataSource.h>
 
+// boost includes
+#include <boost/noncopyable.hpp>
+
 // Local includes
 
 
@@ -52,7 +55,8 @@ namespace askap {
 namespace cp {
 
 /// @brief Core Normal Equation Calculation functionality required by the imager.
-    class CalcCore : public synthesis::ImagerParallel
+    class CalcCore : public synthesis::ImagerParallel,
+                     public boost::noncopyable
 
     {
     public:
@@ -67,38 +71,40 @@ namespace cp {
                 accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
                  int localChannel=1, double frequency=0);
 
-        virtual ~CalcCore();
-
         /// @brief Calc the normal equations
         /// @detail Overrides the virtual function in the ImagerParallel base
-        void calcNE();
+        virtual void calcNE() override;
 
-        void solveNE();
+        /// @brief Solve the normal equations (runs in the solver)
+        /// @details Runs minor cycle
+        virtual void solveNE() override;
 
         void doCalc();
 
         void init();
 
-        void updateSolver();
+        void updateSolver() const;
 
-        void reset();
+        void reset() const;
 
-        void zero();
+        void zero() const;
 
-        void check();
+        void check() const;
 
-        void restoreImage();
+        void restoreImage() const;
 
-        void writeLocalModel(const std::string& postfix);
+        void writeLocalModel(const std::string& postfix) const;
 
-        askap::synthesis::IVisGridder::ShPtr gridder() { return itsGridder_p;};
+        /// @brief obtain the current gridder template
+        /// @return shared pointer to the gridder which can be cloned
+        askap::synthesis::IVisGridder::ShPtr gridder() const { return itsGridder;};
 
         /// @brief return the residual grid
-        casacore::Array<casacore::Complex> getGrid();
+        casacore::Array<casacore::Complex> getGrid() const;
         /// @brief return the PCF grid
-        casacore::Array<casacore::Complex> getPCFGrid();
+        casacore::Array<casacore::Complex> getPCFGrid() const;
         /// @brief return the PSF grid
-        casacore::Array<casacore::Complex> getPSFGrid();
+        casacore::Array<casacore::Complex> getPSFGrid() const;
 
 
     private:
@@ -106,19 +112,18 @@ namespace cp {
         // Communications class
         askap::askapparallel::AskapParallel& itsComms;
 
-        // Solver
+        /// @brief shared pointer to the solver
         askap::scimath::Solver::ShPtr itsSolver;
 
-        // Restore Solver
+        /// @brief run restore solver?
         bool itsRestore;
 
-        // Data: vector of the stored datasources
-        accessors::TableDataSource itsData;
+        /// @brief data source to work with (essentially a measurement set)
+        accessors::TableDataSource itsDataSource;
 
-
-        // Pointer to the gridder prototype
-        // WARNING this is cloned by the Equation - so you get little from specifying it
-        askap::synthesis::IVisGridder::ShPtr itsGridder_p;
+        /// @brief shared pointer to the gridder prototype
+        /// @details WARNING this is cloned by the Equation - so you get little from specifying it
+        askap::synthesis::IVisGridder::ShPtr itsGridder;
 
         // Its channel in the dataset
         int itsChannel;
@@ -126,11 +131,6 @@ namespace cp {
         // Its frequency in the output cube
         double itsFrequency;
 
-        // No support for assignment
-        CalcCore& operator=(const CalcCore& rhs);
-
-        // No support for copy constructor
-        CalcCore(const CalcCore& src);
 };
 };
 };

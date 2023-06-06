@@ -79,7 +79,7 @@ ASKAP_LOGGER(logger, ".CalcCore");
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::TableDataSource ds, int localChannel, double frequency)
-    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsChannel(localChannel),itsFrequency(frequency)
+    : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsChannel(localChannel),itsFrequency(frequency)
 {
     /// We need to set the calibration info here
     /// the ImagerParallel constructor will do the work to
@@ -101,14 +101,14 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
     bool writePsfImage = parset.getBool("write.psfimage",false);
     parset.replace(LOFAR::KVpair("restore.savepsfimage",writePsfImage));
     itsSolver = ImageSolverFactory::make(parset);
-    itsGridder_p = VisGridderFactory::make(parset); // this is private to an inherited class so have to make a new one
+    itsGridder = VisGridderFactory::make(parset); // this is private to an inherited class so have to make a new one
     itsRestore = parset.getBool("restore", false);
 }
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
                        int localChannel, double frequency)
-    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsGridder_p(gdr), itsChannel(localChannel),
+    : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsGridder(gdr), itsChannel(localChannel),
       itsFrequency(frequency)
 {
   const std::string solver_par = parset.getString("solver");
@@ -117,10 +117,6 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
   itsRestore = parset.getBool("restore", false);
 }
 
-CalcCore::~CalcCore()
-{
-
-}
 void CalcCore::doCalc()
 {
     ASKAPTRACE("CalcCore::doCalc");
@@ -131,7 +127,7 @@ void CalcCore::doCalc()
     ASKAPLOG_DEBUG_STR(logger, "Calculating NE .... for channel " << itsChannel);
     if (!itsEquation) {
 
-        accessors::TableDataSource ds = itsData;
+        accessors::TableDataSource ds = itsDataSource;
 
         // Setup data iterator
 
@@ -238,11 +234,12 @@ void CalcCore::doCalc()
 
 }
 
-casacore::Array<casacore::Complex> CalcCore::getGrid() {
+casacore::Array<casacore::Complex> CalcCore::getGrid() const {
 
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
     boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
+    ASKAPCHECK(fftEquation, "Incompatible type of measurement equation is in use");
 
     // We will need to loop over all completions i.e. all sources
     const std::vector<std::string> completions(itsModel->completions("image"));
@@ -250,13 +247,16 @@ casacore::Array<casacore::Complex> CalcCore::getGrid() {
     std::vector<std::string>::const_iterator it=completions.begin();
     const string imageName("image"+(*it));
     boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getResidualGridder(imageName));
+    ASKAPCHECK(tvg, "Incompatible type of gridder is used in FFTEquation");
     return tvg->getGrid();
 }
-casacore::Array<casacore::Complex> CalcCore::getPCFGrid() {
+
+casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const {
 
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
     boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
+    ASKAPCHECK(fftEquation, "Incompatible type of measurement equation is in use");
     // We will need to loop over all completions i.e. all sources
     const std::vector<std::string> completions(itsModel->completions("image"));
 
@@ -264,24 +264,30 @@ casacore::Array<casacore::Complex> CalcCore::getPCFGrid() {
     const string imageName("image"+(*it));
     boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPreconGridder(imageName));
     //ASKAPCHECK(tvg,"PreconGridder not defined, make sure preservecf is set to true")
+    if (tvg) {
+        return tvg->getGrid();
+    }
     ASKAPLOG_WARN_STR(logger,"PreconGridder not defined, make sure preservecf is set to true");
-    return (tvg ? tvg->getGrid() : casacore::Array<casacore::Complex>());
+    return casacore::Array<casacore::Complex>();
 }
-casacore::Array<casacore::Complex> CalcCore::getPSFGrid() {
+
+casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const {
 
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
     boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
+    ASKAPCHECK(fftEquation, "Incompatible type of measurement equation is in use");
     // We will need to loop over all completions i.e. all sources
     const std::vector<std::string> completions(itsModel->completions("image"));
 
     std::vector<std::string>::const_iterator it=completions.begin();
     const string imageName("image"+(*it));
     boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPSFGridder(imageName));
-    ASKAPCHECK(tvg,"PSFGridder not defined")
+    ASKAPCHECK(tvg,"Incompatible type of PSFGridder is used")
 
     return tvg->getGrid();
 }
+
 void CalcCore::calcNE()
 {
 
@@ -295,21 +301,27 @@ void CalcCore::calcNE()
 
 
 }
-void CalcCore::zero() {
 
+void CalcCore::zero() const {
+
+  ASKAPCHECK(itsNe, "Normal equations are not setup");
+  // the following would throw bad_cast exception if the wrong type is used
   ImagingNormalEquations &zeroRef =
   dynamic_cast<ImagingNormalEquations&>(*itsNe);
 
   zeroRef.zero(*itsModel);
 }
 
-void CalcCore::updateSolver() {
+void CalcCore::updateSolver() const {
   ASKAPLOG_INFO_STR(logger,"Updating the Ne in the solver with the current NE set");
+  ASKAPCHECK(itsSolver, "Solver uninitialised inside CalcCore::updateSolver");
   itsSolver->init();
   itsSolver->addNormalEquations(*itsNe);
 }
+
 void CalcCore::init()
 {
+  // MV - leave as is for now, but reset would throw an exception if itsNe is uninitialised, so the following if-statement is redundant
 
   reset();
 
@@ -324,16 +336,18 @@ void CalcCore::init()
 
 }
 
-void CalcCore::reset()
+void CalcCore::reset() const
 {
 
     ASKAPLOG_DEBUG_STR(logger,"Reset NE");
+    ASKAPCHECK(itsNe, "Normal equations are not setup inside CalcCore::reset");
     itsNe->reset();
     ASKAPLOG_DEBUG_STR(logger,"Reset NE - done");
 }
 
-void CalcCore::check()
+void CalcCore::check() const
 {
+    ASKAPCHECK(itsNe, "Normal equations are not defined inside CalcCore::check");
     std::vector<std::string> names = itsNe->unknowns();
     const ImagingNormalEquations &checkRef =
     dynamic_cast<const ImagingNormalEquations&>(*itsNe);
@@ -387,7 +401,7 @@ void CalcCore::solveNE()
 }
 
 // This code is not called from anywhere at present
-void CalcCore::writeLocalModel(const std::string &postfix) {
+void CalcCore::writeLocalModel(const std::string &postfix) const {
 
     ASKAPLOG_DEBUG_STR(logger, "Writing out results as images");
     ASKAPDEBUGASSERT(itsModel);
@@ -466,7 +480,7 @@ void CalcCore::writeLocalModel(const std::string &postfix) {
     }
 
 }
-void CalcCore::restoreImage()
+void CalcCore::restoreImage() const
 {
     ASKAPDEBUGASSERT(itsModel);
     boost::shared_ptr<ImageRestoreSolver>
