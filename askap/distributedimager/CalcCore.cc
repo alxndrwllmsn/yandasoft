@@ -117,6 +117,46 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
   itsRestore = parset.getBool("restore", false);
 }
 
+/// @brief make data iterator
+/// @details This helper method makes an iterator based on the configuration in the current parset and
+/// data fields of this class such as itsChannel and itsFrequency
+accessors::IDataSharedIter CalcCore::makeDataIterator() const
+{
+   IDataSelectorPtr sel = itsDataSource.createSelector();
+
+   sel->chooseCrossCorrelations();
+   sel << parset();
+
+   // This is the logic that switches on the combination of channels.
+   // Earlier logic has updated the Channels parameter in the parset ....
+   const bool combineChannels = parset().getBool("combinechannels",false);
+   const bool dopplerTracking = parset().getBool("dopplertracking",false);
+
+   if (!combineChannels) {
+       if (dopplerTracking) {
+           // To allow a doppler tracking reference position to be specified we need
+           // a chooseFrequencies function that takes a MFrequency with reference frame
+           const std::vector<string> direction = parset().getStringVector("dopplertracking.direction",{},false);
+           casacore::MFrequency::Ref freqRef = getFreqRefFrame();
+           if (direction.size() == 3) {
+               const casacore::MeasFrame frame(asMDirection(direction));
+               freqRef.set(frame);
+           }
+           sel->chooseFrequencies(1, casacore::MFrequency(casacore::MVFrequency(itsFrequency),freqRef), casacore::MVFrequency(0));
+       } else {
+           sel->chooseChannels(1, itsChannel);
+       }
+   }
+
+   IDataConverterPtr conv = itsDataSource.createConverter();
+   conv->setFrequencyFrame(casacore::MFrequency::Ref(casacore::MFrequency::TOPO), "Hz");
+   conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
+   conv->setEpochFrame();
+
+   return itsDataSource.createIterator(sel, conv);
+}
+
+
 void CalcCore::doCalc()
 {
     ASKAPTRACE("CalcCore::doCalc");
@@ -127,43 +167,8 @@ void CalcCore::doCalc()
     ASKAPLOG_DEBUG_STR(logger, "Calculating NE .... for channel " << itsChannel);
     if (!itsEquation) {
 
-        accessors::TableDataSource ds = itsDataSource;
-
         // Setup data iterator
-
-        IDataSelectorPtr sel = ds.createSelector();
-
-        sel->chooseCrossCorrelations();
-        sel << parset();
-
-        // This is the logic that switches on the combination of channels.
-        // Earlier logic has updated the Channels parameter in the parset ....
-        bool combineChannels = parset().getBool("combinechannels",false);
-        bool dopplerTracking = parset().getBool("dopplertracking",false);
-
-        if (!combineChannels) {
-            if (dopplerTracking) {
-                // To allow a doppler tracking reference position to be specified we need
-                // a chooseFrequencies function that takes a MFrequency with reference frame
-                std::vector<string> direction = parset().getStringVector("dopplertracking.direction",{},false);
-                casacore::MFrequency::Ref freqRef = getFreqRefFrame();
-                if (direction.size() == 3) {
-                    casacore::MeasFrame frame(asMDirection(direction));
-                    freqRef.set(frame);
-                }
-                sel->chooseFrequencies(1, casacore::MFrequency(casacore::MVFrequency(itsFrequency),freqRef), casacore::MVFrequency(0));
-            } else {
-                sel->chooseChannels(1, itsChannel);
-            }
-        }
-
-        IDataConverterPtr conv = ds.createConverter();
-        conv->setFrequencyFrame(casacore::MFrequency::Ref(casacore::MFrequency::TOPO), "Hz");
-        conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
-        conv->setEpochFrame();
-
-        IDataSharedIter it = ds.createIterator(sel, conv);
-
+        accessors::IDataSharedIter it = makeDataIterator();
 
         ASKAPCHECK(itsModel, "Model not defined");
         ASKAPCHECK(gridder(), "Prototype gridder not defined");

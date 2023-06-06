@@ -44,6 +44,7 @@
 #include <casacore/casa/Quanta/Quantum.h>
 #include <casacore/casa/Arrays/Vector.h>
 #include <askap/dataaccess/TableDataSource.h>
+#include <askap/dataaccess/SharedIter.h>
 
 // boost includes
 #include <boost/noncopyable.hpp>
@@ -106,6 +107,11 @@ namespace cp {
         /// @brief return the PSF grid
         casacore::Array<casacore::Complex> getPSFGrid() const;
 
+    protected:
+        /// @brief make data iterator
+        /// @details This helper method makes an iterator based on the configuration in the current parset and
+        /// data fields of this class such as itsChannel and itsFrequency
+        accessors::IDataSharedIter makeDataIterator() const;
 
     private:
 
