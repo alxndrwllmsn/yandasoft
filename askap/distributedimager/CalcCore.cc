@@ -120,6 +120,7 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
 /// @brief make data iterator
 /// @details This helper method makes an iterator based on the configuration in the current parset and
 /// data fields of this class such as itsChannel and itsFrequency
+/// @return shared pointer to the iterator over original data
 accessors::IDataSharedIter CalcCore::makeDataIterator() const
 {
    IDataSelectorPtr sel = itsDataSource.createSelector();
@@ -156,19 +157,14 @@ accessors::IDataSharedIter CalcCore::makeDataIterator() const
    return itsDataSource.createIterator(sel, conv);
 }
 
-/// @brief create measurement equation 
-/// @details This method creates measurement equation as appropriate (with calibration application or without) using
-/// internal state of this class and the parset
-void CalcCore::createMeasurementEquation()
+/// @brief make calibration iterator if necessary, otherwise same as makeDataIterator
+/// @details This method is equivalent to makeDataIterator but it wraps the iterator into a calibration iterator adapter
+/// if calibration is to be performed (i.e. if solution source is defined). 
+/// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
+accessors::IDataSharedIter CalcCore::makeCalibratedDataIteratorIfNeeded() const
 {
    // Setup data iterator
-   accessors::IDataSharedIter origIt = makeDataIterator();
-
-   ASKAPCHECK(itsModel, "Model not defined");
-   ASKAPCHECK(gridder(), "Prototype gridder not defined");
-
-   // iterator to be used for the equation, to be replaced with calibration iterator if necessary
-   accessors::IDataSharedIter it = origIt;
+   const accessors::IDataSharedIter origIt = makeDataIterator();
    if (getSolutionSource()) {
        ASKAPLOG_DEBUG_STR(logger, "Calibration will be performed using solution source");
        const boost::shared_ptr<ICalibrationApplicator> calME(new CalibrationApplicatorME(getSolutionSource()));
@@ -181,11 +177,23 @@ void CalcCore::createMeasurementEquation()
 
        // calibration iterator to replace the original one for the purpose of measurement equation creation
        const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
-       it = calIter;
-   } else {
-       ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
-   }
-   // now it contains the correct iterator to be passed to the FFT equation
+       return calIter;
+   } 
+   ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
+   return origIt;
+}
+
+/// @brief create measurement equation 
+/// @details This method creates measurement equation as appropriate (with calibration application or without) using
+/// internal state of this class and the parset
+void CalcCore::createMeasurementEquation()
+{
+   // Setup data iterator
+   accessors::IDataSharedIter it = makeCalibratedDataIteratorIfNeeded();
+
+   ASKAPCHECK(itsModel, "Model not defined");
+   ASKAPCHECK(gridder(), "Prototype gridder not defined");
+
    ASKAPLOG_DEBUG_STR(logger, "building FFT/measurement equation" );
    // the ImageFFTEquation actually clones the gridders and stores them internally
    // which is good - but you do not get the expected behaviour here. You would think that

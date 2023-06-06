@@ -111,7 +111,15 @@ namespace cp {
         /// @brief make data iterator
         /// @details This helper method makes an iterator based on the configuration in the current parset and
         /// data fields of this class such as itsChannel and itsFrequency
+        /// @return shared pointer to the iterator over original data
         accessors::IDataSharedIter makeDataIterator() const;
+
+        /// @brief make calibration iterator if necessary, otherwise same as makeDataIterator
+        /// @details This method is equivalent to makeDataIterator but it wraps the iterator into a calibration iterator adapter
+        /// if calibration is to be performed (i.e. if solution source is defined). 
+        /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
+        accessors::IDataSharedIter makeCalibratedDataIteratorIfNeeded() const;
+       
 
         /// @brief create measurement equation 
         /// @details This method creates measurement equation as appropriate (with calibration application or without) using
