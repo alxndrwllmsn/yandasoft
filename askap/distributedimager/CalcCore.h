@@ -45,6 +45,7 @@
 #include <casacore/casa/Arrays/Vector.h>
 #include <askap/dataaccess/TableDataSource.h>
 #include <askap/dataaccess/SharedIter.h>
+#include <askap/measurementequation/ImageFFTEquation.h>
 
 // boost includes
 #include <boost/noncopyable.hpp>
@@ -125,6 +126,20 @@ namespace cp {
         /// @details This method creates measurement equation as appropriate (with calibration application or without) using
         /// internal state of this class and the parset
         void createMeasurementEquation();
+
+        /// @brief first image name in the model
+        /// @details This is a helper method to obtain the name of the first encountered image parameter in the model. 
+        /// @note It is written as part of the refactoring of various getGrid methods. However, in principle we could have multiple
+        /// image parameters simultaneously. The original approach getting the first one won't work in this case.
+        /// @return name of the first encountered image parameter in the model
+        std::string getFirstImageName() const;
+
+        /// @brief obtain measurement equation cast to ImageFFTEquation
+        /// @details This helper method encapsulates operations common to a number of methods of this class to obtain the 
+        /// current measurement equation with the type as created in createMeasurementEquation (i.e. ImageFFTEquation) and 
+        /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
+        /// @return shared pointer of the appropriate type to the current measurement equation
+        boost::shared_ptr<synthesis::ImageFFTEquation> getMeasurementEquation() const;
 
     private:
 

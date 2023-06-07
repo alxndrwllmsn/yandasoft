@@ -239,74 +239,83 @@ void CalcCore::doCalc()
 
     ASKAPLOG_INFO_STR(logger,"Calculated normal equations in "<< timer.real()
                       << " seconds ");
-
 }
 
-casacore::Array<casacore::Complex> CalcCore::getGrid() const {
-
-    ASKAPCHECK(itsEquation, "Equation not defined");
-    ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
-    boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-    ASKAPCHECK(fftEquation, "Incompatible type of measurement equation is in use");
-
-    // We will need to loop over all completions i.e. all sources
-    const std::vector<std::string> completions(itsModel->completions("image"));
-
-    std::vector<std::string>::const_iterator it=completions.begin();
-    const string imageName("image"+(*it));
-    boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getResidualGridder(imageName));
-    ASKAPCHECK(tvg, "Incompatible type of gridder is used in FFTEquation");
-    return tvg->getGrid();
+/// @brief first image name in the model
+/// @details This is a helper method to obtain the name of the first encountered image parameter in the model. 
+/// @note It is written as part of the refactoring of various getGrid methods. However, in principle we could have multiple
+/// image parameters simultaneously. The original approach getting the first one won't work in this case.
+/// @return name of the first encountered image parameter in the model
+std::string CalcCore::getFirstImageName() const
+{
+   ASKAPASSERT(itsModel);
+   const std::vector<std::string> completions(itsModel->completions("image"));
+   const std::vector<std::string>::const_iterator it=completions.begin();
+   ASKAPCHECK(it != completions.end(), "There are no images in the current model!");
+   return "image"+(*it);
 }
 
-casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const {
-
-    ASKAPCHECK(itsEquation, "Equation not defined");
-    ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
-    boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-    ASKAPCHECK(fftEquation, "Incompatible type of measurement equation is in use");
-    // We will need to loop over all completions i.e. all sources
-    const std::vector<std::string> completions(itsModel->completions("image"));
-
-    std::vector<std::string>::const_iterator it=completions.begin();
-    const string imageName("image"+(*it));
-    boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPreconGridder(imageName));
-    //ASKAPCHECK(tvg,"PreconGridder not defined, make sure preservecf is set to true")
-    if (tvg) {
-        return tvg->getGrid();
-    }
-    ASKAPLOG_WARN_STR(logger,"PreconGridder not defined, make sure preservecf is set to true");
-    return casacore::Array<casacore::Complex>();
+/// @brief obtain measurement equation cast to ImageFFTEquation
+/// @details This helper method encapsulates operations common to a number of methods of this class to obtain the 
+/// current measurement equation with the type as created in createMeasurementEquation (i.e. ImageFFTEquation) and 
+/// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
+/// @return shared pointer of the appropriate type to the current measurement equation
+boost::shared_ptr<ImageFFTEquation> CalcCore::getMeasurementEquation() const 
+{
+   ASKAPCHECK(itsEquation, "Equation not defined");
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
+   ASKAPCHECK(fftEquation, "Incompatible type of the measurement equation is in use (this shouldn't happen - logic error suspected).");
+   return fftEquation;
 }
 
-casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const {
+casacore::Array<casacore::Complex> CalcCore::getGrid() const 
+{
+   ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
+   const string imageName = getFirstImageName();
+   // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
+   const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getResidualGridder(imageName));
+   ASKAPCHECK(tvg, "Incompatible type of residual gridder is used in FFTEquation");
+   return tvg->getGrid();
+}
 
-    ASKAPCHECK(itsEquation, "Equation not defined");
-    ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
-    boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-    ASKAPCHECK(fftEquation, "Incompatible type of measurement equation is in use");
-    // We will need to loop over all completions i.e. all sources
-    const std::vector<std::string> completions(itsModel->completions("image"));
+casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const 
+{
+   ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
+   const string imageName = getFirstImageName();
+   // in principle, we can pass the shared pointer on interface straight to dynamic cast and test the result only
+   // (it will be null pointer if getPreconGridder returns the null pointer). But doing the separate check allows us to
+   // distinguish the situations when preconditioning gridder is not defined (possible use case) vs. when
+   // the preconditioning gridder is of an unsupported type (logic error somewhere).
+   const boost::shared_ptr<IVisGridder> gridder = fftEquation->getPreconGridder(imageName);
+   if (gridder) {
+       const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(gridder);
+       ASKAPCHECK(tvg, "Incompatible type of PCF gridder is used in FFTEquation");
+       return tvg->getGrid();
+   }
 
-    std::vector<std::string>::const_iterator it=completions.begin();
-    const string imageName("image"+(*it));
-    boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPSFGridder(imageName));
-    ASKAPCHECK(tvg,"Incompatible type of PSFGridder is used")
+   ASKAPLOG_WARN_STR(logger,"PreconGridder not defined, make sure preservecf is set to true");
+   return casacore::Array<casacore::Complex>();
+}
 
-    return tvg->getGrid();
+casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const 
+{
+   ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
+   const string imageName = getFirstImageName();
+   // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
+   const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPSFGridder(imageName));
+   ASKAPCHECK(tvg, "Incompatible type of PSF gridder is used in FFTEquation");
+   return tvg->getGrid();
 }
 
 void CalcCore::calcNE()
 {
 
-
-
     init();
 
     doCalc();
-
-
-
 
 }
 
@@ -346,7 +355,6 @@ void CalcCore::init()
 
 void CalcCore::reset() const
 {
-
     ASKAPLOG_DEBUG_STR(logger,"Reset NE");
     ASKAPCHECK(itsNe, "Normal equations are not setup inside CalcCore::reset");
     itsNe->reset();
@@ -370,11 +378,10 @@ void CalcCore::check() const
 }
 void CalcCore::solveNE()
 {
-
-
     casacore::Timer timer;
     timer.mark();
 
+    ASKAPCHECK(itsSolver, "Solver is not defined in solveNE!");
     itsSolver->init();
     itsSolver->addNormalEquations(*itsNe);
 
