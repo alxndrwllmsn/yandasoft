@@ -153,7 +153,7 @@ FetchContent_Declare(base-accessors
 message (STATUS "Fetching sub repos")
 FetchContent_MakeAvailable(lofar-common lofar-blob
                            base-askap base-logfilters base-imagemath base-askapparallel base-scimath
-                           base-accessors 
+                           base-accessors
 )
 message (STATUS "Done - Fetching sub repos")
 
@@ -162,7 +162,7 @@ configure_file(askap_synthesis.cc.in askap/askap_synthesis.cc)
 # Required Version of ASKAP dependencies is the MAJOR and MINOR version
 # of this package. This allows the PATCH versions to change on everything
 # but the version number cannot be less or more than the current version
-# 
+#
 set(REQUIRED_VERSION "${VERSION_MAJOR}.${VERSION_MINOR}")
 
 option (CXX11 "Compile as C++11 if possible" YES)
@@ -214,9 +214,9 @@ option (BUILD_SHARED_LIBS "" YES)
             # on OSX, the app/executable may not run because it can not find
             # the shared libraries (e.g: ICE and/or log4cxx libraries etc).
             # At least this is what I saw on my MacOS laptop when I tried to
-            # get this repo to build and run. I could be wrong but I assume 
+            # get this repo to build and run. I could be wrong but I assume
             # this is because of the way I installed log4cxx on my laptop.
-            # I got the old version of log4cxx (0.11.0) while brew install 
+            # I got the old version of log4cxx (0.11.0) while brew install
             # will install log4cxx (0.12.0).
             list(APPEND CMAKE_INSTALL_RPATH "${log4cxx_LIBRARY}" "${ICE_LIB}")
         endif()
@@ -265,6 +265,7 @@ macro(add_sources_to_yandasoft)
 endmacro()
 add_subdirectory(askap/deconvolution)
 add_subdirectory(askap/distributedimager)
+add_subdirectory(askap/flagging)
 add_subdirectory(askap/gridding)
 add_subdirectory(askap/measurementequation)
 add_subdirectory(askap/messages)
@@ -369,8 +370,8 @@ if (BUILD_TESTING)
 	endif()
 	enable_testing()
 	add_subdirectory(tests/deconvolution)
-	add_subdirectory(tests/gridding)
+    add_subdirectory(tests/flagging)
+    add_subdirectory(tests/gridding)
 	add_subdirectory(tests/measurementequation)
 	add_subdirectory(tests/opcal)
 endif ()
-

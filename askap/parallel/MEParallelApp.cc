@@ -116,7 +116,9 @@ MEParallelApp::MEParallelApp(askap::askapparallel::AskapParallel& comms, const L
            itsUVWMachineCacheTolerance/casacore::C::pi*180.*3600.<<" arcsec");
 
        // Create the gridder using a factory acting on a parameterset
-       itsGridder = createGridder(comms, parset);
-       ASKAPCHECK(itsGridder, "Gridder is not defined correctly");
+       if (parset.isDefined("gridder")) {
+           itsGridder = createGridder(comms, parset);
+           ASKAPCHECK(itsGridder, "Gridder is not defined correctly");
+       }
    }
 }
