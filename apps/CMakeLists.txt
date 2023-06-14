@@ -12,6 +12,7 @@ ccontsubtract
 cddcalibrator
 cdeconvolver
 cdeconvolver-mpi
+cflagger
 cimager
 cmpgains
 correctdelay
