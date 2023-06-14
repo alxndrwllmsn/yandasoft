@@ -61,15 +61,15 @@ class StokesVFlagger : public IFlagger {
                        bool integrateTimes, float timesThreshold);
 
         /// @see IFlagger::processRows()
-        virtual void processRows(accessors::IDataSharedIter& di,
+        virtual void processRows(const accessors::IDataSharedIter& di,
             const casacore::Vector<bool>& rowFlag,
-            const casacore::uInt pass, const bool dryRun);
+            const casacore::uInt pass, const bool dryRun) override;
 
         /// @see IFlagger::stats()
-        virtual FlaggingStats stats(void) const;
+        virtual FlaggingStats stats(void) const override;
 
         /// @see IFlagger::stats()
-        virtual casacore::Bool processingRequired(const casacore::uInt pass);
+        virtual casacore::Bool processingRequired(const casacore::uInt pass) const override;
 
     private:
 
@@ -105,7 +105,7 @@ class StokesVFlagger : public IFlagger {
         casacore::Vector<casacore::Float>getRobustStats(casacore::MaskedArray<casacore::Float> maskedAmplitudes);
 
         // Generate a key for a given row and polarisation
-        rowKey getRowKey(accessors::IDataSharedIter& di, const casacore::uInt row);
+        rowKey getRowKey(const accessors::IDataSharedIter& di, const casacore::uInt row) const;
 
         // Maps of accumulation std::vectors for averaging spectra and generating flags
         std::map<rowKey, casacore::Vector<casacore::Double> > itsAveSpectra;

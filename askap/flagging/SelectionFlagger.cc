@@ -128,12 +128,12 @@ FlaggingStats SelectionFlagger::stats(void) const
     return itsStats;
 }
 
-casacore::Bool SelectionFlagger::processingRequired(const casacore::uInt pass)
+casacore::Bool SelectionFlagger::processingRequired(const casacore::uInt pass) const
 {
     return (pass==0);
 }
 
-void SelectionFlagger::processRows(IDataSharedIter& di,
+void SelectionFlagger::processRows(const IDataSharedIter& di,
     const casacore::Vector<bool>& rowFlag,
     const casacore::uInt pass, const bool dryRun)
 {
@@ -159,7 +159,7 @@ void SelectionFlagger::processRows(IDataSharedIter& di,
     }
 }
 
-bool SelectionFlagger::checkBaseline(IDataSharedIter& di, const casacore::uInt row)
+bool SelectionFlagger::checkBaseline(const IDataSharedIter& di, const casacore::uInt row)
 {
     const Matrix<casacore::Int> m = itsSelection.getBaselineList();
     if (m.empty()) {
@@ -219,7 +219,7 @@ bool SelectionFlagger::checkScan(casacore::Int scan)
     return false;
 }
 
-bool SelectionFlagger::checkFeed(IDataSharedIter& di, const casacore::uInt row)
+bool SelectionFlagger::checkFeed(const IDataSharedIter& di, const casacore::uInt row) const
 {
     const casacore::Int feed1 = di->feed1()(row);
     const casacore::Int feed2 = di->feed2()(row);
@@ -232,7 +232,7 @@ bool SelectionFlagger::checkFeed(IDataSharedIter& di, const casacore::uInt row)
     }
 }
 
-bool SelectionFlagger::checkAutocorr(IDataSharedIter& di, const casacore::uInt row)
+bool SelectionFlagger::checkAutocorr(const IDataSharedIter& di, const casacore::uInt row) const
 {
     ASKAPDEBUGASSERT(itsFlagAutoCorr);
 
@@ -242,7 +242,7 @@ bool SelectionFlagger::checkAutocorr(IDataSharedIter& di, const casacore::uInt r
 }
 
 bool SelectionFlagger::dispatch(const std::vector<SelectionCriteria>& v,
-                                IDataSharedIter& di, const casacore::uInt row)
+                                const IDataSharedIter& di, const casacore::uInt row)
 {
     std::vector<SelectionCriteria>::const_iterator it;
     auto tdi = di.dynamicCast<TableConstDataIterator>();
@@ -274,7 +274,7 @@ bool SelectionFlagger::dispatch(const std::vector<SelectionCriteria>& v,
     return true;
 }
 
-void SelectionFlagger::checkDetailed(IDataSharedIter& di,
+void SelectionFlagger::checkDetailed(const IDataSharedIter& di,
     casacore::Cube<casacore::Bool>& flag, const casacore::uInt row, const bool dryRun)
 {
     const Matrix<casacore::Int> chanList = itsSelection.getChanList();

@@ -171,7 +171,7 @@ void FlagParallel::doFlag()
 {
     if (itsComms.isParallel()) {
         if (doWork()) {
-            uint rank = workerRank();
+            const uint rank = workerRank();
             ASKAPLOG_INFO_STR(logger, "Worker "<<rank<< " is processing "<<measurementSets()[rank]);
             // do automatic distribution over tiles if requested and
             //   if all measurementset names are the same

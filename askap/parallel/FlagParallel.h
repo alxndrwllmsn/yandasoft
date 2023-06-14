@@ -66,12 +66,12 @@ public:
 
    // stubs for pure virtual methods which we don't use
    /// @brief calculate normal equations
-   inline void calcNE() {}
+   inline void calcNE() override {}
 
    /// @brief solve normal equations
-   inline void solveNE() {}
+   inline void solveNE() override {}
 
-   inline void writeModel(const std::string &postfix = std::string()) {}
+   inline void writeModel(const std::string &postfix = std::string()) override {} 
 
  private:
      std::vector<std::shared_ptr<IFlagger> > itsFlaggers;

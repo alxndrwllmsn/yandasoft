@@ -55,9 +55,7 @@ class IFlagger {
 
         /// Perform flagging (if necessary) for the row with index "row".
         ///
-        /// @param[in,out] tdi  the iterator for the data
-        /// @param[in] rowOffset the number of rows already processed before this
-        ///                    call - i.e., rownumber in table iterated over
+        /// @param[in,out] di  the iterator for the data
         /// @param[in] rowFlag  a vector specifying which rows are completely
         ///                     flagged already and can be skipped
         /// @param[in] pass     pass number - some flaggers collect statistics on the
@@ -65,7 +63,7 @@ class IFlagger {
         /// @param[in] dryRun   if true the dataset will not be modified,
         ///                     however statistics will be calculated indicating
         ///                     what flagging would have been done.
-        virtual void processRows(accessors::IDataSharedIter& di,
+        virtual void processRows(const accessors::IDataSharedIter& di,
                                  const casacore::Vector<bool>& rowFlag,
                                  const casacore::uInt pass, const bool dryRun) = 0;
 
@@ -74,7 +72,7 @@ class IFlagger {
 
         /// Functions associated with multiple passees
         /// @param[in] pass     number of passes over the data already performed
-        virtual casacore::Bool processingRequired(const casacore::uInt pass) = 0;
+        virtual casacore::Bool processingRequired(const casacore::uInt pass) const = 0;
 
 };
 

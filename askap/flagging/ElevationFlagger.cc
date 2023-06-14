@@ -71,12 +71,12 @@ FlaggingStats ElevationFlagger::stats(void) const
     return itsStats;
 }
 
-casacore::Bool ElevationFlagger::processingRequired(const casacore::uInt pass)
+casacore::Bool ElevationFlagger::processingRequired(const casacore::uInt pass) const
 {
     return (pass==0);
 }
 
-void ElevationFlagger::updateElevations(IDataSharedIter& di)
+void ElevationFlagger::updateElevations(const IDataSharedIter& di)
 {
     // 1: Ensure the antenna elevation array is the correct size
     boost::shared_ptr<TableConstDataIterator> tdi =
@@ -116,7 +116,7 @@ void ElevationFlagger::updateElevations(IDataSharedIter& di)
     itsTimeElevCalculated = di->time();
 }
 
-void ElevationFlagger::processRows(IDataSharedIter& di,
+void ElevationFlagger::processRows(const IDataSharedIter& di,
                          const casacore::Vector<bool>& rowFlag,
                          const casacore::uInt pass, const bool dryRun)
 {

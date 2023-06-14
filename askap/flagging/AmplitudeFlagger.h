@@ -58,20 +58,20 @@ class AmplitudeFlagger : public IFlagger {
         AmplitudeFlagger(const LOFAR::ParameterSet& parset);
 
         /// @see IFlagger::processRows()
-        virtual void processRows(accessors::IDataSharedIter& di,
+        virtual void processRows(const accessors::IDataSharedIter& di,
             const casacore::Vector<casacore::Bool>& rowFlag,
-            const casacore::uInt pass, const bool dryRun);
+            const casacore::uInt pass, const bool dryRun) override;
 
         /// @see IFlagger::stats()
-        virtual FlaggingStats stats(void) const;
+        virtual FlaggingStats stats(void) const override;
 
-        /// @see IFlagger::stats()
-        virtual casacore::Bool processingRequired(const casacore::uInt pass);
+        /// @see IFlagger::processingRequired()
+        virtual casacore::Bool processingRequired(const casacore::uInt pass) const override;
 
     private:
         // load and log relevant parset parameters
         void loadParset(const LOFAR::ParameterSet& parset);
-        void logParsetSummary(const LOFAR::ParameterSet& parset);
+        void logParsetSummary(const LOFAR::ParameterSet& parset) const;
 
         // Flagging statistics
         FlaggingStats itsStats;
@@ -126,8 +126,8 @@ class AmplitudeFlagger : public IFlagger {
         std::map<rowKey, casacore::Int> itsCountTimes;
 
         // Generate a key for a given row and polarisation
-        rowKey getRowKey(accessors::IDataSharedIter& di,
-            const casacore::uInt row, const casacore::uInt corr);
+        rowKey getRowKey(const accessors::IDataSharedIter& di,
+            const casacore::uInt row, const casacore::uInt corr) const;
 
         // Functions to handle accumulation std::vectors and indices
         void updateTimeVectors(const rowKey &key, const casacore::uInt pass);

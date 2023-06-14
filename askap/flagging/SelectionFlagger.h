@@ -67,15 +67,15 @@ class SelectionFlagger : public IFlagger {
                          const std::string &ms);
 
         /// @see IFlagger::processRows()
-        virtual void processRows(accessors::IDataSharedIter& di,
+        virtual void processRows(const accessors::IDataSharedIter& di,
                                  const casacore::Vector<bool>& rowFlag,
-                                 const casacore::uInt pass, const bool dryRun);
+                                 const casacore::uInt pass, const bool dryRun) override;
 
         /// @see IFlagger::stats()
-        virtual FlaggingStats stats(void) const;
+        virtual FlaggingStats stats(void) const override;
 
         /// @see IFlagger::stats()
-        virtual casacore::Bool processingRequired(const casacore::uInt pass);
+        virtual casacore::Bool processingRequired(const casacore::uInt pass) const override;
 
     private:
         enum SelectionCriteria {
@@ -87,17 +87,17 @@ class SelectionFlagger : public IFlagger {
             AUTOCORR
         };
 
-        bool checkBaseline(accessors::IDataSharedIter& di, const casacore::uInt row);
+        bool checkBaseline(const accessors::IDataSharedIter& di, const casacore::uInt row);
         bool checkField(const casacore::uInt fieldId);
         bool checkTimerange(const casacore::Double time);
         bool checkScan(const casacore::Int scan);
-        bool checkFeed(accessors::IDataSharedIter& di, const casacore::uInt row);
-        bool checkAutocorr(accessors::IDataSharedIter& di, const casacore::uInt row);
+        bool checkFeed(const accessors::IDataSharedIter& di, const casacore::uInt row) const;
+        bool checkAutocorr(const accessors::IDataSharedIter& di, const casacore::uInt row) const;
 
         bool dispatch(const std::vector<SelectionCriteria>& v,
-                      accessors::IDataSharedIter& di, const casacore::uInt row);
+                      const accessors::IDataSharedIter& di, const casacore::uInt row);
 
-        void checkDetailed(accessors::IDataSharedIter& di, casacore::Cube<casacore::Bool>& flag, const casacore::uInt row,
+        void checkDetailed(const accessors::IDataSharedIter& di, casacore::Cube<casacore::Bool>& flag, const casacore::uInt row,
                            const bool dryRun);
 
         // Sets the row flag to true, and also sets the flag true for each visibility

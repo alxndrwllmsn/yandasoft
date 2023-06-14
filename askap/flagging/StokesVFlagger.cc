@@ -102,7 +102,7 @@ FlaggingStats StokesVFlagger::stats(void) const
     return itsStats;
 }
 
-casacore::Bool StokesVFlagger::processingRequired(const casacore::uInt pass)
+casacore::Bool StokesVFlagger::processingRequired(const casacore::uInt pass) const
 {
     if (itsIntegrateSpectra || itsIntegrateTimes) {
         return (pass<2);
@@ -111,13 +111,13 @@ casacore::Bool StokesVFlagger::processingRequired(const casacore::uInt pass)
     }
 }
 
-void StokesVFlagger::processRows(IDataSharedIter& di,
+void StokesVFlagger::processRows(const IDataSharedIter& di,
     const casacore::Vector<bool>& rowFlag,
     const casacore::uInt pass, const bool dryRun)
 {
     const casacore::Vector<casacore::Stokes::StokesTypes> target(1, Stokes::V);
     scimath::PolConverter polConv(di->stokes(),target);
-    const Cube<casacore::Complex> data = di->visibility();
+    const Cube<casacore::Complex>& data = di->visibility();
     Cube<casacore::Bool> flags = di->flag();
     const casacore::uInt nRow = di->nRow();
     const casacore::uInt nPol = di->nPol();
@@ -165,7 +165,7 @@ void StokesVFlagger::processRows(IDataSharedIter& di,
         }
 
         // return a key that indicates which integration this row is in
-        rowKey key = getRowKey(di, row);
+        const rowKey key = getRowKey(di, row);
         // update a counter for this row and the storage vectors
         // do it before any processing that is dependent on "pass"
         if ( itsIntegrateTimes ) {
@@ -193,7 +193,7 @@ void StokesVFlagger::processRows(IDataSharedIter& di,
             // is greater than the threshold
             casacore::Float sigma, avg;
             if (itsRobustStatistics) {
-                casacore::Vector<casacore::Float> statsVector = getRobustStats(amps);
+                const casacore::Vector<casacore::Float> statsVector = getRobustStats(amps);
                 avg = statsVector[0];
                 sigma = statsVector[1];
                 // if min and max are bounded, they all are.
@@ -322,7 +322,7 @@ casacore::Vector<casacore::Float>StokesVFlagger::getRobustStats(
 
     // return with zeros if all of the data are flagged
     if (amplitudes.nelements() == 0) {
-        casacore::Vector<casacore::Float> statsVector(4,0.0);
+        const casacore::Vector<casacore::Float> statsVector(4,0.0);
         return(statsVector);
     }
     return getRobustStats(amplitudes);
@@ -338,7 +338,7 @@ casacore::Vector<casacore::Float>StokesVFlagger::getRobustStats(
     // Now find median and IQR
     // Use the fact that nth_element does a partial sort:
     // all elements before the selected element will be smaller
-    casacore::uInt n = amplitudes.nelements();
+    const casacore::uInt n = amplitudes.nelements();
     std::vector<casacore::Float> vamp = amplitudes.tovector();
     const casacore::uInt Q1 = n / 4;
     const casacore::uInt Q2 = n / 2;
@@ -356,14 +356,14 @@ casacore::Vector<casacore::Float>StokesVFlagger::getRobustStats(
 }
 
 // Generate a key for a given row and polarisation
-rowKey StokesVFlagger::getRowKey(IDataSharedIter& di,
-    const casacore::uInt row)
+rowKey StokesVFlagger::getRowKey(const IDataSharedIter& di,
+    const casacore::uInt row) const
 {
     auto tdi = di.dynamicCast<TableConstDataIterator>();
-    casacore::Int field = tdi->currentFieldID();
-    casacore::Int feed1 = di->feed1()(row);
-    casacore::Int ant1  = di->antenna1()(row);
-    casacore::Int ant2  = di->antenna2()(row);
+    const casacore::Int field = tdi->currentFieldID();
+    const casacore::Int feed1 = di->feed1()(row);
+    const casacore::Int ant1  = di->antenna1()(row);
+    const casacore::Int ant2  = di->antenna2()(row);
 #ifdef TUPLE_INDEX
     // casacore::Int feed2 = di->feed2()(row);
     // looking for outliers in a single polarisation, so set the corr key to zero
@@ -384,7 +384,7 @@ void StokesVFlagger::updateTimeVectors(const rowKey &key, const casacore::uInt p
         itsCountTimes[key]++;
     }
     if ( pass==0 ) {
-        int index = itsCountTimes[key];
+        const int index = itsCountTimes[key];
         // allocate 10 at a time to reduce reallocations with copy
         if (itsAveTimes[key].size() <= index) {
             itsAveTimes[key].resize(index + 10, casacore::True);
@@ -412,18 +412,17 @@ void StokesVFlagger::setFlagsFromIntegrations(void)
 {
     if ( itsIntegrateSpectra ) {
 
-        for (std::map<rowKey, casacore::Vector<casacore::Double> >::iterator
-             it=itsAveSpectra.begin(); it!=itsAveSpectra.end(); ++it) {
+        for (auto el : itsAveSpectra) {
 
             // get the spectra
-            casacore::Vector<casacore::Float> aveSpectrum(it->second.shape());
-            casacore::Vector<casacore::Int> countSpectrum = itsCountSpectra[it->first];
-            casacore::Vector<casacore::Bool> maskSpectrum = itsMaskSpectra[it->first];
+            casacore::Vector<casacore::Float> aveSpectrum(el.second.shape());
+            casacore::Vector<casacore::Int>& countSpectrum = itsCountSpectra[el.first];
+            casacore::Vector<casacore::Bool>& maskSpectrum = itsMaskSpectra[el.first];
             //std::vector<casacore::Float> tmpamps; // use instead of MaskedArray?
 
             for (size_t chan = 0; chan < aveSpectrum.size(); ++chan) {
                 if (countSpectrum[chan]>0) {
-                    aveSpectrum[chan] = it->second[chan] /
+                    aveSpectrum[chan] = el.second[chan] /
                                         casacore::Double(countSpectrum[chan]);
                     //tmpamps.push_back(aveSpectrum[chan]);
                     countSpectrum[chan] = 1;
@@ -438,10 +437,10 @@ void StokesVFlagger::setFlagsFromIntegrations(void)
             // directly in the preceding loop, but the full vector is needed below
             casacore::MaskedArray<casacore::Float>
                 maskedAmplitudes(aveSpectrum, maskSpectrum);
-            casacore::Vector<casacore::Float> statsVector =
+            const casacore::Vector<casacore::Float> statsVector =
                 getRobustStats(maskedAmplitudes);
-            casacore::Float median = statsVector[0];
-            casacore::Float sigma_IQR = statsVector[1];
+            const casacore::Float median = statsVector[0];
+            const casacore::Float sigma_IQR = statsVector[1];
 
             // check min and max relative to thresholds.
             // do not loop over data again if all unflagged channels are good
@@ -464,21 +463,20 @@ void StokesVFlagger::setFlagsFromIntegrations(void)
 
     if ( itsIntegrateTimes ) {
 
-        for (std::map<rowKey, casacore::Vector<casacore::Float> >::iterator
-             it=itsAveTimes.begin(); it!=itsAveTimes.end(); ++it) {
+        for (auto el : itsAveTimes) {
             // reset the counter for this key
-            itsCountTimes[it->first] = -1;
+            itsCountTimes[el.first] = -1;
 
             // get the spectra
-            casacore::Vector<casacore::Float> aveTime = it->second;
-            casacore::Vector<casacore::Bool> maskTime = itsMaskTimes[it->first];
+            casacore::Vector<casacore::Float>& aveTime = el.second;
+            casacore::Vector<casacore::Bool>& maskTime = itsMaskTimes[el.first];
 
             // generate the flagging stats
             casacore::MaskedArray<casacore::Float> maskedAmplitudes(aveTime, maskTime);
-            casacore::Vector<casacore::Float>
+            const casacore::Vector<casacore::Float>
                 statsVector = getRobustStats(maskedAmplitudes);
-            casacore::Float median = statsVector[0];
-            casacore::Float sigma_IQR = statsVector[1];
+            const casacore::Float median = statsVector[0];
+            const casacore::Float sigma_IQR = statsVector[1];
             // check min and max relative to thresholds.
             // do not loop over data again if all unflagged times are good
             if ((statsVector[2] < median-itsTimesThreshold*sigma_IQR) ||
