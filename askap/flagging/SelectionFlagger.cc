@@ -64,38 +64,40 @@ SelectionFlagger:: SelectionFlagger(const LOFAR::ParameterSet& parset,
         : itsStats("SelectionFlagger"), itsFlagAutoCorr(false),
         itsDetailedCriteriaExists(false)
 {
+    casacore::MeasurementSet myMS;
     if (ms.size()>0) {
-        itsMS = casacore::MeasurementSet(ms);
+        myMS = casacore::MeasurementSet(ms);
     }
-    itsSelection.resetMS(itsMS);
+    casacore::MSSelection mySelection;
+    mySelection.resetMS(myMS);
     if (parset.isDefined("field")) {
-        itsSelection.setFieldExpr(parset.getString("field"));
+        mySelection.setFieldExpr(parset.getString("field"));
         itsRowCriteria.push_back(FIELD);
     }
 
     if (parset.isDefined("spw")) {
-        itsSelection.setSpwExpr(parset.getString("spw"));
+        mySelection.setSpwExpr(parset.getString("spw"));
         itsDetailedCriteriaExists = true;
     }
 
     if (parset.isDefined("antenna")) {
-        itsSelection.setAntennaExpr(parset.getString("antenna"));
+        mySelection.setAntennaExpr(parset.getString("antenna"));
         itsRowCriteria.push_back(BASELINE);
     }
 
     if (parset.isDefined("timerange")) {
-        itsSelection.setTimeExpr(parset.getString("timerange"));
+        mySelection.setTimeExpr(parset.getString("timerange"));
         itsRowCriteria.push_back(TIMERANGE);
     }
 
     if (parset.isDefined("correlation")) {
-        itsSelection.setPolnExpr(parset.getString("correlation"));
+        mySelection.setPolnExpr(parset.getString("correlation"));
         ASKAPTHROW(AskapError, "Correlation selection not yet implemented");
         itsDetailedCriteriaExists = true;
     }
 
     if (parset.isDefined("scan")) {
-        itsSelection.setScanExpr(parset.getString("scan"));
+        mySelection.setScanExpr(parset.getString("scan"));
         itsRowCriteria.push_back(SCAN);
     }
 
@@ -106,7 +108,7 @@ SelectionFlagger:: SelectionFlagger(const LOFAR::ParameterSet& parset,
     }
 
     if (parset.isDefined("uvrange")) {
-        itsSelection.setUvDistExpr(parset.getString("uvrange"));
+        mySelection.setUvDistExpr(parset.getString("uvrange"));
         // Specifying a uvrange does results in flagging of baselines
         itsRowCriteria.push_back(BASELINE);
     }
@@ -120,6 +122,14 @@ SelectionFlagger:: SelectionFlagger(const LOFAR::ParameterSet& parset,
 
     if (itsRowCriteria.empty() && !itsDetailedCriteriaExists) {
         ASKAPTHROW(AskapError, "No selection criteria for rule specified");
+    }
+    // Get all the selection info we need
+    if (!myMS.isNull()) {
+        itsBaselines = mySelection.getBaselineList();
+        itsFields = mySelection.getFieldList();
+        itsTimeList = mySelection.getTimeList();
+        itsScans = mySelection.getScanList();
+        itsChanList = mySelection.getChanList();
     }
 }
 
@@ -161,7 +171,7 @@ void SelectionFlagger::processRows(const IDataSharedIter& di,
 
 bool SelectionFlagger::checkBaseline(const IDataSharedIter& di, const casacore::uInt row)
 {
-    const Matrix<casacore::Int> m = itsSelection.getBaselineList();
+    const casacore::Matrix<casacore::Int>& m = itsBaselines;
     if (m.empty()) {
         return false;
     }
@@ -181,8 +191,7 @@ bool SelectionFlagger::checkBaseline(const IDataSharedIter& di, const casacore::
 
 bool SelectionFlagger::checkField(const casacore::uInt fieldId)
 {
-    //const casacore::Int fieldId = acc.fieldId()(row);
-    const Vector<casacore::Int> v = itsSelection.getFieldList();
+    const casacore::Vector<casacore::Int> & v = itsFields;
     for (size_t i = 0; i < v.size(); ++i) {
         if (v[i] == fieldId) {
             return true;
@@ -193,7 +202,7 @@ bool SelectionFlagger::checkField(const casacore::uInt fieldId)
 
 bool SelectionFlagger::checkTimerange(const casacore::Double time)
 {
-    const Matrix<casacore::Double> timeList = itsSelection.getTimeList();
+    const casacore::Matrix<casacore::Double>& timeList = itsTimeList;
     if (timeList.empty()) {
         ASKAPLOG_DEBUG_STR(logger, "Time list is EMPTY");
         return false;
@@ -210,7 +219,7 @@ bool SelectionFlagger::checkTimerange(const casacore::Double time)
 
 bool SelectionFlagger::checkScan(casacore::Int scan)
 {
-    const Vector<casacore::Int> v = itsSelection.getScanList();
+    const casacore::Vector<casacore::Int>& v = itsScans;
     for (size_t i = 0; i < v.size(); ++i) {
         if (v[i] == scan) {
             return true;
@@ -277,7 +286,7 @@ bool SelectionFlagger::dispatch(const std::vector<SelectionCriteria>& v,
 void SelectionFlagger::checkDetailed(const IDataSharedIter& di,
     casacore::Cube<casacore::Bool>& flag, const casacore::uInt row, const bool dryRun)
 {
-    const Matrix<casacore::Int> chanList = itsSelection.getChanList();
+    const casacore::Matrix<casacore::Int>& chanList = itsChanList;
     if (chanList.empty()) {
         ASKAPLOG_DEBUG_STR(logger, "Channel flagging list is EMPTY");
         return;
