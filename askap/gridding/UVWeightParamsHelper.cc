@@ -242,11 +242,6 @@ bool UVWeightParamsHelper::addIndexTranslator(const std::string &name, const boo
        return false; 
    }
    casacore::Vector<float> buf = {float(coeffBeam), float(coeffField), float(coeffSource)};
-   /*
-   buf[0] = coeffBeam;
-   buf[1] = coeffField;
-   buf[2] = coeffSource;
-   */
    const std::string indexTranslationKey = "uvweight_indices."+name;
    ASKAPDEBUGASSERT(itsParams);
    itsParams->add(indexTranslationKey, buf);
