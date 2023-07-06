@@ -124,6 +124,12 @@ class SelectionFlagger : public IFlagger {
         // are indicated via the itsDetailedCriteriaExists attribute.
         std::vector<SelectionCriteria> itsRowCriteria;
 
+        casacore::Matrix<casacore::Int> itsBaselines;
+        casacore::Vector<casacore::Int> itsFields;
+        casacore::Matrix<casacore::Double> itsTimeList;
+        casacore::Vector<casacore::Int> itsScans;
+        casacore::Matrix<casacore::Int> itsChanList;
+
         // A set containing the feeds that should be flagged.
         std::set<uint32_t> itsFeedsFlagged;
 };
