@@ -72,6 +72,8 @@
 #include <askap/imageaccess/BeamLogger.h>
 #include <askap/imageaccess/WeightsLog.h>
 #include <askap/imagemath/linmos/LinmosAccumulator.h>
+#include <askap/gridding/UVWeightParamsHelper.h>
+
 // CASA Includes
 
 // Local includes
@@ -1450,7 +1452,12 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   // before the restore the image is the model ....
   SynthesisParamsHelper::copyImageParameter(src, dest,"image.slice");
 
+  // uv-weight related parameters are stored as part of the model, need to copy them as well, if present
+  // (the paramter name would be without leading "image.")
+  UVWeightParamsHelper hlp(src);
+  hlp.copyTo(dest, "slice");
 }
+
 void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan)
 {
 
