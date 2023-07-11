@@ -55,6 +55,7 @@ class UVWeightTest : public CppUnit::TestFixture
    CPPUNIT_TEST(testUVWeightCollectionIndices);
    CPPUNIT_TEST(testIndexTranslation);
    CPPUNIT_TEST(testGenericUVWeightAccessor);
+   CPPUNIT_TEST(testGenericUVWeightAccessorViaPtr);
    CPPUNIT_TEST(testGenericUVWeightBuilder);
    CPPUNIT_TEST(testGenericUVWeightBuilderMerge);
    CPPUNIT_TEST(testGenericUVWeightBuilderFinalise);
@@ -292,6 +293,34 @@ public:
            }
        }
        
+   }
+
+   void testGenericUVWeightAccessorViaPtr() {
+       casacore::Cube<float> wtCube(10,15,1, 1.);
+       boost::shared_ptr<UVWeightCollection> collection(new UVWeightCollection());
+       collection->add(0u, wtCube);
+
+       // check reference semantics
+       wtCube(5,7,0) = 0.5;
+       const boost::shared_ptr<GenericUVWeightIndexTranslator> translator(new GenericUVWeightIndexTranslator(0u, 0u, 0u));
+       const boost::shared_ptr<GenericUVWeightAccessor> genericAcc(new GenericUVWeightAccessor(collection, translator));
+       // cast to the interface to exercise polymorphic behaviour
+       const boost::shared_ptr<IUVWeightAccessor> acc = genericAcc;
+       CPPUNIT_ASSERT(acc);
+
+       // get UVWeight object via the accessor interface for some random beam, field and source/facet (to check translation)
+       const UVWeight wt = acc->getWeight(35u, 2u, 1u);
+       // check shape
+       CPPUNIT_ASSERT_EQUAL(static_cast<casacore::uInt>(wtCube.nrow()), wt.uSize());
+       CPPUNIT_ASSERT_EQUAL(static_cast<casacore::uInt>(wtCube.ncolumn()), wt.vSize());
+       CPPUNIT_ASSERT_EQUAL(static_cast<casacore::uInt>(wtCube.nplane()), wt.nPlane());
+       // test values
+       for (casacore::uInt u = 0; u < wtCube.nrow(); ++u) {
+           for (casacore::uInt v = 0; v < wtCube.ncolumn(); ++v) {
+                const float expected = (u == 5) && (v == 7) ? 0.5 : 1.;
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, wt(u, v, 0u), 1e-6);
+           }
+       }
    }
 
    void testGenericUVWeightBuilder() {
