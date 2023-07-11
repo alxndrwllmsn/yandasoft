@@ -188,7 +188,7 @@ namespace askap
         /// into parameter name in the model (via the appropriate Params helper class).
         /// Also index translation is encapsulated.
         /// @param[in] name image parameter name (the full one with "image" prefix - 
-        /// alwayts dealing with the full name makes the code more readable, although we
+        /// we always deal with the full name makes the code more readable, although we
         /// could've cut down some operations if we take the name without the leading 
         /// "image").
         /// @return shared pointer to the uv-weight accessor object accepted by gridders
