@@ -355,20 +355,14 @@ namespace askap
       ASKAPTRACE("ImageFFTEquation::makeUVWeightAccessor");
       ImageParamsHelper iph(ImageParamsHelper::replaceLeadingWordWith(name, "image.",""));
       const std::string parName = iph.facetName();
-      // technical debt - we don't actually need to write parameters here, but this is the only way to get shared pointer
+      // a bit of technical debt - we don't actually need to write parameters here, but this is the only way to get shared pointer and
+      // the interface is always read/write, so we can't easily implement a version of the constructor accepting const reference here
+      // without splitting the helper class into two classes (const and non-const)
       const UVWeightParamsHelper hlp(rwParameters());
       if (hlp.exists(parName)) {
-          // need to cache collection to enable reference semantics, to be cleaned up when not needed the following search just checks that
-          // they are cleaned up (i.e. we don't envisage accessing it more than once)
-          const std::map<std::string, boost::shared_ptr<UVWeightCollection> >::const_iterator ci = itsUVWeightCollections.find(parName);
-          ASKAPCHECK(ci == itsUVWeightCollections.end(), "Logic error - uv weight for "<<parName<<" shouldn't be encountered twice");
-          
           const boost::shared_ptr<IUVWeightIndexTranslator> ttor = hlp.getIndexTranslator(parName);
           const boost::shared_ptr<UVWeightCollection> wts = hlp.getUVWeights(parName);
-          // store shared pointer in the cache, so it is kept until th end of execution of the method one level up (i.e. calling this one)
-          itsUVWeightCollections[parName] = wts;
-          boost::shared_ptr<GenericUVWeightAccessor> wtAcc(new GenericUVWeightAccessor(*wts));
-          wtAcc->setTranslator(ttor);
+          boost::shared_ptr<GenericUVWeightAccessor> wtAcc(new GenericUVWeightAccessor(wts, ttor));
           return wtAcc;
       }
       return boost::shared_ptr<IUVWeightAccessor>();
@@ -379,7 +373,7 @@ namespace askap
     /// @param[in] acc uv-weight accessor to assign
     /// @note if the accessor is empty nothing is done, but if the gridder is of a wrong type which
     /// doesn't support setting of an accessor, an exception is thrown
-    void ImageFFTEquation::assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor> &acc)
+    void ImageFFTEquation::assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor const> &acc)
     {
        if (acc) {
            const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(gridder);
@@ -414,7 +408,7 @@ namespace askap
         // obtain uv-weights accessor if the appropriate details are present in the model 
         // (otherwise an empty shared pointer is returned). The logic inside getUVWeightAccessor 
         // ensures Taylor terms are handled appropriately
-        const boost::shared_ptr<IUVWeightAccessor> wtAcc = makeUVWeightAccessor(imageName);
+        const boost::shared_ptr<IUVWeightAccessor const> wtAcc = makeUVWeightAccessor(imageName);
         if (wtAcc) {
             ASKAPLOG_DEBUG_STR(logger, "UV Weight will be applied during gridding for "<<imageName);
         } else {
@@ -670,7 +664,6 @@ namespace askap
           ne.addSlice(imageName, imagePSFVec, imageWeightVec, imagePreconVec,
               imageDerivVec, imageShape, reference,itsCoordSystems[imageName]);
         }
-        itsUVWeightCollections.clear();
       }
     }
 

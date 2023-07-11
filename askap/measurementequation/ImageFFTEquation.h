@@ -199,7 +199,7 @@ namespace askap
         /// @param[in] acc uv-weight accessor to assign
         /// @note if the accessor is empty nothing is done, but if the gridder is of a wrong type which
         /// doesn't support setting of an accessor, an exception is thrown
-        static void assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor> &acc);
+        static void assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor const> &acc);
 
       private:
 
@@ -272,10 +272,6 @@ namespace askap
         /// equation and the MPI one can use polymorphic object function to sum degridded visibilities
         /// across all required ranks in the distributed case and do nothing otherwise.
         boost::shared_ptr<IVisCubeUpdate> itsVisUpdateObject;
-
-        /// @brief cache of uv-weight collections
-        /// @note technical debt - we need to find a better solution to handle reference semantics
-        mutable std::map<std::string, boost::shared_ptr<UVWeightCollection> > itsUVWeightCollections;
     };
 
   }
