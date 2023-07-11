@@ -141,6 +141,13 @@ TableVisGridder::TableVisGridder(const TableVisGridder &other) :
      itsTimeDegridded(other.itsTimeDegridded),
      itsDopsf(other.itsDopsf),
      itsDopcf(other.itsDopcf),
+     // MV: it looks like there is some technical debt / untidy design here. There is clearly an intention to do a real copy for data fields
+     // held by reference. However, we usually clone empty gridders (essentially, clone not to copy objects but to create from a template), so
+     // there is no duplication of data. With this usage in mind, it makes sense to have reference semantics for the weight accessor and builder 
+     // fields (i.e. only shared pointers are copied)
+     itsUVWeightAccessor(other.itsUVWeightAccessor),
+     itsUVWeightBuilder(other.itsUVWeightBuilder),
+     //
      itsFirstGriddedVis(other.itsFirstGriddedVis),
      itsFeedUsedForPSF(other.itsFeedUsedForPSF),
      itsPointingUsedForPSF(other.itsPointingUsedForPSF),

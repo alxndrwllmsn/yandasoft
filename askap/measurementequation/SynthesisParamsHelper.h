@@ -378,10 +378,6 @@ namespace askap
         static void copyImageParameter(askap::scimath::Params& sourceParam,
           askap::scimath::Params& sinkParam, const string& name);
 
-        /// @brief as copyImageParameter but performed for all Image parameters in the Params()
-        static void copyImageParameters(askap::scimath::Params& sourceParam,
-          askap::scimath::Params& sinkParam);
-
         /// @brief Update a parameter from an image
         /// @param ip Parameters
         /// @param name Name of parameter
