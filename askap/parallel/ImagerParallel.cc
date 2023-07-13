@@ -593,7 +593,7 @@ namespace askap
        std::vector<std::string> result;
        result.reserve(names.size());
        for (std::vector<std::string>::const_iterator ci=names.begin(); ci!=names.end(); ++ci) {
-            if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0)) {
+            if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) || (ci->find("uvweight") == 0)) {
                 result.push_back(*ci);
             }
        }
