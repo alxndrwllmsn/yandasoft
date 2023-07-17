@@ -40,6 +40,8 @@
 #include <askap/parallel/MEParallelApp.h>
 #include <askap/measurementequation/IMeasurementEquation.h>
 #include <askap/calibaccess/ICalSolutionConstSource.h>
+#include <askap/dataaccess/IDataSource.h>
+#include <askap/measurementequation/ImageFFTEquation.h>
 
 namespace askap
 {
@@ -180,6 +182,28 @@ namespace askap
       /// @return the shared_ptr
       boost::shared_ptr<accessors::ICalSolutionConstSource> getSolutionSource() const {
           return itsSolutionSource; }
+
+      /// @brief make calibration iterator if necessary, otherwise return unchanged interator
+      /// @details This method wraps the iterator passed as the input into into a calibration iterator adapter
+      /// if calibration is to be performed (i.e. if solution source is defined). 
+      /// @param[in] origIt original iterator to uncalibrated data
+      /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
+      /// or the original iterator otherwise
+      accessors::IDataSharedIter makeCalibratedDataIteratorIfNeeded(const accessors::IDataSharedIter &origIt) const;
+
+      /// @brief obtain measurement equation cast to ImageFFTEquation
+      /// @details This helper method encapsulates operations common to a number of methods of this and derived classes to obtain the 
+      /// current measurement equation with the original type as created (i.e. ImageFFTEquation) and 
+      /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
+      /// @return shared pointer of the appropriate type to the current measurement equation
+      boost::shared_ptr<ImageFFTEquation> getMeasurementEquation() const;
+
+      /// @brief make data iterator
+      /// @details This helper method makes an iterator based on the configuration in the current parset and
+      /// given data source object
+      /// @param[in] ds datasource object to use
+      /// @return shared pointer to the iterator over data
+      accessors::IDataSharedIter makeDataIterator(const accessors::IDataSource &ds) const;
 
   private:
 

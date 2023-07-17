@@ -115,13 +115,6 @@ namespace cp {
         /// @return shared pointer to the iterator over original data
         accessors::IDataSharedIter makeDataIterator() const;
 
-        /// @brief make calibration iterator if necessary, otherwise same as makeDataIterator
-        /// @details This method is equivalent to makeDataIterator but it wraps the iterator into a calibration iterator adapter
-        /// if calibration is to be performed (i.e. if solution source is defined). 
-        /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
-        accessors::IDataSharedIter makeCalibratedDataIteratorIfNeeded() const;
-       
-
         /// @brief create measurement equation 
         /// @details This method creates measurement equation as appropriate (with calibration application or without) using
         /// internal state of this class and the parset
@@ -133,13 +126,6 @@ namespace cp {
         /// image parameters simultaneously. The original approach getting the first one won't work in this case.
         /// @return name of the first encountered image parameter in the model
         std::string getFirstImageName() const;
-
-        /// @brief obtain measurement equation cast to ImageFFTEquation
-        /// @details This helper method encapsulates operations common to a number of methods of this class to obtain the 
-        /// current measurement equation with the type as created in createMeasurementEquation (i.e. ImageFFTEquation) and 
-        /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
-        /// @return shared pointer of the appropriate type to the current measurement equation
-        boost::shared_ptr<synthesis::ImageFFTEquation> getMeasurementEquation() const;
 
     private:
 

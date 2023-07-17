@@ -481,6 +481,50 @@ namespace askap
 
     }
 
+    /// @brief make calibration iterator if necessary, otherwise return unchanged interator
+    /// @details This method wraps the iterator passed as the input into into a calibration iterator adapter
+    /// if calibration is to be performed (i.e. if solution source is defined). 
+    /// @param[in] origIt original iterator to uncalibrated data
+    /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
+    /// or the original iterator otherwise
+    accessors::IDataSharedIter ImagerParallel::makeCalibratedDataIteratorIfNeeded(const accessors::IDataSharedIter &origIt) const
+    {
+       if (getSolutionSource()) {
+            ASKAPLOG_DEBUG_STR(logger, "Calibration will be performed using solution source");
+            const boost::shared_ptr<ICalibrationApplicator> calME(new CalibrationApplicatorME(getSolutionSource()));
+            // fine tune parameters
+            ASKAPDEBUGASSERT(calME);
+            calME->scaleNoise(parset().getBool("calibrate.scalenoise",false));
+            calME->allowFlag(parset().getBool("calibrate.allowflag",false));
+            calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
+            calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+
+            // calibration iterator to replace the original one for the purpose of measurement equation creation
+            const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
+            return calIter;
+       } 
+       ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
+       return origIt;
+    }
+
+    /// @brief make data iterator
+    /// @details This helper method makes an iterator based on the configuration in the current parset and
+    /// given data source object
+    /// @param[in] ds datasource object to use
+    /// @return shared pointer to the iterator over data
+    accessors::IDataSharedIter ImagerParallel::makeDataIterator(const accessors::IDataSource &ds) const
+    {
+        IDataSelectorPtr sel=ds.createSelector();
+        sel->chooseCrossCorrelations();
+        sel << parset();
+        IDataConverterPtr conv=ds.createConverter();
+        conv->setFrequencyFrame(getFreqRefFrame(), "Hz");
+        conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
+        // ensure that time is counted in seconds since 0 MJD
+        conv->setEpochFrame();
+        return ds.createIterator(sel, conv);
+    }
+
     void ImagerParallel::calcOne(const string& ms, bool discard)
     {
       ASKAPDEBUGTRACE("ImagerParallel::calcOne");
@@ -495,43 +539,15 @@ namespace askap
         // MEMORY_BUFFERS mode opens the MS readonly
         TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
         ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
-        IDataSelectorPtr sel=ds.createSelector();
-        sel->chooseCrossCorrelations();
-        sel << parset();
-        IDataConverterPtr conv=ds.createConverter();
-        conv->setFrequencyFrame(getFreqRefFrame(), "Hz");
-        conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
-        // ensure that time is counted in seconds since 0 MJD
-        conv->setEpochFrame();
+        IDataSharedIter it=makeCalibratedDataIteratorIfNeeded(makeDataIterator(ds));
 
-        IDataSharedIter it=ds.createIterator(sel, conv);
         ASKAPCHECK(itsModel, "Model not defined");
         ASKAPCHECK(gridder(), "Gridder not defined");
-        if (!itsSolutionSource) {
-            ASKAPLOG_INFO_STR(logger, "No calibration is applied" );
-            boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
-            ASKAPDEBUGASSERT(fftEquation);
-            fftEquation->useAlternativePSF(parset());
-            fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
-            itsEquation = fftEquation;
-        } else {
-            ASKAPLOG_INFO_STR(logger, "Calibration will be performed using solution source");
-            boost::shared_ptr<ICalibrationApplicator> calME(new CalibrationApplicatorME(itsSolutionSource));
-            // fine tune parameters
-            ASKAPDEBUGASSERT(calME);
-            calME->scaleNoise(parset().getBool("calibrate.scalenoise",false));
-            calME->allowFlag(parset().getBool("calibrate.allowflag",false));
-            calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
-            calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
-            //
-            IDataSharedIter calIter(new CalibrationIterator(it,calME));
-            boost::shared_ptr<ImageFFTEquation> fftEquation(
-                          new ImageFFTEquation (*itsModel, calIter, gridder()));
-            ASKAPDEBUGASSERT(fftEquation);
-            fftEquation->useAlternativePSF(parset());
-            fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
-            itsEquation = fftEquation;
-        }
+        boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
+        ASKAPDEBUGASSERT(fftEquation);
+        fftEquation->useAlternativePSF(parset());
+        fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+        itsEquation = fftEquation;
       }
       else {
         ASKAPLOG_INFO_STR(logger, "Reusing measurement equation and updating with latest model images" );
@@ -542,6 +558,19 @@ namespace askap
       itsEquation->calcEquations(*itsNe);
       ASKAPLOG_INFO_STR(logger, "Calculated normal equations for "<< ms << " in "<< timer.real()
                          << " seconds ");
+    }
+
+    /// @brief obtain measurement equation cast to ImageFFTEquation
+    /// @details This helper method encapsulates operations common to a number of methods of this and derived classes to obtain the 
+    /// current measurement equation with the original type as created (i.e. ImageFFTEquation) and 
+    /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
+    /// @return shared pointer of the appropriate type to the current measurement equation
+    boost::shared_ptr<ImageFFTEquation> ImagerParallel::getMeasurementEquation() const
+    {
+      ASKAPCHECK(itsEquation, "Equation not defined");
+      const boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
+      ASKAPCHECK(fftEquation, "Incompatible type of the measurement equation is in use (this shouldn't happen - logic error suspected).");
+      return fftEquation;
     }
 
     /// Calculate the normal equations for a given measurement set

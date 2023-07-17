@@ -157,39 +157,13 @@ accessors::IDataSharedIter CalcCore::makeDataIterator() const
    return itsDataSource.createIterator(sel, conv);
 }
 
-/// @brief make calibration iterator if necessary, otherwise same as makeDataIterator
-/// @details This method is equivalent to makeDataIterator but it wraps the iterator into a calibration iterator adapter
-/// if calibration is to be performed (i.e. if solution source is defined). 
-/// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
-accessors::IDataSharedIter CalcCore::makeCalibratedDataIteratorIfNeeded() const
-{
-   // Setup data iterator
-   const accessors::IDataSharedIter origIt = makeDataIterator();
-   if (getSolutionSource()) {
-       ASKAPLOG_DEBUG_STR(logger, "Calibration will be performed using solution source");
-       const boost::shared_ptr<ICalibrationApplicator> calME(new CalibrationApplicatorME(getSolutionSource()));
-       // fine tune parameters
-       ASKAPDEBUGASSERT(calME);
-       calME->scaleNoise(parset().getBool("calibrate.scalenoise",false));
-       calME->allowFlag(parset().getBool("calibrate.allowflag",false));
-       calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
-       calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
-
-       // calibration iterator to replace the original one for the purpose of measurement equation creation
-       const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
-       return calIter;
-   } 
-   ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
-   return origIt;
-}
-
 /// @brief create measurement equation 
 /// @details This method creates measurement equation as appropriate (with calibration application or without) using
 /// internal state of this class and the parset
 void CalcCore::createMeasurementEquation()
 {
    // Setup data iterator
-   accessors::IDataSharedIter it = makeCalibratedDataIteratorIfNeeded();
+   accessors::IDataSharedIter it = makeCalibratedDataIteratorIfNeeded(makeDataIterator());
 
    ASKAPCHECK(itsModel, "Model not defined");
    ASKAPCHECK(gridder(), "Prototype gridder not defined");
@@ -253,19 +227,6 @@ std::string CalcCore::getFirstImageName() const
    const std::vector<std::string>::const_iterator it=completions.begin();
    ASKAPCHECK(it != completions.end(), "There are no images in the current model!");
    return "image"+(*it);
-}
-
-/// @brief obtain measurement equation cast to ImageFFTEquation
-/// @details This helper method encapsulates operations common to a number of methods of this class to obtain the 
-/// current measurement equation with the type as created in createMeasurementEquation (i.e. ImageFFTEquation) and 
-/// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
-/// @return shared pointer of the appropriate type to the current measurement equation
-boost::shared_ptr<ImageFFTEquation> CalcCore::getMeasurementEquation() const 
-{
-   ASKAPCHECK(itsEquation, "Equation not defined");
-   const boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-   ASKAPCHECK(fftEquation, "Incompatible type of the measurement equation is in use (this shouldn't happen - logic error suspected).");
-   return fftEquation;
 }
 
 casacore::Array<casacore::Complex> CalcCore::getGrid() const 
