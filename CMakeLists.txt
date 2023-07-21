@@ -145,7 +145,7 @@ FetchContent_Declare(base-scimath
 
 # -------- base-accessors --------
 FetchContent_Declare(base-accessors
-  GIT_REPOSITORY    ${ASKAPSDP_GIT_URL}/base-accessors.git
+  GIT_REPOSITORY    git@github.com:alxndrwllmsn/base-accessors.git
   GIT_TAG           ${BASE_ACCESSORS_TAG}
   SOURCE_DIR        base-accessors
 )
