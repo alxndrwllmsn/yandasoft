@@ -108,13 +108,20 @@ public:
    /// @param[in/out] vis the visibilities, will be modified on output
    /// @param[in] flag the associated flags
    void subtractContFit(casacore::Cube<casacore::Complex>& vis,
-            const casacore::Cube<casacore::Bool>& flag);
+            const casacore::Cube<casacore::Bool>& flag,
+            const casacore::Matrix<casacore::Complex>& phasor);
+
+   /// @brief Compute the phase rotation phasor for rotation of visibilities to new direction
+   void computePhasor(const accessors::IDataSharedIter& it,//const accessors::IConstDataAccessor& acc,
+            casacore::Matrix<casacore::Complex>& phasor);
 
    /// @brief model is read by the master and distributed?
    /// @details Depending on the model file name (containing %w or not), the model
    /// can either be read in the master and distributed across the workers or read
-   /// by workers directly. This data member is true, if the model is read by the master
+   /// by workers directly. If true, the model is read by the master
    bool itsModelReadByMaster;
+   /// @brief do continuum subtraction based on a component or image model
+   bool itsDoSubtraction;
    /// @brief do 'uvlin' like fit and subtract of residual continuum emission
    bool itsDoUVlin;
    /// @brief order of 'uvlin' like fit and subtract of residual continuum emission
@@ -130,6 +137,10 @@ public:
    /// @brief threshold for rejection of channel from the fit, 0 mean no rejection
    /// @details reject channels if |value - median|>threshold*sigma_IQR (robust sigma estimate)
    float itsThreshold;
+   /// @brief rotate visibilities to new direction before uvlin fit/subtraction
+   casacore::MDirection itsUVlinDirection;
+   /// @brief are we rotating visibilities?
+   bool itsRotate;
 };
 
 } // namespace synthesis

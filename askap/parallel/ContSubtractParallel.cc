@@ -76,15 +76,36 @@ ContSubtractParallel::ContSubtractParallel(askap::askapparallel::AskapParallel& 
 
   itsModelReadByMaster = parset.getBool("modelReadByMaster", true);
   itsDoUVlin = parset.getBool("doUVlin", false);
-  itsOrder = parset.getInt("order", 1);
-  itsHarmonic = parset.getInt("harmonic", 1);
-  itsWidth = parset.getInt("width",0); // 0 = whole spectrum
-  itsOffset = min(max(0,parset.getInt("offset",0)),itsWidth);
-  itsThreshold = max(0.0f,parset.getFloat("threshold",2.5));
+  itsOrder = parset.getInt("uvlin.order", 1);
+  itsHarmonic = parset.getInt("uvlin.harmonic", 1);
+  itsWidth = parset.getInt("uvlin.width",0); // 0 = whole spectrum
+  itsOffset = min(max(0,parset.getInt("uvlin.offset",0)),itsWidth);
+  itsThreshold = max(0.0f,parset.getFloat("uvlin.threshold",2.5));
+  const std::vector<std::string> dir = parset.getStringVector("uvlin.direction",{},true);
+  itsRotate = dir.size() > 0;
+  if (itsRotate) {
+      if (dir.size()==1) {
+        // assume we have something like "SUN" that doesn't need lat,long
+        casacore::MDirection::Types type;
+        casacore::MDirection::getType(type, dir[0]);
+        itsUVlinDirection = casacore::MDirection(type);
+      } else if (dir.size()==3) {
+        const double ra = SynthesisParamsHelper::convertQuantity(dir[0],"rad");
+        const double dec = SynthesisParamsHelper::convertQuantity(dir[1],"rad");
+        casacore::MDirection::Types type;
+        casacore::MDirection::getType(type, dir[2]);
+        itsUVlinDirection = casacore::MDirection(casacore::MVDirection(ra, dec), type);
+    } else {
+        ASKAPLOG_WARN_STR(logger,"uvlin.direction specified incorrectly - phase rotation disabled");
+        itsRotate = false;
+    }
+  }
   if (itsWidth > 0) ASKAPCHECK(itsOffset < itsWidth,"The offset needs to be less than the width");
   if (itsDoUVlin) ASKAPLOG_INFO_STR(logger, "Doing uvlin operation with order = "
     << itsOrder<<", harmonic = "<<itsHarmonic<< ", width = "<< itsWidth
     <<" channels, offset = "<< itsOffset << " and threshold = "<< itsThreshold);
+  itsDoSubtraction = parset.getBool("doSubtraction", true);
+
 }
 
 /// @brief Initialise continuum subtractor
@@ -94,6 +115,9 @@ ContSubtractParallel::ContSubtractParallel(askap::askapparallel::AskapParallel& 
 /// the constructor.
 void ContSubtractParallel::init()
 {
+    if (!itsDoSubtraction) {
+        return;
+    }
     if (itsModelReadByMaster) {
         if (itsComms.isMaster()) {
             readModels();
@@ -176,8 +200,8 @@ void ContSubtractParallel::initMeasurementEquation()
 void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
         const casacore::Vector<casa::Float>& spec, const casa::Vector<casa::Bool>& mask)
 {
-    int nChan= spec.size();
-    int nParams = itsOrder+1+itsHarmonic*2;
+    const int nChan= spec.size();
+    const int nParams = itsOrder+1+itsHarmonic*2;
     casa::LSQaips fitter(nParams);
     casa::Vector<casa::Double> xx(nParams);
     casa::Vector<casa::Double> solution(nParams);
@@ -213,10 +237,10 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
                 }
                 // work out robust sigma and median
                 if (n>0) {
-                    casa::Float q25 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.25f, casa::False, casa::True);
-                    casa::Float q50 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.50f, casa::False, casa::True);
-                    casa::Float q75 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.75f, casa::False, casa::True);
-                    casa::Float sigma = (q75-q25)/1.35; // robust sigma estimate
+                    const casa::Float q25 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.25f, casa::False, casa::True);
+                    const casa::Float q50 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.50f, casa::False, casa::True);
+                    const casa::Float q75 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.75f, casa::False, casa::True);
+                    const casa::Float sigma = (q75-q25)/1.35; // robust sigma estimate
                     int count = 0;
                     // flag outliers
                     for (int i=start; i < end; i++) {
@@ -256,11 +280,15 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
                     }
 
                     int count2 = 0;
-                    for (int i=start; i<end; i++) if (mask(i) && !tmask(i)) count2++;
-                    //casa::cerr<<"iter="<<iter<<", n="<<n<<", start="<<start<<", median="<<q50<<", rsigma="<<sigma<<", outliers flagged: "<<count<<", extended to "<<count2<<casa::endl;
-                    //casa::cerr<<"model("<<start<<")="<<model(start)<<", model("<<end-1<<")="<<model(end-1)<<
-                    //    ", y(0)="<<y(0)<<", y("<<n-1<<")="<<y(n-1)<<casa::endl;
-                    if (iter > 0 && count2 == 0) break; // no further change expected
+                    for (int i=start; i<end; i++) {
+                        if (mask(i) && !tmask(i)) {
+                            count2++;
+                        }
+                    }
+                    if (iter > 0 && count2 == 0) {
+                        break;
+                        // no further change expected
+                    }
                 }
             }
 
@@ -301,7 +329,7 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
             // set the basis functions: polynomial and sin, cos terms
             for (int i=start; i < end; i++) {
                 // we could use itsWidth instead of binWidth to keep 'frequency' the same for sine
-                float x = (i-start) / float(binWidth);
+                const float x = (i-start) / float(binWidth);
                 if (tmask(i)) {
                     xx(0) = 1;
                     for (int j=1; j<order+1; j++) {
@@ -316,7 +344,7 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
             }
 
             casa::uInt nr1;
-            casa::Bool ok = fitter.invert(nr1);
+            const casa::Bool ok = fitter.invert(nr1);
             if (ok) {
                 fitter.solve(solution.data());
                 //casa::Float chisq = fitter.getChi();
@@ -325,7 +353,7 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
 
                 // evaluate the solution to generate the model
                 for (int i=start; i < end; i++) {
-                    float x = (i-start) / float(binWidth);
+                    const float x = (i-start) / float(binWidth);
                     model(i) = solution(order);
                     for (int j=order-1; j>=0; j--) {
                         model(i) = x * model(i) + solution(j);
@@ -343,16 +371,20 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
 }
 
 void ContSubtractParallel::subtractContFit(casacore::Cube<casacore::Complex>& vis,
-        const casacore::Cube<casacore::Bool>& flag) {
-    int nPol = vis.shape()(0);
-    int nChan = vis.shape()(1);
-    int nRow = vis.shape()(2);
+        const casacore::Cube<casacore::Bool>& flag, const casacore::Matrix<casacore::Complex>& phasor) {
+    const int nPol = vis.shape()(0);
+    const int nChan = vis.shape()(1);
+    const int nRow = vis.shape()(2);
     casa::Vector<casa::Float> visreal(nChan), visimag(nChan), modelreal(nChan), modelimag(nChan);
     casa::Vector<casa::Bool> mask(nChan);
+    const bool rotate = phasor.nelements() > 0;
     for (int row=0; row<nRow; row++) {
         for (int pol=0; pol<nPol; pol++) {
             for (int chan=0; chan<nChan; chan++) {
                 casa::Complex v = vis(pol,chan,row);
+                if (rotate) {
+                    v *= phasor(row,chan);
+                }
                 visreal(chan) = casa::real(v);
                 visimag(chan) = casa::imag(v);
                 mask(chan) = !flag(pol,chan,row);
@@ -361,7 +393,48 @@ void ContSubtractParallel::subtractContFit(casacore::Cube<casacore::Complex>& vi
             modelSpectrum(modelimag,visimag,mask);
             for (int chan=0; chan<nChan; chan++) {
                 vis(pol,chan,row) -= casa::Complex(modelreal(chan),modelimag(chan));
+                if (rotate) {
+                    vis(pol,chan,row) *= conj(phasor(row,chan));
+                }
             }
+        }
+    }
+}
+
+void ContSubtractParallel::computePhasor(const accessors::IDataSharedIter& it,
+    casacore::Matrix<casacore::Complex>& phasor)
+{
+    casacore::MDirection newDir = itsUVlinDirection;
+    if (itsUVlinDirection.getRef().getType() != casacore::MDirection::J2000) {
+        // need to do a conversion since uvwRotationDelay doesn't deal with non J2000
+        const casacore::MEpoch epoch(casacore::MVEpoch(it->time()/casacore::C::day),
+            casacore::MEpoch::Ref(casacore::MEpoch::UTC));
+        // where to get position? only avalable inside table iterator classes
+        const boost::shared_ptr<accessors::TableConstDataIterator> tableIt =
+            it.dynamicCast<accessors::TableConstDataIterator>();
+        const casacore::MPosition mroPos = tableIt->subtableInfo().getAntenna().getPosition(0);
+        const casacore::MeasFrame frame(epoch, mroPos);
+        const casacore::MDirection j2000dir = casacore::MDirection::Convert(newDir,
+            casacore::MDirection::Ref(casacore::MDirection::J2000, frame))();
+        static bool once = true;
+        if (once) {
+            ASKAPLOG_INFO_STR(logger, "Input direction: "<<newDir.toString()<<" -> J2000 : "
+                <<j2000dir.toString());
+            once = false;
+        }
+
+        newDir = j2000dir;
+    }
+    const casa::Vector<double> &delay = it->uvwRotationDelay(newDir, newDir);
+    const uint nRow = it->nRow();
+    const uint nChan = it->nChannel();
+    const casacore::Vector<casacore::Double>& freq = it->frequency();
+    phasor.resize(nRow, nChan);
+    for (uint row = 0; row < nRow; row++) {
+        for (uint chan = 0; chan < nChan; chan++) {
+            // Calculate the delay phasor - note delay is in meters
+            const double phase = casacore::C::_2pi / casacore::C::c * freq[chan] * delay(row);
+            phasor(row, chan) = casacore::Complex(cos(phase), sin(phase));
         }
     }
 }
@@ -375,54 +448,61 @@ void ContSubtractParallel::subtractContFit(casacore::Cube<casacore::Complex>& vi
 /// @param[in] distributeByTile do distribution by tile if possible
 void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
 {
-   casacore::Timer timer;
-   timer.mark();
-   ASKAPLOG_INFO_STR(logger, "Performing continuum model subtraction for " << ms );
+    casacore::Timer timer;
+    timer.mark();
+    boost::shared_ptr<IMeasurementEquation> accessorBasedEquation;
+    ASKAPLOG_INFO_STR(logger, "Performing continuum model subtraction for " << ms );
+    if (itsDoSubtraction) {
+        if (!itsEquation) {
+            initMeasurementEquation();
+        } else {
+            ASKAPLOG_INFO_STR(logger, "Reusing measurement equation" );
+        }
+        accessorBasedEquation = boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
+        ASKAPDEBUGASSERT(accessorBasedEquation);
+    }
+    // Open readonly, accessor will reopen table r/w when needed
+    TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
+    ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
+    IDataSelectorPtr sel=ds.createSelector();
+    if (distributeByTile) {
+        utils::distributeByTile(sel, dataColumn(),nWorkers(),workerRank());
+    }
+    sel << parset();
+    IDataConverterPtr conv=ds.createConverter();
+    conv->setFrequencyFrame(getFreqRefFrame(), "Hz");
+    conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
+    IDataSharedIter it=ds.createIterator(sel, conv);
+    uint niter = 0;
+    casacore::Matrix<casacore::Complex> phasor;
 
-   if (!itsEquation) {
-       initMeasurementEquation();
-   } else {
-      ASKAPLOG_INFO_STR(logger, "Reusing measurement equation" );
-   }
-
-
-   boost::shared_ptr<IMeasurementEquation> accessorBasedEquation =
-        boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
-   ASKAPDEBUGASSERT(accessorBasedEquation);
-
-   // Open readonly, accessor will reopen table r/w when needed
-   TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
-   ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
-   IDataSelectorPtr sel=ds.createSelector();
-   if (distributeByTile) {
-       utils::distributeByTile(sel, dataColumn(),nWorkers(),workerRank());
-   }
-   sel << parset();
-   IDataConverterPtr conv=ds.createConverter();
-   conv->setFrequencyFrame(getFreqRefFrame(), "Hz");
-   conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
-   IDataSharedIter it=ds.createIterator(sel, conv);
-   uint niter = 0;
-
-   for (; it.hasMore(); it.next()) {
+    for (; it.hasMore(); it.next()) {
         // iteration over the dataset
         niter++;
-        MemBufferDataAccessor acc(*it);
-        acc.rwVisibility().set(0.);
-        accessorBasedEquation->predict(acc);
-        const casacore::Cube<casacore::Complex>& model = acc.visibility();
-        casacore::Cube<casacore::Complex>& vis = it->rwVisibility();
-        ASKAPDEBUGASSERT(model.nrow() == vis.nrow());
-        ASKAPDEBUGASSERT(model.ncolumn() == vis.ncolumn());
-        ASKAPDEBUGASSERT(model.nplane() == vis.nplane());
-        vis -= model;
-        if (itsDoUVlin) {
-            subtractContFit(vis,acc.flag());
+        // Note we need to have the computePhasor call (which accesses subtables) before the first
+        //  rwVisibility call to avoid having the subtables being opened r/w in parallel
+        if (itsDoUVlin && itsRotate) {
+            computePhasor(it, phasor);
         }
-   }
+        casacore::Cube<casacore::Complex>& vis = it->rwVisibility();
+        if (itsDoSubtraction) {
+            MemBufferDataAccessor acc(*it);
+            acc.rwVisibility().set(0.);
+            accessorBasedEquation->predict(acc);
+            const casacore::Cube<casacore::Complex>& model = acc.visibility();
+            ASKAPDEBUGASSERT(model.nrow() == vis.nrow());
+            ASKAPDEBUGASSERT(model.ncolumn() == vis.ncolumn());
+            ASKAPDEBUGASSERT(model.nplane() == vis.nplane());
+            vis -= model;
+        }
+        // Do the uvlin fit/subtract on the residuals after the model subtraction
+        if (itsDoUVlin) {
+            subtractContFit(vis, it->flag(), phasor);
+        }
+    }
 
-   ASKAPLOG_INFO_STR(logger, "Finished continuum subtraction for "<< ms << " in "<< timer.real()
-                   << " seconds, using "<<niter <<" iterations");
+    ASKAPLOG_INFO_STR(logger, "Finished continuum subtraction for "<< ms << " in "<< timer.real()
+    << " seconds, using "<<niter <<" iterations");
 }
 
 /// @brief perform the subtraction
@@ -433,7 +513,7 @@ void ContSubtractParallel::doSubtraction()
 {
     if (itsComms.isParallel()) {
         if (doWork()) {
-            uint rank = workerRank();
+            const uint rank = workerRank();
             ASKAPLOG_INFO_STR(logger, "Worker "<<rank<< " is processing "<<measurementSets()[rank]);
             // do automatic distribution over tiles if requested and
             //   if all measurementset names are the same
