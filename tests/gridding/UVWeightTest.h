@@ -32,6 +32,7 @@
 #include <askap/gridding/GenericUVWeightAccessor.h>
 #include <askap/gridding/GenericUVWeightBuilder.h>
 #include <askap/gridding/UVWeightIndexTranslationHelper.h>
+#include <askap/scimath/utils/EstimatorAdapter.h>
 
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -464,6 +465,14 @@ public:
        // merge) should cause an exception
        builder->addWeight(35u, 2u, 1u);
    }
+   /*
+   void testTemp() {
+       const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder(new GenericUVWeightBuilder(0u, 0u, 0u));
+       const boost::shared_ptr<IUVWeightBuilder> builder = genericBuilder;
+       CPPUNIT_ASSERT(builder);
+       scimath::EstimatorAdapter<GenericUVWeightBuilder> adapter(genericBuilder);
+   }
+   */
 
 protected:
 
