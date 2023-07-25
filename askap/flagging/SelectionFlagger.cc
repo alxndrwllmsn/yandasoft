@@ -33,6 +33,8 @@
 // ASKAPsoft includes
 #include "askap/askap/AskapLogging.h"
 
+#include "casacore/ms/MSSel/MSSelection.h"
+
 ASKAP_LOGGER(logger, ".SelectionFlagger");
 
 using namespace askap;

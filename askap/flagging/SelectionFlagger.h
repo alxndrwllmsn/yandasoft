@@ -30,7 +30,6 @@
 // ASKAPsoft includes
 #include "Common/ParameterSet.h"
 #include "askap/dataaccess/TableDataAccessor.h"
-#include "casacore/ms/MSSel/MSSelection.h"
 
 // Local package includes
 #include "askap/flagging/IFlagger.h"
@@ -106,12 +105,6 @@ class SelectionFlagger : public IFlagger {
         // Flagging statistics
         FlaggingStats itsStats;
 
-        // Dataset
-        casacore::MeasurementSet itsMS;
-
-        // The bulk of the parsing of selection criteria is delegated to this class
-        casacore::MSSelection itsSelection;
-
         // True if auto-correlations should be flagged.
         bool itsFlagAutoCorr;
 
@@ -124,6 +117,7 @@ class SelectionFlagger : public IFlagger {
         // are indicated via the itsDetailedCriteriaExists attribute.
         std::vector<SelectionCriteria> itsRowCriteria;
 
+        // The selections to apply to each row
         casacore::Matrix<casacore::Int> itsBaselines;
         casacore::Vector<casacore::Int> itsFields;
         casacore::Matrix<casacore::Double> itsTimeList;
