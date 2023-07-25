@@ -39,6 +39,11 @@
 #include <casacore/casa/Arrays/IPosition.h>
 #include <askap/askap/AskapUtil.h>
 
+#include <Blob/BlobString.h>
+#include <Blob/BlobOBufString.h>
+#include <Blob/BlobIBufString.h>
+#include <Blob/BlobOStream.h>
+#include <Blob/BlobIStream.h>
 
 namespace askap {
 
@@ -54,13 +59,16 @@ class UVWeightTest : public CppUnit::TestFixture
    CPPUNIT_TEST_EXCEPTION(testUVWeightCollectionBadIndexConstAccess, AskapError);
    CPPUNIT_TEST(testUVWeightCollectionMerge);
    CPPUNIT_TEST(testUVWeightCollectionIndices);
+   CPPUNIT_TEST(testUVWeightCollectionSerialisation);
    CPPUNIT_TEST(testIndexTranslation);
    CPPUNIT_TEST(testGenericUVWeightAccessor);
    CPPUNIT_TEST(testGenericUVWeightAccessorViaPtr);
    CPPUNIT_TEST(testGenericUVWeightBuilder);
    CPPUNIT_TEST(testGenericUVWeightBuilderMerge);
    CPPUNIT_TEST(testGenericUVWeightBuilderFinalise);
+   CPPUNIT_TEST(testGenericUVWeightBuilderSerialisation);
    CPPUNIT_TEST_EXCEPTION(testGenericUVWeightBuilderUninitialised, AskapError);
+   CPPUNIT_TEST(testGenericUVWeightBuilderMergeViaAdapter);
    CPPUNIT_TEST_SUITE_END();
 public:
    
@@ -224,6 +232,55 @@ public:
            }
        }
   
+   }
+
+   void testUVWeightCollectionSerialisation() {
+       UVWeightCollection collection;
+       collection.add(3u, 5u,7u, 1u);
+
+       casacore::Cube<float> wtCube(10,15,1, 1.);
+       collection.add(1u, wtCube);
+        
+       // second collection, make it non-empty to test that the old content is removed
+       UVWeightCollection collection2;
+       casacore::Cube<float> wtCube2(10,15,1, 2.);
+       collection2.add(1u, wtCube2);
+
+       // now serialise the first collection into the blob and deserialise into the second one
+       {
+          LOFAR::BlobString b1(false);
+          LOFAR::BlobOBufString bob(b1);
+          LOFAR::BlobOStream bos(bob);
+          collection.writeToBlob(bos);
+
+          LOFAR::BlobIBufString bib(b1);
+          LOFAR::BlobIStream bis(bib);
+          collection2.readFromBlob(bis);
+       }
+       // reset the original collection (as a test, this also would test that we don't have any reference semantics causing problems)
+       collection.clear();
+       CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(0u), collection.indices().size());
+
+       // now test the content of the second collection
+       CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(2u), collection2.indices().size());
+       CPPUNIT_ASSERT(collection2.exists(3u));
+       CPPUNIT_ASSERT(collection2.exists(1u));
+
+       CPPUNIT_ASSERT(collection2.get(1u).shape() == casacore::IPosition(3, 10, 15, 1));
+       CPPUNIT_ASSERT(collection2.get(3u).shape() == casacore::IPosition(3, 5, 7, 1));
+
+       for (casacore::uInt u = 0; u < wtCube.nrow(); ++u) {
+           for (casacore::uInt v = 0; v < wtCube.ncolumn(); ++v) {
+                if ((u < 5u) && (v<7u)) {
+                    const float value = collection2.get(3u)(u, v, 0u);
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(0., value, 1e-6);
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(0., getWeightViaConstInterface(collection2, 3u, u,v, 0u), 1e-6);
+                }
+                const float value = collection2.get(1u)(u, v, 0u);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(1., value, 1e-6);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(1., getWeightViaConstInterface(collection2, 1u, u,v, 0u), 1e-6);
+           }
+       }
    }
 
    void testUVWeightCollectionIndices() {
@@ -465,15 +522,106 @@ public:
        // merge) should cause an exception
        builder->addWeight(35u, 2u, 1u);
    }
-   /*
-   void testTemp() {
-       const boost::shared_ptr<GenericUVWeightBuilder> genericBuilder(new GenericUVWeightBuilder(0u, 0u, 0u));
-       const boost::shared_ptr<IUVWeightBuilder> builder = genericBuilder;
-       CPPUNIT_ASSERT(builder);
-       scimath::EstimatorAdapter<GenericUVWeightBuilder> adapter(genericBuilder);
-   }
-   */
 
+   void testGenericUVWeightBuilderSerialisation() {
+       GenericUVWeightBuilder genericBuilder(1u, 2u, 3u);
+       genericBuilder.initialise(10u,15u,1u);
+       // get UVWeight object via the builder interface for some arbitrary beam, field and source/facet (to check translation)
+       UVWeight wt = genericBuilder.addWeight(35u, 2u, 1u);
+       CPPUNIT_ASSERT(!wt.empty());
+       // check that dimensions are as setup by the initialise method
+       CPPUNIT_ASSERT_EQUAL(10u, wt.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt.nPlane());
+       wt(5,7,0) += 0.5;
+       // another builder to be replaced in deserialisation, with some different parameters
+       GenericUVWeightBuilder builder2(10u, 20u, 30u);
+       // now serialise the first one and deserialise into the second one   
+       {
+          LOFAR::BlobString b1(false);
+          LOFAR::BlobOBufString bob(b1);
+          LOFAR::BlobOStream bos(bob);
+          genericBuilder.writeToBlob(bos);
+
+          LOFAR::BlobIBufString bib(b1);
+          LOFAR::BlobIStream bis(bib);
+          builder2.readFromBlob(bis);
+       }
+
+       // check that the index translation is as in the original builder
+       CPPUNIT_ASSERT_EQUAL(1u, builder2.indexOf(1u, 0u, 0u));
+       CPPUNIT_ASSERT_EQUAL(2u, builder2.indexOf(0u, 1u, 0u));
+       CPPUNIT_ASSERT_EQUAL(3u, builder2.indexOf(0u, 0u, 1u));
+
+       // add weight with the new index to test that parameters passed to initialise method of the original builder still apply
+       // (i.e. the brand new weight object was initialised with correct dimensions)
+       const UVWeight wt2 = builder2.addWeight(5u, 0u, 0u);
+       CPPUNIT_ASSERT(!wt2.empty());
+       CPPUNIT_ASSERT_EQUAL(10u, wt2.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt2.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt2.nPlane());
+
+       // get weight for indices setup with the original builder and test values
+       const UVWeight wt3 = genericBuilder.addWeight(35u, 2u, 1u);
+       CPPUNIT_ASSERT(!wt3.empty());
+       CPPUNIT_ASSERT_EQUAL(10u, wt3.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt3.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt3.nPlane());
+
+       for (casacore::uInt u = 0; u < wt3.uSize(); ++u) {
+            for (casacore::uInt v = 0; v < wt3.vSize(); ++v) {
+                 const float value = (u == 5u) && (v == 7u) ? 0.5f : 0.f;
+                 CPPUNIT_ASSERT_DOUBLES_EQUAL(value, wt3(u,v,0u), 1e-6);
+            }
+       }
+   }
+
+   /// @brief test of merge operation via EstimatorAdapter
+   /// @note The actual test is very basic (because the merge method has already been tested), do it largely to test
+   /// compilation of the adapter with the given template argument.
+   void testGenericUVWeightBuilderMergeViaAdapter() {
+       const boost::shared_ptr<GenericUVWeightBuilder> builder1(new GenericUVWeightBuilder(0u, 0u, 0u));
+       scimath::EstimatorAdapter<GenericUVWeightBuilder> adapter1(builder1);
+       builder1->initialise(10u,15u,1u);
+       // get UVWeight object via the builder interface for some arbitrary beam, field and source/facet (translated to index zero anyway)
+       UVWeight wt = builder1->addWeight(35u, 2u, 1u);
+       CPPUNIT_ASSERT(!wt.empty());
+       CPPUNIT_ASSERT_EQUAL(10u, wt.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt.nPlane());
+       wt(5,7,0) += 0.5;
+       // now setup a second builder and adapter
+       const boost::shared_ptr<GenericUVWeightBuilder> builder2(new GenericUVWeightBuilder(0u, 0u, 0u));
+       builder2->initialise(10u,15u,1u);
+       // get UVWeight object via the builder interface for some arbitrary beam, field and source/facet (translated to index zero anyway)
+       UVWeight wt2 = builder2->addWeight(5u, 12u, 2u);
+       CPPUNIT_ASSERT(!wt2.empty());
+       CPPUNIT_ASSERT_EQUAL(10u, wt2.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt2.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt2.nPlane());
+       wt2(5,7,0) += 1.5;
+       scimath::EstimatorAdapter<GenericUVWeightBuilder> adapter2(builder2);
+       // cast to normal equations interface (just for sake of the test, not really needed) and perform merge
+       const scimath::INormalEquations& ne1 = adapter1;
+       scimath::INormalEquations& ne2 = adapter2;
+       ne2.merge(ne1);
+       // get fresh pointer out of the adapter just for test, although the original one could have been used too
+       const boost::shared_ptr<GenericUVWeightBuilder> builder3 = dynamic_cast<scimath::EstimatorAdapter<GenericUVWeightBuilder>&>(ne2).get();
+       CPPUNIT_ASSERT(builder3);
+       // get the weight plane for index 0 and test the content
+       const UVWeight wt3 = builder3->addWeight(0u, 0u, 0u);
+       CPPUNIT_ASSERT(!wt3.empty());
+       CPPUNIT_ASSERT_EQUAL(10u, wt3.uSize());
+       CPPUNIT_ASSERT_EQUAL(15u, wt3.vSize());
+       CPPUNIT_ASSERT_EQUAL(1u, wt3.nPlane());
+       for (casacore::uInt u = 0; u < wt3.uSize(); ++u) {
+            for (casacore::uInt v = 0; v < wt3.vSize(); ++v) {
+                 const float value = (u == 5u) && (v == 7u) ? 2.f : 0.f;
+                 CPPUNIT_ASSERT_DOUBLES_EQUAL(value, wt3(u,v,0u), 1e-6);
+            }
+       }
+   }
+   
 protected:
 
    float getWeightViaConstInterface(const UVWeightCollection &collection, casacore::uInt index, casacore::uInt u, casacore::uInt v, casacore::uInt plane) {
