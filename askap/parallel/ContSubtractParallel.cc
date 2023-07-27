@@ -40,6 +40,11 @@
 #include <askap/measurementequation/ComponentEquation.h>
 #include <askap/measurementequation/IMeasurementEquation.h>
 #include <askap/measurementequation/ImagingEquationAdapter.h>
+#include <askap/measurementequation/CalibrationME.h>
+#include <askap/measurementequation/CalibParamsMEAdapter.h>
+#include <askap/calibaccess/CalibAccessFactory.h>
+#include <askap/measurementequation/NoXPolGain.h>
+
 #include <askap/askap/AskapError.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/utils/TilingUtils.h>
@@ -67,7 +72,7 @@ using namespace askap::accessors;
 /// application specific information is passed on the command line.
 /// @param comms communication object
 /// @param parset ParameterSet for inputs
-ContSubtractParallel::ContSubtractParallel(askap::askapparallel::AskapParallel& comms,
+ContSubtractParallel::ContSubtractParallel(askapparallel::AskapParallel& comms,
       const LOFAR::ParameterSet& parset) : MEParallelApp(comms,parset,true)
 {
   // the stub allows to reuse MEParallelApp code although we're not solving
@@ -133,13 +138,14 @@ void ContSubtractParallel::init()
 
 /// @brief initialise measurement equation
 /// @details This method initialises measurement equation
-void ContSubtractParallel::initMeasurementEquation()
+void ContSubtractParallel::initMeasurementEquation(IDataSharedIter& it)
 {
    ASKAPLOG_INFO_STR(logger, "Creating measurement equation" );
 
    // it doesn't matter which iterator to pass to the measurement equations
    // as we're only using accessor-based interface
-   IDataSharedIter stubIter(new DataIteratorStub(1));
+   // Not sure this is true for calibration - use real iterator (MHW)
+   IDataSharedIter stubIter = it; //(new DataIteratorStub(1));
 
    ASKAPCHECK(itsModel, "Model is not defined");
    ASKAPCHECK(gridder(), "Gridder is not defined");
@@ -186,6 +192,7 @@ void ContSubtractParallel::initMeasurementEquation()
         boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
 
    if (!accessorBasedEquation) {
+       ASKAPLOG_INFO_STR(logger,"Creating accessor based equation");
         // form a replacement equation first
         const boost::shared_ptr<ImagingEquationAdapter> new_equation(new ImagingEquationAdapter);
         // the actual equation (from itsEquation) will be locked inside ImagingEquationAdapter
@@ -193,20 +200,49 @@ void ContSubtractParallel::initMeasurementEquation()
         new_equation->assign(itsEquation);
         // replacing the original equation with an accessor-based adapter
         itsEquation = new_equation;
+        // this should work now
+        accessorBasedEquation = boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
+   }
+   ASKAPDEBUGASSERT(accessorBasedEquation);
+   if (parset().getBool("calibrate",false)) {
+       itsSolutionSource = CalibAccessFactory::roCalSolutionSource(parset());
+   }
+   // corrupt model with calibration
+   if (itsSolutionSource) {
+       boost::shared_ptr<CalibrationMEBase> calME;
+       // Using the CalibrationME class is more general, but slower than the
+       // CalibratorApplicatorME class (and the latter doesn't have corrupt/predict yet)
+       // Not sure how to fit the DDCal classes into this, which is the goal for peeling
+       ASKAPLOG_INFO_STR(logger, "Only parallel-hand gains will be applied. Polarisation leakage will not be applied.");
+       calME.reset(new CalibrationME<NoXPolGain>(scimath::Params(), stubIter, accessorBasedEquation));
+       ASKAPDEBUGASSERT(calME);
+       // fine tune parameters - do we need this for corrupt?
+       if (parset().getBool("calibrate.scalenoise",false)) {
+           calME->scaleNoise(true);
+       }
+       if (parset().getBool("calibrate.allowflag",false)) {
+           calME->allowFlag(true);
+       }
+       if (parset().getBool("calibrate.ignorebeam", false)) {
+           calME->beamIndependent(true);
+       }
+       calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+       // set up the adapter
+       itsEquation.reset(new CalibParamsMEAdapter(calME, itsSolutionSource, stubIter));
    }
 
 }
 
-void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
-        const casacore::Vector<casa::Float>& spec, const casa::Vector<casa::Bool>& mask)
+void ContSubtractParallel::modelSpectrum(casacore::Vector<casacore::Float> & model,
+        const casacore::Vector<casacore::Float>& spec, const casacore::Vector<casacore::Bool>& mask)
 {
     const int nChan= spec.size();
     const int nParams = itsOrder+1+itsHarmonic*2;
-    casa::LSQaips fitter(nParams);
-    casa::Vector<casa::Double> xx(nParams);
-    casa::Vector<casa::Double> solution(nParams);
-    casa::VectorSTLIterator<casa::Double> it(xx);
-    casa::Vector<casa::Bool> tmask(nChan);
+    casacore::LSQaips fitter(nParams);
+    casacore::Vector<casacore::Double> xx(nParams);
+    casacore::Vector<casacore::Double> solution(nParams);
+    casacore::VectorSTLIterator<casacore::Double> it(xx);
+    casacore::Vector<casacore::Bool> tmask(nChan);
 
     // If we are doing outlier rejection against the model iterate a few times
     const int niter = (itsThreshold > 0 ? 3 : 1);
@@ -217,7 +253,7 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
 
     // we are doing the fitting in channel bins
     if (itsWidth == 0) itsWidth = nChan;
-    casa::Vector<casa::Float> y(itsWidth);
+    casacore::Vector<casacore::Float> y(itsWidth);
     std::vector<casacore::Float> tmp;
     uint lastDof = nParams;
     for (int binStart=-itsOffset; binStart<nChan; binStart+=itsWidth) {
@@ -237,10 +273,10 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
                 }
                 // work out robust sigma and median
                 if (n>0) {
-                    const casa::Float q25 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.25f, casa::False, casa::True);
-                    const casa::Float q50 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.50f, casa::False, casa::True);
-                    const casa::Float q75 = casa::fractile(y(casa::Slice(0,n)), tmp, 0.75f, casa::False, casa::True);
-                    const casa::Float sigma = (q75-q25)/1.35; // robust sigma estimate
+                    const casacore::Float q25 = casacore::fractile(y(casacore::Slice(0,n)), tmp, 0.25f, casacore::False, casacore::True);
+                    const casacore::Float q50 = casacore::fractile(y(casacore::Slice(0,n)), tmp, 0.50f, casacore::False, casacore::True);
+                    const casacore::Float q75 = casacore::fractile(y(casacore::Slice(0,n)), tmp, 0.75f, casacore::False, casacore::True);
+                    const casacore::Float sigma = (q75-q25)/1.35; // robust sigma estimate
                     int count = 0;
                     // flag outliers
                     for (int i=start; i < end; i++) {
@@ -336,20 +372,20 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
                         xx(j) = xx(j-1) * x;
                     }
                     for (int j=0; j<harm; j++) {
-                        xx(order+1+2*j)   = sin((j+1)*casa::C::pi*x);
-                        xx(order+1+2*j+1) = cos((j+1)*casa::C::pi*x);
+                        xx(order+1+2*j)   = sin((j+1)*casacore::C::pi*x);
+                        xx(order+1+2*j+1) = cos((j+1)*casacore::C::pi*x);
                     }
-                    fitter.makeNorm(it,1.0,casa::Double(spec(i)));
+                    fitter.makeNorm(it,1.0,casacore::Double(spec(i)));
                 }
             }
 
-            casa::uInt nr1;
-            const casa::Bool ok = fitter.invert(nr1);
+            casacore::uInt nr1;
+            const casacore::Bool ok = fitter.invert(nr1);
             if (ok) {
                 fitter.solve(solution.data());
-                //casa::Float chisq = fitter.getChi();
-                //casa::Float sd1 = fitter.getSD();
-                //casa::cerr << "Fit="<< ok <<", rank="<<nr1<<", chisq="<<chisq<<", sd="<<sd1<<", sol"<<solution<<casa::endl;
+                //casacore::Float chisq = fitter.getChi();
+                //casacore::Float sd1 = fitter.getSD();
+                //casacore::cerr << "Fit="<< ok <<", rank="<<nr1<<", chisq="<<chisq<<", sd="<<sd1<<", sol"<<solution<<casacore::endl;
 
                 // evaluate the solution to generate the model
                 for (int i=start; i < end; i++) {
@@ -359,8 +395,8 @@ void ContSubtractParallel::modelSpectrum(casa::Vector<casa::Float> & model,
                         model(i) = x * model(i) + solution(j);
                     }
                     for (int j=0; j<harm; j++) {
-                        model(i) += solution(order+1+2*j)   * sin((j+1)*casa::C::pi*x);
-                        model(i) += solution(order+1+2*j+1) * cos((j+1)*casa::C::pi*x);
+                        model(i) += solution(order+1+2*j)   * sin((j+1)*casacore::C::pi*x);
+                        model(i) += solution(order+1+2*j+1) * cos((j+1)*casacore::C::pi*x);
                     }
                 }
             } else {
@@ -375,24 +411,24 @@ void ContSubtractParallel::subtractContFit(casacore::Cube<casacore::Complex>& vi
     const int nPol = vis.shape()(0);
     const int nChan = vis.shape()(1);
     const int nRow = vis.shape()(2);
-    casa::Vector<casa::Float> visreal(nChan), visimag(nChan), modelreal(nChan), modelimag(nChan);
-    casa::Vector<casa::Bool> mask(nChan);
+    casacore::Vector<casacore::Float> visreal(nChan), visimag(nChan), modelreal(nChan), modelimag(nChan);
+    casacore::Vector<casacore::Bool> mask(nChan);
     const bool rotate = phasor.nelements() > 0;
     for (int row=0; row<nRow; row++) {
         for (int pol=0; pol<nPol; pol++) {
             for (int chan=0; chan<nChan; chan++) {
-                casa::Complex v = vis(pol,chan,row);
+                casacore::Complex v = vis(pol,chan,row);
                 if (rotate) {
                     v *= phasor(row,chan);
                 }
-                visreal(chan) = casa::real(v);
-                visimag(chan) = casa::imag(v);
+                visreal(chan) = casacore::real(v);
+                visimag(chan) = casacore::imag(v);
                 mask(chan) = !flag(pol,chan,row);
             }
             modelSpectrum(modelreal,visreal,mask);
             modelSpectrum(modelimag,visimag,mask);
             for (int chan=0; chan<nChan; chan++) {
-                vis(pol,chan,row) -= casa::Complex(modelreal(chan),modelimag(chan));
+                vis(pol,chan,row) -= casacore::Complex(modelreal(chan),modelimag(chan));
                 if (rotate) {
                     vis(pol,chan,row) *= conj(phasor(row,chan));
                 }
@@ -425,7 +461,7 @@ void ContSubtractParallel::computePhasor(const accessors::IDataSharedIter& it,
 
         newDir = j2000dir;
     }
-    const casa::Vector<double> &delay = it->uvwRotationDelay(newDir, newDir);
+    const casacore::Vector<double> &delay = it->uvwRotationDelay(newDir, newDir);
     const uint nRow = it->nRow();
     const uint nChan = it->nChannel();
     const casacore::Vector<casacore::Double>& freq = it->frequency();
@@ -452,15 +488,7 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
     timer.mark();
     boost::shared_ptr<IMeasurementEquation> accessorBasedEquation;
     ASKAPLOG_INFO_STR(logger, "Performing continuum model subtraction for " << ms );
-    if (itsDoSubtraction) {
-        if (!itsEquation) {
-            initMeasurementEquation();
-        } else {
-            ASKAPLOG_INFO_STR(logger, "Reusing measurement equation" );
-        }
-        accessorBasedEquation = boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
-        ASKAPDEBUGASSERT(accessorBasedEquation);
-    }
+
     // Open readonly, accessor will reopen table r/w when needed
     TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
     ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
@@ -473,6 +501,19 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
     conv->setFrequencyFrame(getFreqRefFrame(), "Hz");
     conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
     IDataSharedIter it=ds.createIterator(sel, conv);
+
+    if (itsDoSubtraction) {
+        if (!itsEquation) {
+            initMeasurementEquation(it);
+        } else {
+            ASKAPLOG_INFO_STR(logger, "Reusing measurement equation" );
+        }
+        accessorBasedEquation = boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
+        ASKAPDEBUGASSERT(accessorBasedEquation);
+        ASKAPASSERT(accessorBasedEquation);
+    }
+
+
     uint niter = 0;
     casacore::Matrix<casacore::Complex> phasor;
 

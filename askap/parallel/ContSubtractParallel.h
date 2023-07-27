@@ -33,6 +33,7 @@
 // ASKAPsoft includes
 #include <Common/ParameterSet.h>
 #include <askap/parallel/MEParallelApp.h>
+#include <askap/calibaccess/ICalSolutionConstSource.h>
 
 namespace askap {
 
@@ -72,8 +73,9 @@ public:
    inline void readModels() const { SynParallel::readModels(itsModel); }
 
    /// @brief initialise measurement equation
+   /// @param[in] it the data iterator
    /// @details This method initialises measurement equation
-   void initMeasurementEquation();
+   void initMeasurementEquation(accessors::IDataSharedIter& it);
 
    /// @brief perform the subtraction for the given dataset
    /// @details This method iterates over the given dataset, predicts visibilities according to the
@@ -141,6 +143,13 @@ public:
    casacore::MDirection itsUVlinDirection;
    /// @brief are we rotating visibilities?
    bool itsRotate;
+
+   /// @brief solution source to get calibration data from
+   /// @details This object is initialised by workers. It knows how to
+   /// retrieve calibration solutions (from a parset file, casa table or a database).
+   /// Uninitialised shared pointer means no calibration
+   boost::shared_ptr<accessors::ICalSolutionConstSource> itsSolutionSource;
+
 };
 
 } // namespace synthesis
