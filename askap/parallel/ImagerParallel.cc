@@ -68,6 +68,12 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/parallel/AdviseParallel.h>
 #include <askap/utils/StatsAndMask.h>
 
+// this is used for uv-weight calculators factory, to be removed 
+// when/if we factor this out into a separate class
+#include <askap/gridding/CompositeUVWeightCalculator.h>
+#include <askap/gridding/RobustUVWeightCalculator.h>
+#include <askap/gridding/ConjugatesAdderFFT.h>
+
 #include <casacore/casa/aips.h>
 #include <casacore/casa/OS/Timer.h>
 
@@ -781,6 +787,61 @@ namespace askap
       } else {
           SynthesisParamsHelper::saveImageParameter(tempPar, outParName, outParName, boost::none, keywords);
       }
+    }
+
+    /// @brief factory method creating uv weight calculator based on the parset
+    /// @details The main parameter controlling the mode of traditional weighting is 
+    /// Cimager.uvweight which either can take a keyword describing some special method
+    /// of getting the weights (which doesn't require iteration over data), e.g. reading from disk
+    /// or a list of "effects" which should be applied to the density of uv samples obtained via
+    /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
+    /// case with the list of effects) or returns an empty pointer if no iteration over data is required
+    /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
+    /// @return non-zero shared pointer to the weight calculator object to be applied to the density of uv samples
+    /// (empty shared pointer implies that there is no need obtaining the density because either no traditional weighting is done or
+    /// we're using some special algorithm which does not require iteration over data)
+    boost::shared_ptr<IUVWeightCalculator> ImagerParallel::createUVWeightCalculator() const
+    {
+       const std::string keyword = "uvweight";
+       if (!parset().isDefined(keyword)) {
+           return boost::shared_ptr<IUVWeightCalculator>();
+       }
+       const std::vector<std::string> wtCalcList = parset().getStringVector(keyword);
+       ASKAPCHECK(wtCalcList.size() > 0u, "Cimager.uvweight should contain either a single keyword describing how the weight is obtained or a vector with procedure names to apply these to measured uv-density");
+       
+       // also need to check here later on that Cimager.uvweight parameter is set to one of the resereved keywords and return an empty 
+       // shared pointer if this is the case. Or factor out this method into a separate class where the same logic would be done
+       // some other way
+
+       std::vector<boost::shared_ptr<IUVWeightCalculator> >  calculators(wtCalcList.size());
+       ASKAPLOG_INFO_STR(logger, "Setting up uv-weight calculation:");
+       // the same could've been achieved with iterators but performance gain is very small, if any and this code is cleaner
+       for (size_t index = 0; index < wtCalcList.size(); ++index) {
+            // the actual factory code, we can factor this out into a separate method
+            const std::string name = wtCalcList[index];
+            if (name == "Robust") {
+                // we could've had parameters in the form Cimager.uvweight.Robust.robustness to follow a more structured apporach - can be changed if we want it
+                const float robustness = parset().getFloat(keyword + ".robustness"); 
+                ASKAPLOG_INFO_STR(logger, "        + "<<name<<": robust weighting with robustness = "<<robustness);
+                const boost::shared_ptr<RobustUVWeightCalculator> calc(new RobustUVWeightCalculator(robustness));
+                calculators[index]  = calc;
+            } else {
+                if (name == "ConjugatesAdderFFT") {
+                    ASKAPLOG_INFO_STR(logger, "        + "<<name<<": ensuring conjugate symmetry via FFT");
+                    const boost::shared_ptr<ConjugatesAdderFFT> calc(new ConjugatesAdderFFT());
+                    calculators[index] = calc;
+                } else { 
+                    // taper class comes here when we have it
+                    ASKAPTHROW(AskapError, "Unknown type of the uv-weight calculator: "<<name);
+                }
+            }
+       }
+       if (calculators.size() == 1) {
+           return calculators[0];
+       }
+       // there are several effects which need to be applied one by one, create composite calculator to achieve this
+       const boost::shared_ptr<CompositeUVWeightCalculator> result(new CompositeUVWeightCalculator(calculators.begin(), calculators.end()));
+       return result;
     }
 
 

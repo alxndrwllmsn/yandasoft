@@ -42,6 +42,7 @@
 #include <askap/calibaccess/ICalSolutionConstSource.h>
 #include <askap/dataaccess/IDataSource.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
+#include <askap/gridding/IUVWeightCalculator.h>
 
 namespace askap
 {
@@ -204,6 +205,22 @@ namespace askap
       /// @param[in] ds datasource object to use
       /// @return shared pointer to the iterator over data
       accessors::IDataSharedIter makeDataIterator(const accessors::IDataSource &ds) const;
+
+      // methods to setup traditional weighting. We probably should have a separate class to manage this, but I (MV) feel that not
+      // all the required details are fleshed out yet. Leave this here for now, although it is a bit of the technical debt
+
+      /// @brief factory method creating uv weight calculator based on the parset
+      /// @details The main parameter controlling the mode of traditional weighting is 
+      /// Cimager.uvweight which either can take a keyword describing some special method
+      /// of getting the weights (which doesn't require iteration over data), e.g. reading from disk
+      /// or a list of "effects" which should be applied to the density of uv samples obtained via
+      /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
+      /// case with the list of effects) or returns an empty pointer if no iteration over data is required
+      /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
+      /// @return non-zero shared pointer to the weight calculator object to be applied to the density of uv samples
+      /// (empty shared pointer implies that there is no need obtaining the density because either no traditional weighting is done or
+      /// we're using some special algorithm which does not require iteration over data)
+      boost::shared_ptr<IUVWeightCalculator> createUVWeightCalculator() const;
 
   private:
 
