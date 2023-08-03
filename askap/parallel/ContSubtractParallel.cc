@@ -42,6 +42,7 @@
 #include <askap/measurementequation/ImagingEquationAdapter.h>
 #include <askap/measurementequation/CalibrationME.h>
 #include <askap/measurementequation/CalibParamsMEAdapter.h>
+#include <askap/measurementequation/CalibrationApplicatorME.h>
 #include <askap/calibaccess/CalibAccessFactory.h>
 #include <askap/measurementequation/NoXPolGain.h>
 
@@ -87,7 +88,7 @@ ContSubtractParallel::ContSubtractParallel(askapparallel::AskapParallel& comms,
   itsOffset = min(max(0,parset.getInt("uvlin.offset",0)),itsWidth);
   itsThreshold = max(0.0f,parset.getFloat("uvlin.threshold",2.5));
   const std::vector<std::string> dir = parset.getStringVector("uvlin.direction",{},true);
-  itsRotate = dir.size() > 0;
+  itsRotate = itsDoUVlin && (dir.size() > 0);
   if (itsRotate) {
       if (dir.size()==1) {
         // assume we have something like "SUN" that doesn't need lat,long
@@ -209,26 +210,41 @@ void ContSubtractParallel::initMeasurementEquation(IDataSharedIter& it)
    }
    // corrupt model with calibration
    if (itsSolutionSource) {
-       boost::shared_ptr<CalibrationMEBase> calME;
-       // Using the CalibrationME class is more general, but slower than the
-       // CalibratorApplicatorME class (and the latter doesn't have corrupt/predict yet)
-       // Not sure how to fit the DDCal classes into this, which is the goal for peeling
-       ASKAPLOG_INFO_STR(logger, "Only parallel-hand gains will be applied. Polarisation leakage will not be applied.");
-       calME.reset(new CalibrationME<NoXPolGain>(scimath::Params(), stubIter, accessorBasedEquation));
-       ASKAPDEBUGASSERT(calME);
-       // fine tune parameters - do we need this for corrupt?
-       if (parset().getBool("calibrate.scalenoise",false)) {
-           calME->scaleNoise(true);
+       if (parset().getBool("calibrate.usecalapplicator",false)) {
+            ASKAPLOG_INFO_STR(logger, "Using CalibrationApplicator for gains");
+           itsCalApplicator.reset(new CalibrationApplicatorME(itsSolutionSource));
+           if (parset().getBool("calibrate.scalenoise",false)) {
+               itsCalApplicator->scaleNoise(true);
+           }
+           if (parset().getBool("calibrate.allowflag",false)) {
+               itsCalApplicator->allowFlag(true);
+           }
+           if (parset().getBool("calibrate.ignorebeam", false)) {
+               itsCalApplicator->beamIndependent(true);
+           }
+           itsCalApplicator->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+       } else {
+           boost::shared_ptr<CalibrationMEBase> calME;
+           // Using the CalibrationME class is more general, but slower than the
+           // CalibratorApplicatorME class
+           // Not sure how to fit the DDCal classes into this, which is the goal for peeling
+           ASKAPLOG_INFO_STR(logger, "Only parallel-hand gains will be applied. Polarisation leakage will not be applied.");
+           calME.reset(new CalibrationME<NoXPolGain>(scimath::Params(), stubIter, accessorBasedEquation));
+           ASKAPDEBUGASSERT(calME);
+           // fine tune parameters - do we need this for corrupt?
+           if (parset().getBool("calibrate.scalenoise",false)) {
+               calME->scaleNoise(true);
+           }
+           if (parset().getBool("calibrate.allowflag",false)) {
+               calME->allowFlag(true);
+           }
+           if (parset().getBool("calibrate.ignorebeam", false)) {
+               calME->beamIndependent(true);
+           }
+           calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+           // set up the adapter
+           itsEquation.reset(new CalibParamsMEAdapter(calME, itsSolutionSource, stubIter));
        }
-       if (parset().getBool("calibrate.allowflag",false)) {
-           calME->allowFlag(true);
-       }
-       if (parset().getBool("calibrate.ignorebeam", false)) {
-           calME->beamIndependent(true);
-       }
-       calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
-       // set up the adapter
-       itsEquation.reset(new CalibParamsMEAdapter(calME, itsSolutionSource, stubIter));
    }
 
 }
@@ -513,23 +529,26 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
         ASKAPASSERT(accessorBasedEquation);
     }
 
-
     uint niter = 0;
     casacore::Matrix<casacore::Complex> phasor;
+
+    // computePhasor and calibration access subtables, load them now (before the first
+    // rwVisibility call) to avoid having the subtables opened r/w in parallel
+    loadSubtables(it);
 
     for (; it.hasMore(); it.next()) {
         // iteration over the dataset
         niter++;
-        // Note we need to have the computePhasor call (which accesses subtables) before the first
-        //  rwVisibility call to avoid having the subtables being opened r/w in parallel
-        if (itsDoUVlin && itsRotate) {
-            computePhasor(it, phasor);
-        }
         casacore::Cube<casacore::Complex>& vis = it->rwVisibility();
         if (itsDoSubtraction) {
             MemBufferDataAccessor acc(*it);
             acc.rwVisibility().set(0.);
             accessorBasedEquation->predict(acc);
+            // If using the cal applicator, we apply calibration separately
+            // from predicting the visibilities, otherwise it is already done
+            if (itsCalApplicator) {
+                itsCalApplicator->predict(acc);
+            }
             const casacore::Cube<casacore::Complex>& model = acc.visibility();
             ASKAPDEBUGASSERT(model.nrow() == vis.nrow());
             ASKAPDEBUGASSERT(model.ncolumn() == vis.ncolumn());
@@ -538,6 +557,9 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
         }
         // Do the uvlin fit/subtract on the residuals after the model subtraction
         if (itsDoUVlin) {
+            if (itsRotate) {
+                computePhasor(it, phasor);
+            }
             subtractContFit(vis, it->flag(), phasor);
         }
     }
@@ -570,4 +592,15 @@ void ContSubtractParallel::doSubtraction()
             calcOne(measurementSets()[iMs]);
         }
     }
+}
+
+void ContSubtractParallel::loadSubtables(const accessors::IDataSharedIter& it)
+{
+    auto ti = it.dynamicCast<TableConstDataIterator>();
+    ti->subtableInfo().getAntenna();
+    ti->subtableInfo().getDataDescription();
+    ti->subtableInfo().getFeed();
+    ti->subtableInfo().getField();
+    ti->subtableInfo().getSpWindow();
+    ti->subtableInfo().getPolarisation();
 }

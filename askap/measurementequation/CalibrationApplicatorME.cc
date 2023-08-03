@@ -62,13 +62,17 @@ CalibrationApplicatorME::CalibrationApplicatorME(const boost::shared_ptr<accesso
      itsChannelIndependent(false)
 {}
 
-/// @brief correct model visibilities for one accessor (chunk).
-/// @details This method corrects the data in the given accessor
-/// (accessed via rwVisibility) for the calibration errors
-/// represented by this measurement equation (i.e. an inversion of
-/// the matrix has been performed).
-/// @param[in] chunk a read-write accessor to work with
 void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
+{
+    generic(chunk,true);
+}
+
+void CalibrationApplicatorME::predict(accessors::IDataAccessor &chunk) const
+{
+    generic(chunk,false);
+}
+
+void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool correct) const
 {
   const casacore::uInt nPol = chunk.nPol();
   casacore::RigidVector<casacore::uInt, 4> indices(0u);
@@ -80,7 +84,7 @@ void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
  // Use the optimized version if we can: 4 pols in canonical order
   // MV: this seems like a hack/not the C++ way of doing it. Code duplication/technical dept
   if (nPol==4 && indices(0)==0 && indices(1)==1 && indices(2)==2 && indices(3)==3) {
-      correct4(chunk);
+      generic4(chunk, correct);
       return;
   }
 
@@ -155,7 +159,12 @@ void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
                      }
                 }
 
-                invert(reciprocal, det, mueller);
+                if (correct) {
+                    invert(reciprocal, det, mueller);
+                } else {
+                    reciprocal = mueller;
+                    det = 1.0;
+                }
             }
 
             // mv: this is actually known to be slow (casacore slice from slice), need to change this to access given channel as matrix
@@ -207,14 +216,7 @@ void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
   }
 }
 
-/// @brief correct model visibilities for one accessor
-/// @details This method corrects the data in the given accessor
-/// (accessed via rwVisibility) for the calibration errors
-/// represented by this measurement equation (i.e. an inversion of
-/// the matrix has been performed).
-/// This is an optimized version for data with exactly 4 polarizations
-/// @param[in] chunk a read-write accessor to work with
-void CalibrationApplicatorME::correct4(accessors::IDataAccessor &chunk) const
+void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool correct) const
 {
   const casacore::uInt nPol = chunk.nPol();
   ASKAPDEBUGASSERT(nPol == 4);
@@ -332,7 +334,11 @@ void CalibrationApplicatorME::correct4(accessors::IDataAccessor &chunk) const
                 det = casa::real(det1*conj(det1))*casa::real(det2*conj(det2));
                 // Inverse of 4x4 mueller is directProduct of 2x2 jones inverses
                 if (det > detThreshold) {
-                    directProduct(mueller, j1.inverse(),conj(j2).inverse());
+                    if (correct) {
+                        directProduct(mueller, j1.inverse(),conj(j2).inverse());
+                    } else {
+                        directProduct(mueller, j1,conj(j2));
+                    }
                 }
             }
         }

@@ -34,6 +34,7 @@
 #include <Common/ParameterSet.h>
 #include <askap/parallel/MEParallelApp.h>
 #include <askap/calibaccess/ICalSolutionConstSource.h>
+#include <askap/measurementequation/ICalibrationApplicator.h>
 
 namespace askap {
 
@@ -117,6 +118,11 @@ public:
    void computePhasor(const accessors::IDataSharedIter& it,//const accessors::IConstDataAccessor& acc,
             casacore::Matrix<casacore::Complex>& phasor);
 
+   /// @brief Load the subtables into memory
+   /// @details We load the subtables into memory before accessing the data in r/w mode
+   /// to avoid parallel IO errors
+   void loadSubtables(const accessors::IDataSharedIter& it);
+
    /// @brief model is read by the master and distributed?
    /// @details Depending on the model file name (containing %w or not), the model
    /// can either be read in the master and distributed across the workers or read
@@ -150,6 +156,11 @@ public:
    /// Uninitialised shared pointer means no calibration
    boost::shared_ptr<accessors::ICalSolutionConstSource> itsSolutionSource;
 
+   /// @brief calibration applicator (if needed)
+   /// @details If the applicator method of calibration is selected
+   /// this stores the CalibrationApplicatorME object.
+   /// If uninitialised, we are using the CalibrationMEBase classes
+   boost::shared_ptr<ICalibrationApplicator> itsCalApplicator;
 };
 
 } // namespace synthesis
