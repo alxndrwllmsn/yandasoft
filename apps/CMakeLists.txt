@@ -12,6 +12,7 @@ ccontsubtract
 cddcalibrator
 cdeconvolver
 cdeconvolver-mpi
+cflagger
 cimager
 cmpgains
 correctdelay
@@ -34,10 +35,11 @@ mslist
 msmerge
 mstabtest
 noiseadder
-opcal 
+opcal
 randomgains
 smear
 tCFGeneration
+tCompareMSData
 tConvolve
 tConvolveBLAS
 tConvolveCASA

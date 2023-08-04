@@ -52,7 +52,21 @@ spr.addToParset("Cimager.dataset=1934pt0.ms")
 spr.runImager()
 analyseResult(spr)
 
+print("Nyquist gridding for central pointing with the new imager")
+os.system("rm -rf *.1934.*")
+spr.initParset()
+spr.addToParset("Cimager.dataset=1934pt0.ms")
+# Image only 10 channels for this test (otherwise it is too slow and combinedchannels don't work, see AXA-2457
+spr.addToParset("Cimager.Channels=[10,90]")
+spr.addToParset("Cimager.Images.nyquistgridding=true")
+# it fails for ncycles=0 for the new imager, this will override the original setting by 
+# adding a duplicated keyword at the end of the parset
+spr.addToParset("Cimager.ncycles=1")
+spr.runNewImagerParallel(nProcs=2)
+analyseResult(spr)
+
 print("Offset pointing")
+os.system("rm -rf *.1934.*")
 spr.initParset()
 spr.addToParset("Cimager.dataset=1934pt1.ms")
 spr.runImager()

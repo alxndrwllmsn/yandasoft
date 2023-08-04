@@ -560,7 +560,7 @@ static void merge(const LOFAR::ParameterSet &parset) {
 class LinmosApp : public askap::Application
 {
     public:
-        virtual int run(int argc, char* argv[])
+        virtual int run(int argc, char* argv[]) override
         {
             StatReporter stats;
             LOFAR::ParameterSet subset(config().makeSubset("linmos."));

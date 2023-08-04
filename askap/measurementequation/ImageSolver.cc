@@ -115,7 +115,7 @@ namespace askap
 
         ASKAPCHECK(maxDiag>0., "Maximum diagonal element is supposed to be positive, check that at least some data were gridded, maxDiag="
                    <<maxDiag<<" sumDiag="<<sumDiag);
-	ASKAPLOG_INFO_STR(logger, "Solid angle = " << sumDiag/maxDiag << " pixels");
+    	ASKAPLOG_INFO_STR(logger, "Solid angle = " << sumDiag/maxDiag << " pixels");
 
         const double cutoff=tolerance*maxDiag;
 

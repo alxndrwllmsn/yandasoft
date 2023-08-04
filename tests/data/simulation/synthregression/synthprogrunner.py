@@ -79,10 +79,10 @@ class SynthesisProgramRunner:
 
          cmd - command
       '''
-      print("INFO Command (via Popen): mpiexec -n %d %s -c %s" % (np, cmd, self.tmp_parset))
-      #res = os.system("mpiexec -n %d %s -c %s" % (np, cmd, self.tmp_parset))
+      #print("INFO Command (via Popen): mpiexec -n %d %s -c %s" % (np, cmd, self.tmp_parset))
+      res = os.system("mpiexec -n %d %s -c %s" % (np, cmd, self.tmp_parset))
       #pipe = subprocess.Popen(("mpiexec  -n %d %s -c %s" % (np, cmd, self.tmp_parset)),shell=True,stderr=subprocess.PIPE,stdout=subprocess.PIPE)
-      res = os.system("echo hello world")
+      #res = os.system("echo hello world")
       if res != 0:
          print("Error")
          raise RuntimeError("Command %s failed with error %s" % (cmd,res))

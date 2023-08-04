@@ -31,6 +31,7 @@
 #include <askap/parallel/SimParallel.h>
 #include <askap/scimath/fitting/NormalEquationsStub.h>
 #include <askap/dataaccess/TableDataSource.h>
+#include <askap/dataaccess/TableDataIterator.h>
 #include <askap/dataaccess/ParsetInterface.h>
 #include <askap/dataaccess/MemBufferDataAccessor.h>
 #include <askap/dataaccess/DataIteratorStub.h>
@@ -41,6 +42,7 @@
 #include <askap/measurementequation/ImagingEquationAdapter.h>
 #include <askap/askap/AskapError.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
+#include <askap/utils/TilingUtils.h>
 #include <casacore/scimath/Fitting/LinearFitSVD.h>
 
 #include <casacore/casa/Arrays/ArrayMath.h>
@@ -48,7 +50,7 @@
 // logging stuff
 #include <askap/askap_synthesis.h>
 #include <askap/askap/AskapLogging.h>
-ASKAP_LOGGER(logger, ".parallel");
+ASKAP_LOGGER(logger, ".contsubtract");
 
 #include <casacore/casa/OS/Timer.h>
 
@@ -92,19 +94,17 @@ ContSubtractParallel::ContSubtractParallel(askap::askapparallel::AskapParallel& 
 /// the constructor.
 void ContSubtractParallel::init()
 {
-  if (itsComms.isMaster()) {
-      if (itsModelReadByMaster) {
-          readModels();
-          broadcastModel();
-      }
-  }
-  if (itsComms.isWorker()) {
-      if (itsModelReadByMaster) {
-          receiveModel();
-      } else {
-          readModels();
-      }
-  }
+    if (itsModelReadByMaster) {
+        if (itsComms.isMaster()) {
+            readModels();
+            broadcastModel();
+        }
+        if (itsComms.isWorker()) {
+            receiveModel();
+        }
+    } else if (doWork()) {
+      readModels();
+    }
 }
 
 /// @brief initialise measurement equation
@@ -372,7 +372,8 @@ void ContSubtractParallel::subtractContFit(casacore::Cube<casacore::Complex>& vi
 /// This is the core operation of the doSubtraction method, which manages the parallel aspect of it.
 /// All actual calculations are done inside this helper method.
 /// @param[in] ms measurement set name
-void ContSubtractParallel::calcOne(const std::string &ms)
+/// @param[in] distributeByTile do distribution by tile if possible
+void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
 {
    casacore::Timer timer;
    timer.mark();
@@ -389,16 +390,23 @@ void ContSubtractParallel::calcOne(const std::string &ms)
         boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
    ASKAPDEBUGASSERT(accessorBasedEquation);
 
-   TableDataSource ds(ms, TableDataSource::WRITE_PERMITTED, dataColumn());
+   // Open readonly, accessor will reopen table r/w when needed
+   TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
    ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
    IDataSelectorPtr sel=ds.createSelector();
+   if (distributeByTile) {
+       utils::distributeByTile(sel, dataColumn(),nWorkers(),workerRank());
+   }
    sel << parset();
    IDataConverterPtr conv=ds.createConverter();
    conv->setFrequencyFrame(getFreqRefFrame(), "Hz");
    conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
    IDataSharedIter it=ds.createIterator(sel, conv);
+   uint niter = 0;
+
    for (; it.hasMore(); it.next()) {
         // iteration over the dataset
+        niter++;
         MemBufferDataAccessor acc(*it);
         acc.rwVisibility().set(0.);
         accessorBasedEquation->predict(acc);
@@ -414,23 +422,31 @@ void ContSubtractParallel::calcOne(const std::string &ms)
    }
 
    ASKAPLOG_INFO_STR(logger, "Finished continuum subtraction for "<< ms << " in "<< timer.real()
-                   << " seconds ");
+                   << " seconds, using "<<niter <<" iterations");
 }
-
 
 /// @brief perform the subtraction
 /// @details This method iterates over one or more datasets, predicts visibilities according to
 /// the model and subtracts these model visibilities from the original visibilities in the
-/// dataset. The intention is to call this method in a worker.
+/// dataset. In parallel mode with a single dataset we can optionally distribute work over tiles.
 void ContSubtractParallel::doSubtraction()
 {
-  if (itsComms.isWorker()) {
-      if (itsComms.isParallel()) {
-          calcOne(measurementSets()[itsComms.rank()-1]);
-      } else {
-          for (size_t iMs=0; iMs<measurementSets().size(); ++iMs) {
-               calcOne(measurementSets()[iMs]);
-          }
-      }
-  }
+    if (itsComms.isParallel()) {
+        if (doWork()) {
+            uint rank = workerRank();
+            ASKAPLOG_INFO_STR(logger, "Worker "<<rank<< " is processing "<<measurementSets()[rank]);
+            // do automatic distribution over tiles if requested and
+            //   if all measurementset names are the same
+            const std::vector<std::string>& v = measurementSets();
+            const bool distributeByTile = parset().isDefined("Tiles") &&
+                parset().getString("Tiles")=="auto" &&
+                (std::adjacent_find(v.begin(), v.end(),
+                    std::not_equal_to<std::string>()) == v.end());
+            calcOne(measurementSets()[rank], distributeByTile);
+        }
+    } else {
+        for (size_t iMs=0; iMs<measurementSets().size(); ++iMs) {
+            calcOne(measurementSets()[iMs]);
+        }
+    }
 }
