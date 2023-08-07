@@ -74,6 +74,11 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/gridding/RobustUVWeightCalculator.h>
 #include <askap/gridding/ConjugatesAdderFFT.h>
 
+#include <askap/gridding/GenericUVWeightBuilder.h>
+#include <askap/scimath/utils/EstimatorAdapter.h>
+#include <askap/gridding/UVWeightParamsHelper.h>
+
+
 #include <casacore/casa/aips.h>
 #include <casacore/casa/OS/Timer.h>
 
@@ -789,6 +794,72 @@ namespace askap
       }
     }
 
+    /// @brief replace normal equations with an adapter handling uv weights
+    /// @details We use normal equations infrastructure to merge uv weights built in parallel
+    /// (via EstimatorAdapter). This method sets up the appropriate builder class based on the
+    /// parameters in the parset, wraps it in the adapter and assigns to itsNE in the base class.
+    /// @note An instance of appropriate normal equations class should be setup before normal major
+    /// cycles can resume. But calcNE call does it.
+    void ImagerParallel::setupUVWeightBuilder()
+    {
+        // need to read config from parset regarding index translation and setup generic builder
+        const bool perBeamHandling = parset().getBool("uvweight.perbeam", false);
+        // by default, set this parameter to something larger than the number of beams we're likely to encounter. This way, the user
+        // wouldn't need to worry about setting it
+        const casacore::uInt fieldCoeff = perBeamHandling ? parset().getUint32("uvweight.fieldcoeff", 36u) : 0u;
+        const casacore::uInt beamCoeff = perBeamHandling ? 1u : 0u;
+
+        // don't bother with the 3rd coefficient for now, setting it to zero means it would be ignored
+        const boost::shared_ptr<GenericUVWeightBuilder> builder(new GenericUVWeightBuilder(beamCoeff, fieldCoeff, 0u));
+        const boost::shared_ptr<scimath::EstimatorAdapter<GenericUVWeightBuilder> > adapter(new scimath::EstimatorAdapter<GenericUVWeightBuilder>(builder));
+        // finally, assign the adapter as "NormalEquations"
+        setNE(adapter);
+    }
+
+    /// @brief compute uv weights using data stored via adapter in the normal equations 
+    /// @details This method gets access to the uv-weight builder handled via EstimatorAdapter and
+    /// stored instead of normal equations by shared pointer. It then runs the finalisation step using 
+    /// the stored shared pointer to the uv-weight calculator object. The resulting weight is added as
+    /// a parameter to the existing model.
+    /// @note This method assumes that it is called from the right place (i.e. on the correct rank) and
+    /// all merging/reduction has already been done. In other words, it is agnostic of the parallelism.
+    void ImagerParallel::computeUVWeights() const
+    {
+       ASKAPDEBUGASSERT(itsUVWeightCalculator);
+       const boost::shared_ptr<scimath::EstimatorAdapter<GenericUVWeightBuilder> > adapter = 
+             boost::dynamic_pointer_cast<scimath::EstimatorAdapter<GenericUVWeightBuilder> >(getNE());
+       ASKAPCHECK(adapter, "Incompatible type of normal equations detected while trying to access UV Weight builder");
+       const boost::shared_ptr<GenericUVWeightBuilder> builder = adapter->get();
+       ASKAPCHECK(builder, "Empty shared pointer found in the EstimatorAdapter while trying to access UV Weight builder");
+       UVWeightCollection& wts = builder->finalise(*itsUVWeightCalculator);
+       // now need to store results into model. Note, technically the framework can support multiple image parameters for the same data
+       // in this case, weighting can be performed separately (or done with the same weight). This possible complexity is not handled by the
+       // high-level code at the moment. Some changes would be necessary here to handle such cases (and probably in other places as well)
+       ASKAPDEBUGASSERT(itsModel);
+       // MV: some part of the code below could probably go into UVWeightParamsHelper
+       const std::vector<std::string> completions = itsModel->completions("image");
+       // although we currently allow only one simultaneous image there could still be many parameters sharing the same weight (e.g. Taylor terms)
+       // need to loop over all completions and parse the parameter name anyway
+       std::set<std::string> currentParamNames;
+       for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
+            ImageParamsHelper iph(ImageParamsHelper::replaceLeadingWordWith(*ci, "image.",""));
+            currentParamNames.insert(iph.facetName());
+       }
+       ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any suitable image parameter name to do traditional weighting for, check that the model has been setup");
+       // for now abort if there is more than one free image parameter, although it would be very straightforward to setup e.g. the same weighting for all of them
+       // this may be needed for facets to work with traditional weighting!
+       ASKAPCHECK(currentParamNames.size() == 1, "Currently support only one free image parameter with traditional weighting you have "<<currentParamNames.size());
+       const std::string paramName = *currentParamNames.begin();
+       // for now, figure out and copy index translation details from the builder and pass it on as is. However, here we can setup more logic 
+       // to do non-trivial stuff, e.g. select a particular weight grid and apply to other data, etc
+       const casacore::uInt coeffBeam = builder->indexOf(1u, 0u, 0u);
+       const casacore::uInt coeffField = builder->indexOf(0u, 1u, 0u);
+       const casacore::uInt coeffSource = builder->indexOf(0u, 0u, 1u);
+       const boost::shared_ptr<GenericUVWeightIndexTranslator> translator(new GenericUVWeightIndexTranslator(coeffBeam, coeffField, coeffSource));
+       UVWeightParamsHelper hlp(itsModel);
+       hlp.addUVWeights(paramName, wts, translator);
+    }
+
     /// @brief factory method creating uv weight calculator based on the parset
     /// @details The main parameter controlling the mode of traditional weighting is 
     /// Cimager.uvweight which either can take a keyword describing some special method
@@ -797,14 +868,16 @@ namespace askap
     /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
     /// case with the list of effects) or returns an empty pointer if no iteration over data is required
     /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
-    /// @return non-zero shared pointer to the weight calculator object to be applied to the density of uv samples
-    /// (empty shared pointer implies that there is no need obtaining the density because either no traditional weighting is done or
-    /// we're using some special algorithm which does not require iteration over data)
-    boost::shared_ptr<IUVWeightCalculator> ImagerParallel::createUVWeightCalculator() const
+    /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight 
+    /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that 
+    /// there is no need obtaining the density because either no traditional weighting is done or
+    /// we're using some special algorithm which does not require iteration over data
+    void ImagerParallel::createUVWeightCalculator()
     {
        const std::string keyword = "uvweight";
        if (!parset().isDefined(keyword)) {
-           return boost::shared_ptr<IUVWeightCalculator>();
+           itsUVWeightCalculator.reset();
+           return;
        }
        const std::vector<std::string> wtCalcList = parset().getStringVector(keyword);
        ASKAPCHECK(wtCalcList.size() > 0u, "Cimager.uvweight should contain either a single keyword describing how the weight is obtained or a vector with procedure names to apply these to measured uv-density");
@@ -837,11 +910,12 @@ namespace askap
             }
        }
        if (calculators.size() == 1) {
-           return calculators[0];
+           itsUVWeightCalculator = calculators[0];
+       } else {
+           // there are several effects which need to be applied one by one, create composite calculator to achieve this
+           const boost::shared_ptr<CompositeUVWeightCalculator> result(new CompositeUVWeightCalculator(calculators.begin(), calculators.end()));
+           itsUVWeightCalculator = result;
        }
-       // there are several effects which need to be applied one by one, create composite calculator to achieve this
-       const boost::shared_ptr<CompositeUVWeightCalculator> result(new CompositeUVWeightCalculator(calculators.begin(), calculators.end()));
-       return result;
     }
 
 

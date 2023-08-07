@@ -152,6 +152,25 @@ namespace askap
       /// @return if advice is needed, returns the name of the gridder. Otherwise, returns an empty string.
       static string wMaxAdviceNeeded(LOFAR::ParameterSet &parset);
 
+      /// @brief replace normal equations with an adapter handling uv weights
+      /// @details We use normal equations infrastructure to merge uv weights built in parallel
+      /// (via EstimatorAdapter). This method sets up the appropriate builder class based on the
+      /// parameters in the parset, wraps it in the adapter and assigns to itsNE in the base class.
+      /// @note An instance of appropriate normal equations class should be setup before normal major
+      /// cycles can resume. But calcNE call does it.
+      void setupUVWeightBuilder();
+
+      /// @brief compute uv weights using data stored via adapter in the normal equations 
+      /// @details This method gets access to the uv-weight builder handled via EstimatorAdapter and
+      /// stored instead of normal equations by shared pointer. It then runs the finalisation step using 
+      /// the stored shared pointer to the uv-weight calculator object. The resulting weight is added as
+      /// a parameter to the existing model.
+      /// @note This method assumes that it is called from the right place (i.e. on the correct rank) and
+      /// all merging/reduction has already been done. In other words, it is agnostic of the parallelism.
+      void computeUVWeights() const;
+      
+
+
   protected:
 
       /// @brief a helper method to extract peak residual
@@ -217,10 +236,11 @@ namespace askap
       /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
       /// case with the list of effects) or returns an empty pointer if no iteration over data is required
       /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
-      /// @return non-zero shared pointer to the weight calculator object to be applied to the density of uv samples
-      /// (empty shared pointer implies that there is no need obtaining the density because either no traditional weighting is done or
-      /// we're using some special algorithm which does not require iteration over data)
-      boost::shared_ptr<IUVWeightCalculator> createUVWeightCalculator() const;
+      /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight 
+      /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that 
+      /// there is no need obtaining the density because either no traditional weighting is done or
+      /// we're using some special algorithm which does not require iteration over data
+      void createUVWeightCalculator();
 
   private:
 
@@ -301,6 +321,17 @@ namespace askap
       /// first use and then passed as the perfect MeasurementEquation, if
       /// required. We could have created a brand new object each time.
       boost::shared_ptr<IMeasurementEquation> itsVoidME;
+
+      /// @brief object calculating uv weights from sample density
+      /// @details This data member stores shared pointer to the calculator object
+      /// returned by the factory method. Note, technically this object only needs
+      /// to be created if we're going to use it (i.e. run computeUVWeights method on the
+      /// given rank), but for now it is handy to use the presence of this object as a flag
+      /// that we're doing traditional weighting and need to compute sample density. It is 
+      /// a bit of the technical debt, but a small overhead (setting up calculators is cheap).
+      /// On the positive side, it allows us to avoid code duplication in parset interpretation.
+      /// (in the future, we can have a specialised class containing all the required operations)
+      boost::shared_ptr<IUVWeightCalculator> itsUVWeightCalculator;
 
     };
 
