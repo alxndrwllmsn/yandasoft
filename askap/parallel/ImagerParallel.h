@@ -43,6 +43,8 @@
 #include <askap/dataaccess/IDataSource.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/gridding/IUVWeightCalculator.h>
+#include <askap/gridding/GenericUVWeightBuilder.h>
+#include <askap/dataaccess/IConstDataIterator.h>
 
 namespace askap
 {
@@ -152,6 +154,23 @@ namespace askap
       /// @return if advice is needed, returns the name of the gridder. Otherwise, returns an empty string.
       static string wMaxAdviceNeeded(LOFAR::ParameterSet &parset);
 
+      // methods to setup traditional weighting. We probably should have a separate class to manage this, but I (MV) feel that not
+      // all the required details are fleshed out yet. Leave this here for now, although it is a bit of the technical debt
+
+      /// @brief factory method creating uv weight calculator based on the parset
+      /// @details The main parameter controlling the mode of traditional weighting is 
+      /// Cimager.uvweight which either can take a keyword describing some special method
+      /// of getting the weights (which doesn't require iteration over data), e.g. reading from disk
+      /// or a list of "effects" which should be applied to the density of uv samples obtained via
+      /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
+      /// case with the list of effects) or returns an empty pointer if no iteration over data is required
+      /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
+      /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight 
+      /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that 
+      /// there is no need obtaining the density because either no traditional weighting is done or
+      /// we're using some special algorithm which does not require iteration over data
+      void createUVWeightCalculator();
+
       /// @brief replace normal equations with an adapter handling uv weights
       /// @details We use normal equations infrastructure to merge uv weights built in parallel
       /// (via EstimatorAdapter). This method sets up the appropriate builder class based on the
@@ -170,8 +189,23 @@ namespace askap
       void computeUVWeights() const;
       
 
+      /// @brief iterate over given data and accumulate samples for uv weights
+      /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
+      /// and weight builder class. It expects the builder already setup and accessible via the normal equations 
+      /// shared pointer. The data iterator to work with is passed as a parameter. The image details are extracted from
+      /// the model (to initialise sample grid).
+      /// @param[in] iter shared pointer to the iterator to use (note it is advanced by this method to iterate over
+      /// all available data)
+      void accumulateUVWeights(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const;
 
   protected:
+
+      /// @brief helper method to extract weight builder object out of normal equations
+      /// @details For traditional weighting with distributed data we use normal equation merging 
+      /// mechanism to do the gather operation (and EstimatorAdapter). This method does required
+      /// casts and checks to get the required shared pointer (which is guaranteed to be non-empty)
+      /// @return shared pointer to the uv-weight builder object stored in the current normal equations
+      boost::shared_ptr<GenericUVWeightBuilder> getUVWeightBuilder() const;
 
       /// @brief a helper method to extract peak residual
       /// @details This object actually manipulates with the normal equations. We need
@@ -224,23 +258,6 @@ namespace askap
       /// @param[in] ds datasource object to use
       /// @return shared pointer to the iterator over data
       accessors::IDataSharedIter makeDataIterator(const accessors::IDataSource &ds) const;
-
-      // methods to setup traditional weighting. We probably should have a separate class to manage this, but I (MV) feel that not
-      // all the required details are fleshed out yet. Leave this here for now, although it is a bit of the technical debt
-
-      /// @brief factory method creating uv weight calculator based on the parset
-      /// @details The main parameter controlling the mode of traditional weighting is 
-      /// Cimager.uvweight which either can take a keyword describing some special method
-      /// of getting the weights (which doesn't require iteration over data), e.g. reading from disk
-      /// or a list of "effects" which should be applied to the density of uv samples obtained via
-      /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
-      /// case with the list of effects) or returns an empty pointer if no iteration over data is required
-      /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
-      /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight 
-      /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that 
-      /// there is no need obtaining the density because either no traditional weighting is done or
-      /// we're using some special algorithm which does not require iteration over data
-      void createUVWeightCalculator();
 
   private:
 

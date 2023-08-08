@@ -62,7 +62,10 @@ struct UVWeightGridder  {
    /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
    UVWeightGridder();
 
-   // need to think whether we should provide a constructor which sets the builder to the generic version up front. At least it would be a handy short-cut for now.
+   /// @brief constructor setting the weight builder up front
+   /// @details Equivalent to the default constructor followed by a call to setUVWeightBuilder
+   /// @param[in] wtBuilder shared pointer to the weight builder to use
+   explicit UVWeightGridder(const boost::shared_ptr<IUVWeightBuilder> &wtBuilder);
 
    /// @brief assign uv weight builder
    /// @details The UV weight gridder is to be used together with one of the builder classes doing actual
@@ -91,7 +94,7 @@ struct UVWeightGridder  {
    /// we need some selection methods to control what actually contributes to weights or should use the accessor selector instead 
    /// (as this would be a separate iteration over the data anyway). The method is 'const' because the actual accumulation is done
    /// by the builder and this class is unchanged except for various caches (like frequency mapper)
-   void accumulate(accessors::IConstDataAccessor& acc) const;
+   void accumulate(const accessors::IConstDataAccessor& acc) const;
 
    // as mentioned in the notes for the accumulate method, it may be more correct (from design-purist point of view)
    // to delegate all the data selection to the accessor level. However, gridders implement some selection (and some is
