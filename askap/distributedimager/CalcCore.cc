@@ -157,6 +157,23 @@ accessors::IDataSharedIter CalcCore::makeDataIterator() const
    return itsDataSource.createIterator(sel, conv);
 }
 
+/// @brief iterate over data and accumulate samples for uv weights
+/// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
+/// and weight builder class. It expects the builder already setup and accessible via the normal equations 
+/// shared pointer. Unlike the variant from the base class which works with the iterator supplied as a parameter,
+/// this version uses the iterator returned by makeDataIterator (wrapped into the calibration adapter, if needed)
+void CalcCore::accumulateUVWeights() const
+{
+   // technically, calibration application can alter the flags, so we have to apply calibration
+   // but it is a valid short-cut to skip calibration application (and have less than ideal weights) and may be even to ignore flags completely
+   // (and we can have an accessor adapter which ignores flags, it would also speed up the first iteration)
+   // 
+   // In principle, we can build different iterators here depending on the parset and make this behaviour configurable
+   boost::shared_ptr<accessors::IDataIterator> it = makeCalibratedDataIteratorIfNeeded(makeDataIterator());
+   // call version of the base class
+   accumulateUVWeights(it);
+}
+
 /// @brief create measurement equation 
 /// @details This method creates measurement equation as appropriate (with calibration application or without) using
 /// internal state of this class and the parset

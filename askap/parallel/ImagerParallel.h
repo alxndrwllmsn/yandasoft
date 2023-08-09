@@ -171,6 +171,18 @@ namespace askap
       /// we're using some special algorithm which does not require iteration over data
       void createUVWeightCalculator();
 
+      /// @brief check if sample density grid needs to be built
+      /// @details For now, use the shared pointer carrying uv weight calculator as a flag that we need to
+      /// build grid of weights (this is what uv weight calculator works with). It is a bit of the technical debt 
+      /// to do it this way (as we don't need calculator on the ranks which don't compute weights), but allows us 
+      /// to hide all parset interpretation to the createUVWeightCalculator factory method (for the price that it
+      /// needs to be called for all ranks for which we need the consistent picture). But these calculator objects are
+      /// very lightweight, so it is a lesser of possible evils. More pure design would involve interpretation of the parset in
+      /// one place handled by a separate class (which we either run on all ranks or just on a master and then distribute).
+      /// Therefore, it is expected that createUVWeightCalculator should be called before this method.
+      /// @return true if sample density grid needs to be built
+      bool inline isSampleDensityGridNeeded() const { return static_cast<bool>(itsUVWeightCalculator); }
+
       /// @brief replace normal equations with an adapter handling uv weights
       /// @details We use normal equations infrastructure to merge uv weights built in parallel
       /// (via EstimatorAdapter). This method sets up the appropriate builder class based on the
@@ -199,6 +211,14 @@ namespace askap
       void accumulateUVWeights(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const;
 
   protected:
+
+      /// @brief make calibration iterator if necessary, otherwise return unchanged interator
+      /// @details This method wraps the iterator passed as the input into into a calibration iterator adapter
+      /// if calibration is to be performed (i.e. if solution source is defined). 
+      /// @param[in] origIt original iterator to uncalibrated data
+      /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
+      /// or the original iterator otherwise
+      accessors::IDataSharedIter makeCalibratedDataIteratorIfNeeded(const accessors::IDataSharedIter &origIt) const;
 
       /// @brief helper method to extract weight builder object out of normal equations
       /// @details For traditional weighting with distributed data we use normal equation merging 
@@ -236,14 +256,6 @@ namespace askap
       /// @return the shared_ptr
       boost::shared_ptr<accessors::ICalSolutionConstSource> getSolutionSource() const {
           return itsSolutionSource; }
-
-      /// @brief make calibration iterator if necessary, otherwise return unchanged interator
-      /// @details This method wraps the iterator passed as the input into into a calibration iterator adapter
-      /// if calibration is to be performed (i.e. if solution source is defined). 
-      /// @param[in] origIt original iterator to uncalibrated data
-      /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
-      /// or the original iterator otherwise
-      accessors::IDataSharedIter makeCalibratedDataIteratorIfNeeded(const accessors::IDataSharedIter &origIt) const;
 
       /// @brief obtain measurement equation cast to ImageFFTEquation
       /// @details This helper method encapsulates operations common to a number of methods of this and derived classes to obtain the 
