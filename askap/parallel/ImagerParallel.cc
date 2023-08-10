@@ -800,7 +800,7 @@ namespace askap
     /// (via EstimatorAdapter). This method sets up the appropriate builder class based on the
     /// parameters in the parset, wraps it in the adapter and assigns to itsNE in the base class.
     /// @note An instance of appropriate normal equations class should be setup before normal major
-    /// cycles can resume. But calcNE call does it.
+    /// cycles can resume. It can be done with a call to recereateNormalEquations or calcNE
     void ImagerParallel::setupUVWeightBuilder()
     {
         // need to read config from parset regarding index translation and setup generic builder
@@ -853,7 +853,7 @@ namespace askap
        // need to loop over all completions and parse the parameter name anyway
        std::set<std::string> currentParamNames;
        for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
-            ImageParamsHelper iph(ImageParamsHelper::replaceLeadingWordWith(*ci, "image.",""));
+            ImageParamsHelper iph(ImageParamsHelper::replaceLeadingWordWith("image"+*ci, "image.",""));
             currentParamNames.insert(iph.facetName());
        }
        ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any suitable image parameter name to do traditional weighting for, check that the model has been setup");
@@ -920,8 +920,14 @@ namespace askap
        const std::vector<std::string> completions = itsModel->completions("image");
        std::set<std::string> currentParamNames;
        for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
-            ImageParamsHelper iph(*ci);
-            currentParamNames.insert(iph.facetName());
+            ImageParamsHelper iph("image"+*ci);
+            if (iph.isTaylorTerm()) {
+                // in the case of multiple Taylor terms work with order 0
+                iph.makeTaylorTerm(0);
+            }
+            // MV: we could've selected the required facet here too, but don't bother with it at this stage
+            // passing all facets as they are, if present
+            currentParamNames.insert(iph.paramName());
        }
        ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any free image parameter in the current model, there is nothing to build the uv-weight for!");
        // the next check can be commented out, if we always want to use the parameters extracted from the first image (or some logic is necessary to choose the
@@ -937,6 +943,18 @@ namespace askap
        for (it.init(); it.hasMore(); it.next()) {
             gridder.accumulate(*it);
        }
+    }
+
+    /// @brief recreate imaging normal equations object
+    /// @details If sample density grid is built, normal equations are setup with
+    /// an adapter which is an incompatible type. This method resets the object to a pristine
+    /// state similar to that before the first major cycle if no traditional weighting is done.
+    void ImagerParallel::recreateNormalEquations()
+    {
+       ASKAPLOG_DEBUG_STR(logger,"Recreating NE from model");
+       ASKAPDEBUGASSERT(itsModel);
+       ImagingNormalEquations::ShPtr newNE(new ImagingNormalEquations(*itsModel));
+       setNE(newNE);
     }
 
     /// @brief factory method creating uv weight calculator based on the parset

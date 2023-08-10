@@ -138,10 +138,10 @@ public:
    /// @param[in] yFacet facet index along the second axis
    void makeFacet(int xFacet, int yFacet);
 
-   /// @brief make this object a facet
+   /// @brief make this object a Taylor term
    /// @details It is sometimes necessary to merge faceting suffixes and
-   /// Taylor term suffix. This method makes the current image a facet with
-   /// given indices. 
+   /// Taylor term suffix. This method makes the current image a Taylor term with
+   /// the given order. 
    /// @param[in] order order in the Taylor series
    void makeTaylorTerm(int order);
    

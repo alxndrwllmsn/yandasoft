@@ -876,12 +876,17 @@ void ContinuumWorker::processChannels()
       if (!localSolver) {
         // for central solver weight grid computation happens here, if it is required
         if (rootImager.isSampleDensityGridNeeded()) {
+            // MV: a bit of the technical debt here, we don't need the whole model for weights, but we need coordinate systems, shapes and names distributed the right way
+            ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model (just for uv-weight calculation)");
+            rootImager.receiveModel();
             ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
             rootImager.setupUVWeightBuilder();
             rootImager.accumulateUVWeights();
             // the following call sends the weight grid back to the master for merging and processing,
             // the result will be sent back along with the model
             rootImager.sendNE();
+            // revert normal equations back to the type suitable for imaging
+            rootImager.recreateNormalEquations();
         }
 
         // 

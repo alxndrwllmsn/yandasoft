@@ -188,7 +188,7 @@ namespace askap
       /// (via EstimatorAdapter). This method sets up the appropriate builder class based on the
       /// parameters in the parset, wraps it in the adapter and assigns to itsNE in the base class.
       /// @note An instance of appropriate normal equations class should be setup before normal major
-      /// cycles can resume. But calcNE call does it.
+      /// cycles can resume. It can be done with a call to recereateNormalEquations or calcNE
       void setupUVWeightBuilder();
 
       /// @brief compute uv weights using data stored via adapter in the normal equations 
@@ -209,6 +209,12 @@ namespace askap
       /// @param[in] iter shared pointer to the iterator to use (note it is advanced by this method to iterate over
       /// all available data)
       void accumulateUVWeights(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const;
+
+      /// @brief recreate imaging normal equations object
+      /// @details If sample density grid is built, normal equations are setup with
+      /// an adapter which is an incompatible type. This method resets the object to a pristine
+      /// state similar to that before the first major cycle if no traditional weighting is done.
+      void recreateNormalEquations();
 
   protected:
 

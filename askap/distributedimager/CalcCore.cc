@@ -321,9 +321,7 @@ void CalcCore::init()
   reset();
 
   if (!itsNe) {
-      ASKAPLOG_DEBUG_STR(logger,"Recreating NE from model");
-      itsNe=ImagingNormalEquations::ShPtr(new ImagingNormalEquations(*itsModel));
-      ASKAPLOG_DEBUG_STR(logger,"Done recreating model");
+      recreateNormalEquations();
   }
   ASKAPCHECK(gridder(), "Gridder not defined");
   ASKAPCHECK(itsModel, "Model not defined");
