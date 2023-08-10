@@ -913,6 +913,8 @@ void ContinuumWorker::processChannels()
             // this will compute weights and add them to the model
             rootImager.computeUVWeights();
             ASKAPLOG_DEBUG_STR(logger, "uv-weight has been added to the model");
+            // revert normal equations back to the type suitable for imaging
+            rootImager.recreateNormalEquations();
         }
       }
 
