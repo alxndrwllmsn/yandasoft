@@ -117,8 +117,9 @@ namespace cp {
 
     protected:
         /// @brief keep the base class' version accessible here
-        using ImagerParallel::accumulateUVWeights; //(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const;
-    
+        /// @note for quick reference, it has the following signature:
+        /// void accumulateUVWeights(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const;
+        using ImagerParallel::accumulateUVWeights; 
 
         /// @brief make data iterator
         /// @details This helper method makes an iterator based on the configuration in the current parset and

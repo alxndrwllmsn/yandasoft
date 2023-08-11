@@ -71,7 +71,7 @@ UVWeightParamsHelper::UVWeightParamsHelper(const boost::shared_ptr<scimath::Para
    ASKAPCHECK(params, "Attempt to initialise UVWeightParamsHelper with an empty Params shared pointer");
 }
 
-/// @brief initialise for teh particular params specified via reference
+/// @brief initialise for the particular params specified via reference
 /// @details This version of the constructor assumes that the ownership of the reference/pointer is managed by the caller
 /// (i.e. a temporary shared pointer is created under assumption that the supplied reference would never go out of scope - 
 /// this is handy for operations within one code block/method). As before, it has been made explicit to make the intentions 
@@ -295,7 +295,7 @@ void UVWeightParamsHelper::copyTo(scimath::Params &dest, const std::string &name
             // whether the original one was fixed (although it should be)
             dest.fix(parName);
        }
-       // now remove index translation details if present 
+       // now add index translation details if present 
        const std::string indexTranslationKey = "uvweight_indices."+name;
        if (itsParams->has(indexTranslationKey)) {
            dest.add(indexTranslationKey, itsParams->valueF(indexTranslationKey));

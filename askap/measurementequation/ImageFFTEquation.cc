@@ -371,7 +371,7 @@ namespace askap
     /// @brief helper method to assign uv-weight accessor to the given gridder
     /// @param[in] gridder gridder to work with
     /// @param[in] acc uv-weight accessor to assign
-    /// @note if the accessor is empty nothing is done, but if the gridder is of a wrong type which
+    /// @note if the accessor is empty nothing is done. Otherwise, if the gridder is of a wrong type which
     /// doesn't support setting of an accessor, an exception is thrown
     void ImageFFTEquation::assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor const> &acc)
     {
@@ -406,7 +406,7 @@ namespace askap
            itsModelGridders[imageName]=itsGridder->clone();
         }
         // obtain uv-weights accessor if the appropriate details are present in the model 
-        // (otherwise an empty shared pointer is returned). The logic inside getUVWeightAccessor 
+        // (otherwise an empty shared pointer is returned). The logic inside makeUVWeightAccessor 
         // ensures Taylor terms are handled appropriately
         const boost::shared_ptr<IUVWeightAccessor const> wtAcc = makeUVWeightAccessor(imageName);
         if (wtAcc) {

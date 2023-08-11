@@ -61,7 +61,7 @@ GenericUVWeightBuilder::GenericUVWeightBuilder(casacore::uInt coeffBeam,
 /// the case of this class, the default constructor actually implies using zero for all coefficients (coeffBeam, etc). So if the
 /// original object was setup with non-trivial mapping it would change. It is, however, expected that we won't add new data
 /// to the builder following either reset or merge call (in our use case, reset could happen as part of the merge and only after
-/// the appropriate portion of data has already been accumulated.
+/// the appropriate portion of data has already been accumulated).
 void GenericUVWeightBuilder::reset() {
    // although we don't expect to exercise index translation following a call to either reset or merge methods, assign the default translation so
    // the behaviour matches what has been documented in the interface of normal equations. In principle, the user can call setTranslator directly

@@ -859,7 +859,7 @@ namespace askap
        ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any suitable image parameter name to do traditional weighting for, check that the model has been setup");
        // for now abort if there is more than one free image parameter, although it would be very straightforward to setup e.g. the same weighting for all of them
        // this may be needed for facets to work with traditional weighting!
-       ASKAPCHECK(currentParamNames.size() == 1, "Currently support only one free image parameter with traditional weighting you have "<<currentParamNames.size());
+       ASKAPCHECK(currentParamNames.size() == 1, "We currently support only one free image parameter with traditional weighting you have "<<currentParamNames.size());
        const std::string paramName = *currentParamNames.begin();
        // for now, figure out and copy index translation details from the builder and pass it on as is. However, here we can setup more logic 
        // to do non-trivial stuff, e.g. select a particular weight grid and apply to other data, etc

@@ -81,7 +81,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// the case of this class, the default constructor actually implies using zero for all coefficients (coeffBeam, etc). So if the
    /// original object was setup with non-trivial mapping it would change. It is, however, expected that we won't add new data
    /// to the builder following either reset or merge call (in our use case, reset could happen as part of the merge and only after
-   /// the appropriate portion of data has already been accumulated.
+   /// the appropriate portion of data has already been accumulated).
    void reset();
 
    // a copy of the accessor method. May need changes, at least to the doco as it is not expected to be used

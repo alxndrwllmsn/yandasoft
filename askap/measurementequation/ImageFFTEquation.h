@@ -197,7 +197,7 @@ namespace askap
         /// @brief helper method to assign uv-weight accessor to the given gridder
         /// @param[in] gridder gridder to work with
         /// @param[in] acc uv-weight accessor to assign
-        /// @note if the accessor is empty nothing is done, but if the gridder is of a wrong type which
+        /// @note if the accessor is empty nothing is done. Otherwise, if the gridder is of a wrong type which
         /// doesn't support setting of an accessor, an exception is thrown
         static void assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor const> &acc);
 

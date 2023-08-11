@@ -89,7 +89,7 @@ struct UVWeightParamsHelper : public boost::noncopyable {
    /// @param[in] params shared pointer to the params class to work with
    explicit UVWeightParamsHelper(const boost::shared_ptr<scimath::Params> &params);
 
-   /// @brief initialise for teh particular params specified via reference
+   /// @brief initialise for the particular params specified via reference
    /// @details This version of the constructor assumes that the ownership of the reference/pointer is managed by the caller
    /// (i.e. a temporary shared pointer is created under assumption that the supplied reference would never go out of scope - 
    /// this is handy for operations within one code block/method). As before, it has been made explicit to make the intentions 
