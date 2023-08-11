@@ -108,19 +108,24 @@ namespace cp {
         /// @brief return the PSF grid
         casacore::Array<casacore::Complex> getPSFGrid() const;
 
+        /// @brief iterate over data and accumulate samples for uv weights
+        /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
+        /// and weight builder class. It expects the builder already setup and accessible via the normal equations 
+        /// shared pointer. Unlike the variant from the base class which works with the iterator supplied as a parameter,
+        /// this version uses the iterator returned by makeDataIterator (wrapped into the calibration adapter, if needed)
+        void accumulateUVWeights() const;
+
     protected:
+        /// @brief keep the base class' version accessible here
+        /// @note for quick reference, it has the following signature:
+        /// void accumulateUVWeights(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const;
+        using ImagerParallel::accumulateUVWeights; 
+
         /// @brief make data iterator
         /// @details This helper method makes an iterator based on the configuration in the current parset and
         /// data fields of this class such as itsChannel and itsFrequency
         /// @return shared pointer to the iterator over original data
         accessors::IDataSharedIter makeDataIterator() const;
-
-        /// @brief make calibration iterator if necessary, otherwise same as makeDataIterator
-        /// @details This method is equivalent to makeDataIterator but it wraps the iterator into a calibration iterator adapter
-        /// if calibration is to be performed (i.e. if solution source is defined). 
-        /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
-        accessors::IDataSharedIter makeCalibratedDataIteratorIfNeeded() const;
-       
 
         /// @brief create measurement equation 
         /// @details This method creates measurement equation as appropriate (with calibration application or without) using
@@ -133,13 +138,6 @@ namespace cp {
         /// image parameters simultaneously. The original approach getting the first one won't work in this case.
         /// @return name of the first encountered image parameter in the model
         std::string getFirstImageName() const;
-
-        /// @brief obtain measurement equation cast to ImageFFTEquation
-        /// @details This helper method encapsulates operations common to a number of methods of this class to obtain the 
-        /// current measurement equation with the type as created in createMeasurementEquation (i.e. ImageFFTEquation) and 
-        /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
-        /// @return shared pointer of the appropriate type to the current measurement equation
-        boost::shared_ptr<synthesis::ImageFFTEquation> getMeasurementEquation() const;
 
     private:
 

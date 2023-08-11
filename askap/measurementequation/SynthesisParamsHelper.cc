@@ -1203,9 +1203,7 @@ namespace askap
       return axes.directionAxis();
 
     }
-    void SynthesisParamsHelper::copyImageParameters(askap::scimath::Params& sourceParam,  askap::scimath::Params& sinkParam) {
 
-    }
     void SynthesisParamsHelper::copyImageParameter(askap::scimath::Params& sourceParam,  askap::scimath::Params& sinkParam, const string& name) {
 
       ASKAPDEBUGTRACE("SynthesisParamsHelper::copyImageParameter");

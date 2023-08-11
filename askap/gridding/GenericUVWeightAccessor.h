@@ -42,6 +42,9 @@
 #include <askap/gridding/GenericUVWeightIndexTranslator.h>
 #include <askap/gridding/UVWeightCollection.h>
 
+// boost includes
+#include <boost/shared_ptr.hpp>
+
 namespace askap {
 
 namespace synthesis {
@@ -68,6 +71,15 @@ struct GenericUVWeightAccessor : virtual public UVWeightIndexTranslationHelper<I
    GenericUVWeightAccessor(const UVWeightCollection &wts, casacore::uInt coeffBeam = 0,
                            casacore::uInt coeffField = 0, casacore::uInt coeffSource = 0);
 
+   /// @brief construct weight accessor via shared pointer interfaces
+   /// @details This constructor should be used when weight accessor is expected to absorb the ownership of the collection, i.e.
+   /// it is not used as an adapter. This is handy if say a collection is built based on the model parameters. Care must be taken to
+   /// manage the life-cycle, i.e. the weight data will be preserved as long as all copies of the accessor object are alive.
+   /// @param[in] wts shared pointer to weight collection
+   /// @param[in] translator shared pointer to the index translator object 
+   GenericUVWeightAccessor(const boost::shared_ptr<UVWeightCollection const> &wts, 
+                           const boost::shared_ptr<IUVWeightIndexTranslator const> &translator);
+
    /// @brief obtain weight grid for a given index
    /// @details index interpretation is left for the implementation which can be different
    /// for different gridders. Trying to make it more general, we pass beam, field and source indices
@@ -84,10 +96,12 @@ struct GenericUVWeightAccessor : virtual public UVWeightIndexTranslationHelper<I
 
 private:
 
-   /// @brief reference to weight collection
-   /// @note reference semantics is used by casacore arrays, so this object is not very large (although grows with the
-   /// number of elements) and we could've held it by value (but it would need to be made copyable). 
-   const UVWeightCollection& itsWeights;
+   /// @brief shared pointer to weight collection
+   /// @note reference semantics is used by casacore arrays, so the weight collection itself is not very large (although grows with the
+   /// number of elements) and we could've held it by value (but it would need to be made copyable). Having a reference is handy when this
+   /// object is used as a wrapper. Having a shared pointer allows us to absorb ownership (although note that in this case one must be careful
+   /// to avoid having extra copy hanging out). The reference can be stored in a shared pointer with NullDeleter essentially enabling both interfaces.
+   const boost::shared_ptr<UVWeightCollection const> itsWeights;
 };
 
 } // namespace synthesis

@@ -50,6 +50,16 @@ UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), it
        itsPointingTolerance(0.0001)
 {}
 
+/// @brief constructor setting the weight builder up front
+/// @details Equivalent to the default constructor followed by a call to setUVWeightBuilder
+/// @param[in] wtBuilder shared pointer to the weight builder to use
+UVWeightGridder::UVWeightGridder(const boost::shared_ptr<IUVWeightBuilder> &wtBuilder) : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), 
+       itsUVWeightBuilder(wtBuilder), itsMaxPointingSeparation(-1.),
+       itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
+       itsPointingTolerance(0.0001)
+{}
+
+
 /// @brief Initialise the gridding and the associated builder class
 /// @details This method is supposed to be called before gridding first data. For convenience parameters resemble those
 /// the proper gridders from the IVisGridder class hierarchy are using. In particular, the shape parameter is 4-dimensional
@@ -100,7 +110,7 @@ void UVWeightGridder::initialise(const scimath::Axes& axes, const casacore::IPos
 /// we need some selection methods to control what actually contributes to weights or should use the accessor selector instead 
 /// (as this would be a separate iteration over the data anyway). The method is 'const' because the actual accumulation is done
 /// by the builder and this class is unchanged except for various caches (like frequency mapper)
-void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
+void UVWeightGridder::accumulate(const accessors::IConstDataAccessor& acc) const
 {
    // it may be worth thinking about the mode where we don't bother figuring out field index but rather use 0
    // (although this index can always be ignored anyway by the builder class). This behaviour would mimic what we have in the

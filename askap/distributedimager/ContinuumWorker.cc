@@ -72,6 +72,8 @@
 #include <askap/imageaccess/BeamLogger.h>
 #include <askap/imageaccess/WeightsLog.h>
 #include <askap/imagemath/linmos/LinmosAccumulator.h>
+#include <askap/gridding/UVWeightParamsHelper.h>
+
 // CASA Includes
 
 // Local includes
@@ -869,7 +871,26 @@ void ContinuumWorker::processChannels()
 
       bool stopping = false;
 
+      // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
+      rootImager.createUVWeightCalculator();
       if (!localSolver) {
+        // for central solver weight grid computation happens here, if it is required
+        if (rootImager.isSampleDensityGridNeeded()) {
+            // MV: a bit of the technical debt here, we don't need the whole model for weights, but we need coordinate systems, shapes and names distributed the right way
+            ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model (just for uv-weight calculation)");
+            rootImager.receiveModel();
+            ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
+            rootImager.setupUVWeightBuilder();
+            rootImager.accumulateUVWeights();
+            // the following call sends the weight grid back to the master for merging and processing,
+            // the result will be sent back along with the model
+            rootImager.sendNE();
+            // revert normal equations back to the type suitable for imaging
+            rootImager.recreateNormalEquations();
+        }
+
+        // 
+        // MV: technically, this barrier should be redundant as we'd wait in receiveModel anyway
         // we need to wait for the first empty model.
         ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
         itsComms.barrier(itsComms.theWorkers());
@@ -883,10 +904,19 @@ void ContinuumWorker::processChannels()
       else {
         // this assumes no subimage will be formed.
         setupImage(rootImager.params(), frequency, false);
-      }
 
-      ImagingNormalEquations &rootINERef =
-      dynamic_cast<ImagingNormalEquations&>(*rootImager.getNE());
+        // for local solver build weights locally too without interrank communication
+        if (rootImager.isSampleDensityGridNeeded()) {
+            ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
+            rootImager.setupUVWeightBuilder();
+            rootImager.accumulateUVWeights();
+            // this will compute weights and add them to the model
+            rootImager.computeUVWeights();
+            ASKAPLOG_DEBUG_STR(logger, "uv-weight has been added to the model");
+            // revert normal equations back to the type suitable for imaging
+            rootImager.recreateNormalEquations();
+        }
+      }
 
 
       try {
@@ -901,11 +931,14 @@ void ContinuumWorker::processChannels()
         // Why not just use a spheroidal for the PSF gridders (use sphfuncforpsf)/ full FOV (done)
         // FIXME
         if (updateDir) {
-          rootINERef.weightType(FROM_WEIGHT_IMAGES);
-          rootINERef.weightState(WEIGHTED);
-          rootImager.zero(); // then we delete all our work ....
+            // definition of rootINERef moved here, because getNE will only return a valid NE after calcNE
+            // call if traditional weighting is enabled. Besides, it only appears to be used inside this block
+            ImagingNormalEquations &rootINERef =
+                dynamic_cast<ImagingNormalEquations&>(*rootImager.getNE());
+            rootINERef.weightType(FROM_WEIGHT_IMAGES);
+            rootINERef.weightState(WEIGHTED);
+            rootImager.zero(); // then we delete all our work ....
         }
-
       }
       catch (const askap::AskapError& e) {
         ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - rootImager failed");
@@ -1450,7 +1483,12 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   // before the restore the image is the model ....
   SynthesisParamsHelper::copyImageParameter(src, dest,"image.slice");
 
+  // uv-weight related parameters are stored as part of the model, need to copy them as well, if present
+  // (the paramter name would be without leading "image.")
+  UVWeightParamsHelper hlp(src);
+  hlp.copyTo(dest, "slice");
 }
+
 void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan)
 {
 

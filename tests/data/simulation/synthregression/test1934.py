@@ -52,7 +52,7 @@ spr.addToParset("Cimager.dataset=1934pt0.ms")
 spr.runImager()
 analyseResult(spr)
 
-print("Nyquist gridding for central pointing with the new imager")
+print("Nyquist gridding for central pointing with the new imager + traditional weighting")
 os.system("rm -rf *.1934.*")
 spr.initParset()
 spr.addToParset("Cimager.dataset=1934pt0.ms")
@@ -62,6 +62,9 @@ spr.addToParset("Cimager.Images.nyquistgridding=true")
 # it fails for ncycles=0 for the new imager, this will override the original setting by 
 # adding a duplicated keyword at the end of the parset
 spr.addToParset("Cimager.ncycles=1")
+# this enables traditional weighting with robustness -2 (i.e. close to uniform)
+spr.addToParset("Cimager.uvweight = [ConjugatesAdderFFT, Robust]")
+spr.addToParset("Cimager.uvweight.robustness = -2.")
 spr.runNewImagerParallel(nProcs=2)
 analyseResult(spr)
 

@@ -40,6 +40,9 @@ ASKAP_LOGGER(logger, ".measurementequation.imagefftequation");
 #include <askap/scimath/fitting/DesignMatrix.h>
 #include <askap/scimath/fitting/Axes.h>
 #include <askap/profile/AskapProfiler.h>
+#include <askap/gridding/GenericUVWeightAccessor.h>
+#include <askap/gridding/UVWeightParamsHelper.h>
+#include <askap/measurementequation/ImageParamsHelper.h>
 
 #include <casacore/scimath/Mathematics/RigidVector.h>
 
@@ -337,6 +340,47 @@ namespace askap
       itsIdi = idi;
     }
 
+    /// @brief helper method to make accessor for the given image parameter
+    /// @details It encapsulates handling the Taylor terms the right way
+    /// (same uv-weight for all Taylor terms) and translation the image name
+    /// into parameter name in the model (via the appropriate Params helper class).
+    /// Also index translation is encapsulated.
+    /// @param[in] name image parameter name (the full one with "image" prefix - 
+    /// we always deal with the full name makes the code more readable, although we
+    /// could've cut down some operations if we take the name without the leading 
+    /// "image").
+    /// @return shared pointer to the uv-weight accessor object accepted by gridders
+    boost::shared_ptr<IUVWeightAccessor> ImageFFTEquation::makeUVWeightAccessor(const std::string &name) const
+    {
+      ASKAPTRACE("ImageFFTEquation::makeUVWeightAccessor");
+      ImageParamsHelper iph(ImageParamsHelper::replaceLeadingWordWith(name, "image.",""));
+      const std::string parName = iph.facetName();
+      // a bit of technical debt - we don't actually need to write parameters here, but this is the only way to get shared pointer and
+      // the interface is always read/write, so we can't easily implement a version of the constructor accepting const reference here
+      // without splitting the helper class into two classes (const and non-const)
+      const UVWeightParamsHelper hlp(rwParameters());
+      if (hlp.exists(parName)) {
+          const boost::shared_ptr<IUVWeightIndexTranslator> ttor = hlp.getIndexTranslator(parName);
+          const boost::shared_ptr<UVWeightCollection> wts = hlp.getUVWeights(parName);
+          boost::shared_ptr<GenericUVWeightAccessor> wtAcc(new GenericUVWeightAccessor(wts, ttor));
+          return wtAcc;
+      }
+      return boost::shared_ptr<IUVWeightAccessor>();
+    }
+
+    /// @brief helper method to assign uv-weight accessor to the given gridder
+    /// @param[in] gridder gridder to work with
+    /// @param[in] acc uv-weight accessor to assign
+    /// @note if the accessor is empty nothing is done. Otherwise, if the gridder is of a wrong type which
+    /// doesn't support setting of an accessor, an exception is thrown
+    void ImageFFTEquation::assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor const> &acc)
+    {
+       if (acc) {
+           const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(gridder);
+           ASKAPCHECK(tvg, "Gridder is either not setup or of a wrong type which doesn't support setting of the UV weight accessor");
+           tvg->setUVWeightAccessor(acc);
+       }
+    }
 
     // Calculate the residual visibility and image. We transform the model on the fly
     // so that we only have to read (and write) the data once. This uses more memory
@@ -361,8 +405,19 @@ namespace askap
         if(itsModelGridders.count(imageName)==0) {
            itsModelGridders[imageName]=itsGridder->clone();
         }
+        // obtain uv-weights accessor if the appropriate details are present in the model 
+        // (otherwise an empty shared pointer is returned). The logic inside makeUVWeightAccessor 
+        // ensures Taylor terms are handled appropriately
+        const boost::shared_ptr<IUVWeightAccessor const> wtAcc = makeUVWeightAccessor(imageName);
+        if (wtAcc) {
+            ASKAPLOG_DEBUG_STR(logger, "UV Weight will be applied during gridding for "<<imageName);
+        } else {
+            ASKAPLOG_DEBUG_STR(logger, "UV Weight will not be applied during gridding for "<<imageName);
+        }
+
         if(itsResidualGridders.count(imageName)==0) {
           itsResidualGridders[imageName]=itsGridder->clone();
+          assignUVWeightAccessorIfNecessary(itsResidualGridders[imageName], wtAcc);
         }
         if(itsPSFGridders.count(imageName)==0) {
           if (itsBoxPSFGridder) {
@@ -374,6 +429,7 @@ namespace askap
           } else {
              itsPSFGridders[imageName] = itsGridder->clone();
           }
+          assignUVWeightAccessorIfNecessary(itsPSFGridders[imageName], wtAcc);
         }
         if(itsUsePreconGridder && itsPreconGridders.count(imageName)==0) {
            // preconditioning of higher order terms is set from term 0
@@ -383,6 +439,7 @@ namespace askap
              // Should this be a clone of the psf or the image?
              //itsPreconGridders[imageName] = itsGridder->clone();
              itsPreconGridders[imageName] = itsPSFGridders[imageName]->clone();
+             // technically, cloning of the PSF gridder should copy the weight accessor (by reference) if set
            }
         }
         if (itsCoordSystems.count(imageName) == 0) {

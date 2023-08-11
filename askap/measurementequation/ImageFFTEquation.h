@@ -38,6 +38,8 @@
 #include <askap/dataaccess/SharedIter.h>
 #include <askap/dataaccess/IDataIterator.h>
 #include <askap/measurementequation/IVisCubeUpdate.h>
+#include <askap/gridding/IUVWeightAccessor.h>
+#include <askap/gridding/UVWeightCollection.h>
 
 #include <casacore/casa/aips.h>
 #include <casacore/casa/Arrays/Array.h>
@@ -177,6 +179,27 @@ namespace askap
 
 // DAM TRADITIONAL
         boost::optional<float> getRobustness() const { return itsRobustness; }
+
+      protected:
+
+        /// @brief helper method to make accessor for the given image parameter
+        /// @details It encapsulates handling the Taylor terms the right way
+        /// (same uv-weight for all Taylor terms) and translation the image name
+        /// into parameter name in the model (via the appropriate Params helper class).
+        /// Also index translation is encapsulated.
+        /// @param[in] name image parameter name (the full one with "image" prefix - 
+        /// we always deal with the full name makes the code more readable, although we
+        /// could've cut down some operations if we take the name without the leading 
+        /// "image").
+        /// @return shared pointer to the uv-weight accessor object accepted by gridders
+        boost::shared_ptr<IUVWeightAccessor> makeUVWeightAccessor(const std::string &name) const;
+
+        /// @brief helper method to assign uv-weight accessor to the given gridder
+        /// @param[in] gridder gridder to work with
+        /// @param[in] acc uv-weight accessor to assign
+        /// @note if the accessor is empty nothing is done. Otherwise, if the gridder is of a wrong type which
+        /// doesn't support setting of an accessor, an exception is thrown
+        static void assignUVWeightAccessorIfNecessary(const boost::shared_ptr<IVisGridder> &gridder, const boost::shared_ptr<IUVWeightAccessor const> &acc);
 
       private:
 
