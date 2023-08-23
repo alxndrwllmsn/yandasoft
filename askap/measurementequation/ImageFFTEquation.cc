@@ -235,7 +235,7 @@ namespace askap
 
       // DDCALTAG -- set increased buffer size
       if (itsNDir > 1) {
-         DDCalBufferDataAccessor accBuffer(*itsIdi);
+         DDCalBufferDataAccessor& accBuffer = dynamic_cast<DDCalBufferDataAccessor&>(*itsIdi);
          ASKAPLOG_DEBUG_STR(logger, "calling accBuffer.setNDir("<<itsNDir<<")");
          accBuffer.setNDir(itsNDir);
       }

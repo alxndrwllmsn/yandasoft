@@ -130,6 +130,8 @@ public:
    bool itsModelReadByMaster;
    /// @brief do continuum subtraction based on a component or image model
    bool itsDoSubtraction;
+   /// @brief Instead of subtracting, replace the data by the model
+   bool itsDoReplaceByModel;
    /// @brief do 'uvlin' like fit and subtract of residual continuum emission
    bool itsDoUVlin;
    /// @brief order of 'uvlin' like fit and subtract of residual continuum emission
@@ -161,6 +163,9 @@ public:
    /// this stores the CalibrationApplicatorME object.
    /// If uninitialised, we are using the CalibrationMEBase classes
    boost::shared_ptr<ICalibrationApplicator> itsCalApplicator;
+
+   /// @brief number of beams/calibration directions
+   int itsNDir;
 };
 
 } // namespace synthesis

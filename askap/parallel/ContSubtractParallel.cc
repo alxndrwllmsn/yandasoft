@@ -33,7 +33,7 @@
 #include <askap/dataaccess/TableDataSource.h>
 #include <askap/dataaccess/TableDataIterator.h>
 #include <askap/dataaccess/ParsetInterface.h>
-#include <askap/dataaccess/MemBufferDataAccessor.h>
+#include <askap/dataaccess/DDCalBufferDataAccessor.h>
 #include <askap/dataaccess/DataIteratorStub.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/scimath/fitting/Equation.h>
@@ -111,7 +111,7 @@ ContSubtractParallel::ContSubtractParallel(askapparallel::AskapParallel& comms,
     << itsOrder<<", harmonic = "<<itsHarmonic<< ", width = "<< itsWidth
     <<" channels, offset = "<< itsOffset << " and threshold = "<< itsThreshold);
   itsDoSubtraction = parset.getBool("doSubtraction", true);
-
+  itsDoReplaceByModel = parset.getBool("doReplaceByModel", false);
 }
 
 /// @brief Initialise continuum subtractor
@@ -135,6 +135,24 @@ void ContSubtractParallel::init()
     } else if (doWork()) {
       readModels();
     }
+    bool doDDCal = parset().getBool("calibrate.directiondependent",false);
+    // Get number of sources with components
+    itsNDir = params()->completions("sourceID").size();
+    if (itsNDir > 0) {
+        ASKAPLOG_INFO_STR(logger, "Found "<<itsNDir<< " component models");
+    } else {
+        //no component models, try image model
+        itsNDir = params()->completions("image").size();
+        if (itsNDir > 0) {
+            ASKAPLOG_INFO_STR(logger, "Found "<<itsNDir<< " image models "<<params()->names());
+        }
+    }
+    if (!doDDCal || itsNDir < 1) {
+        itsNDir = 1;
+    }
+    if (doDDCal) {
+        ASKAPLOG_INFO_STR(logger, "Found "<<itsNDir<< " directions for DDCAL");
+    }
 }
 
 /// @brief initialise measurement equation
@@ -145,30 +163,33 @@ void ContSubtractParallel::initMeasurementEquation(IDataSharedIter& it)
 
    // it doesn't matter which iterator to pass to the measurement equations
    // as we're only using accessor-based interface
-   // Not sure this is true for calibration - use real iterator (MHW)
-   IDataSharedIter stubIter = it; //(new DataIteratorStub(1));
+   IDataSharedIter stubIter(new DataIteratorStub(1));
 
-   ASKAPCHECK(itsModel, "Model is not defined");
-   ASKAPCHECK(gridder(), "Gridder is not defined");
+   ASKAPCHECK(params(), "Model is not defined");
 
    // a part of the equation defined via image
    askap::scimath::Equation::ShPtr imgEquation;
 
-   if (SynthesisParamsHelper::hasImage(itsModel)) {
+   if (SynthesisParamsHelper::hasImage(params())) {
        ASKAPLOG_INFO_STR(logger, "Sky model contains at least one image, building an image-specific equation");
        // it should ignore parameters which are not applicable (e.g. components)
-       imgEquation.reset(new ImageFFTEquation(*itsModel, stubIter, gridder()));
+       ASKAPCHECK(gridder(), "Gridder is not defined");
+       imgEquation.reset(new ImageFFTEquation(*params(), stubIter, gridder()));
    }
 
    // a part of the equation defined via components
    boost::shared_ptr<ComponentEquation> compEquation;
 
-   if (SynthesisParamsHelper::hasComponent(itsModel)) {
+   if (SynthesisParamsHelper::hasComponent(params())) {
        // model is a number of components
        ASKAPLOG_INFO_STR(logger, "Sky model contains at least one component, building a component-specific equation");
        // it doesn't matter which iterator is passed below. It is not used
        // it should ignore parameters which are not applicable (e.g. images)
-       compEquation.reset(new ComponentEquation(*itsModel, stubIter));
+       compEquation.reset(new ComponentEquation(*params(), stubIter));
+       if (itsNDir > 1 && !SynthesisParamsHelper::hasImage(params())) {
+           compEquation->setNDir(itsNDir);
+       }
+
    }
 
    if (imgEquation && !compEquation) {
@@ -199,6 +220,10 @@ void ContSubtractParallel::initMeasurementEquation(IDataSharedIter& it)
         // the actual equation (from itsEquation) will be locked inside ImagingEquationAdapter
         // in a shared pointer. We can change itsEquation after the following line
         new_equation->assign(itsEquation);
+        if (itsNDir > 1) {
+            new_equation->setNDir(itsNDir);
+        }
+
         // replacing the original equation with an accessor-based adapter
         itsEquation = new_equation;
         // this should work now
@@ -210,38 +235,23 @@ void ContSubtractParallel::initMeasurementEquation(IDataSharedIter& it)
    }
    // corrupt model with calibration
    if (itsSolutionSource) {
-       if (parset().getBool("calibrate.usecalapplicator",false)) {
-            ASKAPLOG_INFO_STR(logger, "Using CalibrationApplicator for gains");
+       if (parset().getBool("calibrate.usecalapplicator",true)) {
+           ASKAPLOG_INFO_STR(logger, "Using CalibrationApplicator for gains");
            itsCalApplicator.reset(new CalibrationApplicatorME(itsSolutionSource));
-           if (parset().getBool("calibrate.scalenoise",false)) {
-               itsCalApplicator->scaleNoise(true);
-           }
-           if (parset().getBool("calibrate.allowflag",false)) {
-               itsCalApplicator->allowFlag(true);
-           }
-           if (parset().getBool("calibrate.ignorebeam", false)) {
-               itsCalApplicator->beamIndependent(true);
-           }
+           itsCalApplicator->scaleNoise(parset().getBool("calibrate.scalenoise",false));
+           itsCalApplicator->allowFlag(parset().getBool("calibrate.allowflag",false));
+           itsCalApplicator->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
+           itsCalApplicator->channelIndependent(parset().getBool("calibrate.ignorechannel", false));
            itsCalApplicator->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
        } else {
+           ASKAPCHECK(itsNDir==1,"Use calibrate.usecalapplicator=true for DD calibration");
            boost::shared_ptr<CalibrationMEBase> calME;
            // Using the CalibrationME class is more general, but slower than the
            // CalibratorApplicatorME class
-           // Not sure how to fit the DDCal classes into this, which is the goal for peeling
+           // Not sure how to fit the DDCal classes into this
            ASKAPLOG_INFO_STR(logger, "Only parallel-hand gains will be applied. Polarisation leakage will not be applied.");
            calME.reset(new CalibrationME<NoXPolGain>(scimath::Params(), stubIter, accessorBasedEquation));
            ASKAPDEBUGASSERT(calME);
-           // fine tune parameters - do we need this for corrupt?
-           if (parset().getBool("calibrate.scalenoise",false)) {
-               calME->scaleNoise(true);
-           }
-           if (parset().getBool("calibrate.allowflag",false)) {
-               calME->allowFlag(true);
-           }
-           if (parset().getBool("calibrate.ignorebeam", false)) {
-               calME->beamIndependent(true);
-           }
-           calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
            // set up the adapter
            itsEquation.reset(new CalibParamsMEAdapter(calME, itsSolutionSource, stubIter));
        }
@@ -526,7 +536,6 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
         }
         accessorBasedEquation = boost::dynamic_pointer_cast<IMeasurementEquation>(itsEquation);
         ASKAPDEBUGASSERT(accessorBasedEquation);
-        ASKAPASSERT(accessorBasedEquation);
     }
 
     uint niter = 0;
@@ -541,19 +550,33 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
         niter++;
         casacore::Cube<casacore::Complex>& vis = it->rwVisibility();
         if (itsDoSubtraction) {
-            MemBufferDataAccessor acc(*it);
-            acc.rwVisibility().set(0.);
+            DDCalBufferDataAccessor acc(*it);
+            // acc.rwVisibility().set(0.); // already done in predict
             accessorBasedEquation->predict(acc);
+            const casacore::Cube<casacore::Complex>& model = acc.visibility();
+
             // If using the cal applicator, we apply calibration separately
             // from predicting the visibilities, otherwise it is already done
             if (itsCalApplicator) {
                 itsCalApplicator->predict(acc);
             }
-            const casacore::Cube<casacore::Complex>& model = acc.visibility();
             ASKAPDEBUGASSERT(model.nrow() == vis.nrow());
             ASKAPDEBUGASSERT(model.ncolumn() == vis.ncolumn());
-            ASKAPDEBUGASSERT(model.nplane() == vis.nplane());
-            vis -= model;
+            if (itsNDir == 1) {
+                if (itsDoReplaceByModel) {
+                    vis = model;
+                } else {
+                    vis -= model;
+                }
+            } else {
+                const casacore::Slice all;
+                // loop over directions
+                for (int dir = 0; dir < itsNDir; dir++) {
+                    const auto nrow = vis.nrow();
+                    const casacore::Slice rowSlice(nrow * dir, nrow);
+                    vis -= model(rowSlice,all,all);
+                }
+            }
         }
         // Do the uvlin fit/subtract on the residuals after the model subtraction
         if (itsDoUVlin) {
