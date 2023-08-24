@@ -1,8 +1,12 @@
-/// @file MSGroupInfo.h
+/// @file
+/// @brief Interface class to translate indices for uv weight access
+/// @details Implementation of traditional weighting works with flat indices which may cover
+/// different beams, fields, facets, etc. Moreover, it is worth not to design out the possibility
+/// to apply different index translation for the case of building weights and applying them. 
+/// This interface class encapsulate such a translation. It can be enabled via the uv weight accessor
+/// or builder interfaces.
 ///
-/// Class to run the creation of a new cube
-///
-/// @copyright (c) 2013 CSIRO
+/// @copyright (c) 2023 CSIRO
 /// Australia Telescope National Facility (ATNF)
 /// Commonwealth Scientific and Industrial Research Organisation (CSIRO)
 /// PO Box 76, Epping NSW 1710, Australia
@@ -24,48 +28,20 @@
 /// along with this program; if not, write to the Free Software
 /// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 ///
-/// @author Ben Humphreys <Ben.Humphreys@csiro.au>
-///
-#ifndef ASKAP_CP_SIMAGER_MSGROUPINFO_H
-#define ASKAP_CP_SIMAGER_MSGROUPINFO_H
+/// @author Max Voronkov <maxim.voronkov@csiro.au>
 
-// System includes
-#include <string>
-#include <vector>
-
-// ASKAPsoft includes
-#include <casacore/casa/Quanta.h>
+// own includes
+#include <askap/gridding/IUVWeightIndexTranslator.h>
 
 namespace askap {
-namespace cp {
 
-class MSGroupInfo {
-    public:
-        /// Constructor
-        MSGroupInfo();
+namespace synthesis {
 
-        /// Constructor
-        MSGroupInfo(const std::vector<std::string>& ms);
+/// @brief virtual destructor to keep the compiler happy
+IUVWeightIndexTranslator::~IUVWeightIndexTranslator() {}
 
-        /// Destructor
-        ~MSGroupInfo();
+} // namespace synthesis
 
-        casacore::uInt getNumChannels(const casacore::uInt n) const;
+} // namespace askap
 
-        casacore::uInt getTotalNumChannels() const;
 
-        casacore::Quantity getFirstFreq() const;
-
-        casacore::Quantity getFreqInc() const;
-
-    private:
-        std::vector<casacore::uInt> itsNumChannels;
-        casacore::uInt itsTotalNumChannels;
-        casacore::Quantity itsFirstFreq;
-        casacore::Quantity itsFreqInc;
-};
-
-}
-}
-
-#endif
