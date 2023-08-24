@@ -33,6 +33,7 @@
 // ASKAPsoft includes
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
+#include <askap/profile/AskapProfiler.h>
 #include <Common/ParameterSet.h>
 #include <askap/scimath/fitting/INormalEquations.h>
 #include <askap/scimath/fitting/ImagingNormalEquations.h>
@@ -77,12 +78,12 @@ ASKAP_LOGGER(logger, ".CalcCore");
 
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
-                       accessors::TableDataSource ds, int localChannel)
-    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsChannel(localChannel)
+                       accessors::TableDataSource ds, int localChannel, double frequency)
+    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsChannel(localChannel),itsFrequency(frequency)
 {
     /// We need to set the calibration info here
     /// the ImagerParallel constructor will do the work to
-    /// obtain the itsSolutionSource - but that is a provate member of
+    /// obtain the itsSolutionSource - but that is a private member of
     /// the parent class.
     /// Not sure whether to use it directly or copy it.
     const std::string solver_par = parset.getString("solver");
@@ -106,8 +107,9 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
-                       int localChannel)
-    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsGridder_p(gdr), itsChannel(localChannel)
+                       int localChannel, double frequency)
+    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsGridder_p(gdr), itsChannel(localChannel),
+      itsFrequency(frequency)
 {
   const std::string solver_par = parset.getString("solver");
   const std::string algorithm_par = parset.getString("solver.Clean.algorithm", "BasisfunctionMFS");
@@ -121,6 +123,7 @@ CalcCore::~CalcCore()
 }
 void CalcCore::doCalc()
 {
+    ASKAPTRACE("CalcCore::doCalc");
 
     casacore::Timer timer;
     timer.mark();
@@ -140,9 +143,22 @@ void CalcCore::doCalc()
         // This is the logic that switches on the combination of channels.
         // Earlier logic has updated the Channels parameter in the parset ....
         bool combineChannels = parset().getBool("combinechannels",false);
+        bool dopplerTracking = parset().getBool("dopplertracking",false);
 
         if (!combineChannels) {
-            sel->chooseChannels(1, itsChannel);
+            if (dopplerTracking) {
+                // To allow a doppler tracking reference position to be specified we need
+                // a chooseFrequencies function that takes a MFrequency with reference frame
+                std::vector<string> direction = parset().getStringVector("dopplertracking.direction",{},false);
+                casacore::MFrequency::Ref freqRef = getFreqRefFrame();
+                if (direction.size() == 3) {
+                    casacore::MeasFrame frame(asMDirection(direction));
+                    freqRef.set(frame);
+                }
+                sel->chooseFrequencies(1, casacore::MFrequency(casacore::MVFrequency(itsFrequency),freqRef), casacore::MVFrequency(0));
+            } else {
+                sel->chooseChannels(1, itsChannel);
+            }
         }
 
         IDataConverterPtr conv = ds.createConverter();
@@ -167,6 +183,15 @@ void CalcCore::doCalc()
             // Also this is why you cannot get at the grid from outside FFT equation
             boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
             ASKAPDEBUGASSERT(fftEquation);
+// DAM TRADITIONAL
+            if (parset().isDefined("gridder.robustness")) {
+                const float robustness = parset().getFloat("gridder.robustness");
+                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+                // also check that it is spectral line? Or do that earlier
+                //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
+                //  - won't work with Taylor terms
+                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
+            }
             fftEquation->useAlternativePSF(parset());
             fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
             itsEquation = fftEquation;
@@ -186,11 +211,16 @@ void CalcCore::doCalc()
             boost::shared_ptr<ImageFFTEquation> fftEquation( \
             new ImageFFTEquation (*itsModel, calIter, gridder()));
             ASKAPDEBUGASSERT(fftEquation);
+// DAM TRADITIONAL
+            if (parset().isDefined("gridder.robustness")) {
+                const float robustness = parset().getFloat("gridder.robustness");
+                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
+            }
             fftEquation->useAlternativePSF(parset());
             fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
             itsEquation = fftEquation;
         }
-
 
     }
     else {
@@ -242,7 +272,7 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() {
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
     boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-    // We will need to loop over all completions i.e. all sources
+// We will need to loop over all completions i.e. all sources
     const std::vector<std::string> completions(itsModel->completions("image"));
 
     std::vector<std::string>::const_iterator it=completions.begin();

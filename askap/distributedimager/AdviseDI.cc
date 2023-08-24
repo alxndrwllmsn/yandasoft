@@ -144,6 +144,7 @@ AdviseDI::AdviseDI(askap::cp::CubeComms& comms, LOFAR::ParameterSet& parset) :
 /// @return const reference to the object populated with resulted metadata statistics
 const VisMetaDataStats& AdviseDI::computeVisMetaDataStats(const std::string &ms)
 {
+   ASKAPTRACE("AdviseDI::computeVisMetaDataStats");
    // a very basic estimator - we currently use it only to get tangent point
    boost::shared_ptr<VisMetaDataStats> stats(new VisMetaDataStats(true));
    // work with this estimator until the next call to this method or until the proper parallel procedure is performed
@@ -157,9 +158,10 @@ const VisMetaDataStats& AdviseDI::computeVisMetaDataStats(const std::string &ms)
 }
 
 void AdviseDI::prepare() {
-    // this assumes only a sinlge spectral window - must generalise
+    ASKAPTRACE("AdviseDI::prepare");
+    // this assumes only a single spectral window - must generalise
     ASKAPLOG_INFO_STR(logger,"Running prepare");
-    // Read from the configruation the list of datasets to process
+    // Read from the configuration the list of datasets to process
     const vector<string> ms = getDatasets();
     ASKAPLOG_INFO_STR(logger,"Data set list is " << ms);
     const unsigned int nWorkers = itsComms.nProcs() - 1;
@@ -196,15 +198,6 @@ void AdviseDI::prepare() {
     /// The imager ususally uses the Channels keyword in the parset to
     /// defined the work unit that it will attempt. That does not work in this
 
-
-
-    casacore::uInt srow = 0;
-    itsChanFreq.resize(ms.size());
-    itsChanWidth.resize(ms.size());
-    itsEffectiveBW.resize(ms.size());
-    itsResolution.resize(ms.size());
-    itsCentre.resize(ms.size());
-
     // Not really sure what to do for multiple ms or what that means in this
     // context... but i'm doing it any way - probably laying a trap for myself
 
@@ -216,7 +209,6 @@ void AdviseDI::prepare() {
 
     // need to calculate the allocations too.
 
-    casacore::uInt totChanIn = 0;
     ASKAPLOG_INFO_STR(logger,"Testing for Channels");
     vector<int> itsChannels = getChannels();
     ASKAPLOG_INFO_STR(logger,"Testing for Frequencies");
@@ -245,12 +237,12 @@ void AdviseDI::prepare() {
         user_defined_channels = false;
     }
 
+    itsChanFreq.resize(ms.size());
+    itsChanWidth.resize(ms.size());
+
     for (unsigned int n = 0; n < ms.size(); ++n) {
         itsChanFreq[n].resize(0);
         itsChanWidth[n].resize(0);
-        itsEffectiveBW[n].resize(0);
-        itsResolution[n].resize(0);
-        itsCentre[n].resize(0);
 
         // MV: the design of this class is very ugly from the C++ point of view, it needs to be redesigned to get more
         // structure if we want to extend it further (or even debug - I suspect the issues I am working with now is
@@ -277,7 +269,7 @@ void AdviseDI::prepare() {
         const casacore::uInt thisRef = casacore::ROScalarColumn<casacore::Int>(in.spectralWindow(),"MEAS_FREQ_REF")(0);
 
         casacore::uInt thisChanIn = 0;
-        srow = sc.nrow()-1;
+        casacore::uInt srow = sc.nrow()-1;
 
         ASKAPCHECK(srow==0,"More than one spectral window not currently supported in adviseDI");
 
@@ -296,25 +288,16 @@ void AdviseDI::prepare() {
         for (uint i = chanStart; i < chanStop; i = i + chanStep) {
             itsChanFreq[n].push_back(sc.chanFreq()(srow)(casacore::IPosition(1, i)));
             itsChanWidth[n].push_back(sc.chanWidth()(srow)(casacore::IPosition(1, i)));
-            itsEffectiveBW[n].push_back(sc.effectiveBW()(srow)(casacore::IPosition(1, i)));
-            itsResolution[n].push_back(sc.resolution()(srow)(casacore::IPosition(1, i)));
             thisChanIn++;
         }
-
-        totChanIn = totChanIn + thisChanIn;
 
 
         // MV: see comments above, this is a somewhat ugly approach to get the correct phase centre
         itsTangent.push_back(mdStats.centre());
-        itsDirVec.push_back(casa::Vector<casacore::MDirection>(1,casacore::MDirection(itsTangent[n], casacore::MDirection::J2000)));
+        itsDirMeas.push_back(casacore::MDirection(itsTangent[n], casacore::MDirection::J2000));
         const casacore::Vector<casacore::MDirection> oldDirVec(fc.phaseDirMeasCol()(0));
         ASKAPLOG_DEBUG_STR(logger, "Tangent point for "<<ms[n]<<" : "<<printDirection(itsTangent[n])<<
                            " (J2000), old way: "<<printDirection(oldDirVec(0).getValue())<<" (J2000)");
-
-
-        // the old way to get phase centre/tangent:
-        //itsDirVec.push_back(fc.phaseDirMeasCol()(0));
-        //itsTangent.push_back(itsDirVec[n](0).getValue());
 
         // Read the position on Antenna 0
         Array<casacore::Double> posval;
@@ -349,9 +332,6 @@ void AdviseDI::prepare() {
     // the frequencies
     itsInputFrequencies.resize(0);
     itsRequestedFrequencies.resize(0);
-    // the work allocations
-    itsAllocatedFrequencies.resize(nWorkersPerGroup);
-    itsAllocatedWork.resize(nWorkers);
 
     // setup frequency frame
     const Bool bc = itsParset.getBool("barycentre",false);
@@ -392,7 +372,7 @@ void AdviseDI::prepare() {
 
 
     for (unsigned int n = 0; n < ms.size(); ++n) {
-         const MeasFrame frame(MEpoch(itsEpoch[n]),itsPosition[n],itsDirVec[n][0]);
+         const MeasFrame frame(MEpoch(itsEpoch[n]),itsPosition[n],itsDirMeas[n]);
          const MFrequency::Ref refin(MFrequency::castType(itsRef),frame); // the frame of the input channels
 
          // builds a list of all the channels
@@ -442,17 +422,15 @@ void AdviseDI::prepare() {
         // but that is probably another ticket.
 
         size_t n = itsChannels[0];
-        size_t st = itsChannels[1];
+        const size_t st = itsChannels[1];
 
-        if (n > itsInputFrequencies.size()){
+        if (st + n > itsInputFrequencies.size()){
             ASKAPLOG_WARN_STR(logger, "Requested nchan > available channels; truncating");
+            n = itsInputFrequencies.size() - st;
         }
 
-        for (unsigned int ch = 0; ch < itsInputFrequencies.size(); ++ch) {
-            if (ch >= st) {
-                if (itsRequestedFrequencies.size() < n)
-                    itsRequestedFrequencies.push_back(itsInputFrequencies[ch]);
-            }
+        for (unsigned int ch = st; ch < st + n; ++ch) {
+            itsRequestedFrequencies.push_back(itsInputFrequencies[ch]);
         }
     }
     else if (user_defined_frequencies) {
@@ -474,6 +452,7 @@ void AdviseDI::prepare() {
         for (unsigned int ch = 0; ch < itsInputFrequencies.size(); ++ch) {
            itsRequestedFrequencies.push_back(itsInputFrequencies[ch]);
         }
+
     }
     // Now we have a list of requested frequencies lets allocate them to nodes - some maybe empty.
     ASKAPLOG_INFO_STR(logger,
@@ -498,6 +477,11 @@ void AdviseDI::prepare() {
     }
     ASKAPCHECK(itsRequestedFrequencies.size()/nWorkersPerGroup == nchanpercore,"Miss-match nchanpercore is incorrect");
 
+    // the work allocations
+    itsAllocatedFrequencies.resize(nWorkersPerGroup);
+    itsAllocatedWork.resize(nWorkers);
+
+
     for (unsigned int ch = 0; ch < itsRequestedFrequencies.size(); ++ch) {
 
         if (itsDetailedLog) {
@@ -505,7 +489,7 @@ void AdviseDI::prepare() {
         }
         const unsigned int allocation_index = ch / nchanpercore;
 
-        if (allocation_index < itsAllocatedFrequencies.size()) {
+        if (allocation_index < nWorkersPerGroup) {
             ASKAPLOG_DEBUG_STR(logger,"Allocating frequency "<< itsRequestedFrequencies[ch].getValue() <<
                                       " to worker " << allocation_index+1);
 
@@ -551,10 +535,9 @@ void AdviseDI::prepare() {
             for (unsigned int set=0;set < ms.size();++set){
 
 
-                const MeasFrame frame(MEpoch(itsEpoch[set]),itsPosition[set],itsDirVec[set][0]);
+                const MeasFrame frame(MEpoch(itsEpoch[set]),itsPosition[set],itsDirMeas[set]);
                 const MFrequency::Ref refin(MFrequency::castType(itsRef),frame); // the frame of the input channels
                 const MFrequency::Ref refout(itsFreqType,frame); // the frame desired
-                MFrequency::Convert forw(refin,refout); // from input to desired
                 MFrequency::Convert backw(refout,refin); // from desired to input
 
                 vector<int> lc;
@@ -581,7 +564,7 @@ void AdviseDI::prepare() {
                 if (lc.size() > 0) {
                     size_t limit = lc.size();
                     if (lc.size() > 1) {
-                        ASKAPLOG_WARN_STR(logger,"More that one channel has been found in this range. This is currently unsupported and will be ignored");
+                        ASKAPLOG_WARN_STR(logger,"More than one channel has been found in this range. This is currently unsupported and will be ignored");
                         limit = 1;
                     }
 
@@ -773,7 +756,7 @@ void AdviseDI::updateDirectionFromWorkUnit(askap::cp::ContinuumWorkUnit& wu) {
 
 void AdviseDI::addMissingParameters(bool extra)
 {
-
+    ASKAPTRACE("AdvisDI::addMissingParameters");
     ASKAPLOG_DEBUG_STR(logger,"Adding missing params ");
 
     if (itsPrepared == true) {
@@ -938,10 +921,14 @@ void AdviseDI::addMissingParameters(bool extra)
                itsParset.add("wpercentile.advised", wpercentile);
            }
        }
-
-       estimate(itsParset);
+       if (itsParset.getBool("updatedirection",false) && itsParset.getBool("speedupstats",true)) {
+           // avoid going through all the input MSs again just for wmax & Nyquist gridding cellsize
+           ASKAPLOG_DEBUG_STR(logger, "updatedirection and speedupstats parameters are true so only using first MS for metadata stats ");
+           computeVisMetaDataStats(getDatasets()[0]);
+       } else {
+           estimate(itsParset);
+       }
        const VisMetaDataStats &advice = estimator();
-
        param = "nUVWMachines"; // if the number of uvw machines is undefined, set it to the number of beams.
        if (!itsParset.isDefined(param)) {
            const string pstr = toString(advice.nBeams());

@@ -28,6 +28,15 @@ WDependentGridderBase.cc
 WProjectVisGridder.cc
 WStackVisGridder.cc
 MPIWProjectVisGridder.cc
+UVWeightCollection.cc
+IUVWeightAccessor.cc
+GenericUVWeightAccessor.cc
+IUVWeightCalculator.cc
+IUVWeightIndexTranslator.cc
+GenericUVWeightIndexTranslator.cc
+RobustUVWeightCalculator.cc
+ConjugatesAdderFFT.cc
+CompositeUVWeightCalculator.cc
 )
 
 install (FILES
@@ -66,6 +75,18 @@ WDependentGridderBase.h
 WProjectVisGridder.h
 WStackVisGridder.h
 MPIWProjectVisGridder.h
+UVWeightCollection.h
+UVWeight.h
+IUVWeightAccessor.h
+IUVWeightBuilder.h
+GenericUVWeightAccessor.h
+IUVWeightCalculator.h
+IUVWeightIndexTranslator.h
+UVWeightIndexTranslationHelper.h
+GenericUVWeightIndexTranslator.h
+RobustUVWeightCalculator.h
+ConjugatesAdderFFT.h
+CompositeUVWeightCalculator.h
 DESTINATION include/askap/gridding
 )
 

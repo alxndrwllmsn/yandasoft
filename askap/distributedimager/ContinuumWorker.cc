@@ -46,6 +46,7 @@
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapUtil.h>
+#include <askap/profile/AskapProfiler.h>
 #include <askap/scimath/fitting/Equation.h>
 #include <askap/scimath/fitting/INormalEquations.h>
 #include <askap/scimath/fitting/ImagingNormalEquations.h>
@@ -96,6 +97,7 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
   CubeComms& comms, StatReporter& stats)
   : itsParset(parset), itsComms(comms), itsStats(stats), itsBeamList(),itsWeightsList()
 {
+    ASKAPTRACE("ContinuumWorker::constructor");
 
 
     itsAdvisor = boost::shared_ptr<synthesis::AdviseDI> (new synthesis::AdviseDI(itsComms, itsParset));
@@ -136,7 +138,7 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     std::string GridderStr = itsParset.getString("gridder",std::string());
     ASKAPLOG_INFO_STR(logger, "Gridder is " << GridderStr);
 
-    if (GridderStr == "AWProject") {
+    if (GridderStr == "AWProject" || GridderStr == "AProjectWStack") {
       itsGridderCanMosaick = true;
       ASKAPLOG_INFO_STR(logger," Gridder <CAN> mosaick");
     }
@@ -165,7 +167,18 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     } else {
       itsNumWriters = nwriters;
     }
-
+    const bool dopplerTracking = itsParset.getBool("dopplertracking",false);
+    const bool usetmpfs = itsParset.getBool("usetmpfs", false);
+    ASKAPCHECK(!dopplerTracking || !usetmpfs,"Doppler tracking and usetmpfs cannot be used together");
+    if (dopplerTracking) {
+        std::vector<string> direction = itsParset.getStringVector("dopplertracking.direction",{},false);
+        if (direction.size() == 3) {
+            casacore::MDirection itsVelRefDir(asMDirection(direction));
+            ASKAPLOG_INFO_STR(logger,"Velocity reference direction =  "<<printDirection(itsVelRefDir.getValue()));
+        } else {
+            ASKAPLOG_INFO_STR(logger,"Using default velocity reference direction ( = pointing/field centre)");
+        }
+    }
 }
 
 ContinuumWorker::~ContinuumWorker()
@@ -174,6 +187,7 @@ ContinuumWorker::~ContinuumWorker()
 
 void ContinuumWorker::run(void)
 {
+  ASKAPTRACE("ContinuumWorker::run");
 
   // Send the initial request for work
   ContinuumWorkRequest wrequest;
@@ -356,9 +370,6 @@ void ContinuumWorker::clearWorkUnitCache()
 
 void ContinuumWorker::cacheWorkUnit(ContinuumWorkUnit& wu)
 {
-
-
-
   boost::filesystem::path mspath = boost::filesystem::path(wu.get_dataset());
   const string ms = mspath.filename().string();
 
@@ -495,47 +506,12 @@ void ContinuumWorker::preProcessWorkUnit(ContinuumWorkUnit& wu)
   ASKAPLOG_DEBUG_STR(logger, "Parset Reports: (In preProcess workunit)" << (itsParset.getStringVector("dataset", true)));
 
   const bool localsolve = itsParset.getBool("solverpercore", false);
-
-  // We're processing spectral data one channel at a time, but needs the stats for all, try setting this here
-  // For continuum this is done in compressWorkUnits (if combinechannels is set, which it should be)
-  // Channel numbers are zero based
-  const int n = (localsolve ? itsParset.getInt("nchanpercore", 1) : 1);
-  string ChannelPar = "["+toString(n)+","+toString(wu.get_localChannel())+"]";
-  int last_beam = -1;
-
-  // AXA-1004 this will not be unique as the parsets are passed by reference
-  // if we are expecting multiple beams in the work units then these will be clobbered
-  // unless the accessor gets the beam information some other way
-
-  const bool perbeam = itsParset.getBool("perbeam", true);
-  if (!perbeam) {
-    string param = "beams";
-    string bstr = "[" + toString(wu.get_beam()) + "]";
-    if (last_beam != -1) {
-      ASKAPCHECK(last_beam == wu.get_beam(), "beam index changed in perbeam processing parset - clearly in the expectation that this will do something but the parset is stored by reference AXA-1004");
-    }
-    itsParset.replace(param, bstr);
-  }
-
   const bool usetmpfs = itsParset.getBool("usetmpfs", false);
 
   if (usetmpfs && !localsolve) {
     // only do this here if in continuum mode
     cacheWorkUnit(wu);
-    ChannelPar="[1,0]";
   }
-
-  // only add channel selection for valid workunits and topo frame
-  // other frames have shifted channel allocations which can't be handled this way
-  // if combinechannels==false the Channel parameter is only used for advise
-  // Ord AXA-1004 removing this as it is not used by subsequent code and can break advise
-  // in some corner cases.
-  // ASKAPLOG_DEBUG_STR(logger, "In preProcessWorkUnit - replacing Channels parameter "<<
-  // itsParset.getString("Channels","none")<<" with "<<ChannelPar<<" if topo="<<
-  // unitParset.getString("freqframe","topo")<< " and "<< (wu.get_dataset()!=""));
-  // if (wu.get_dataset()!="" && unitParset.getString("freqframe","topo")=="topo") {
-  //     unitParset.replace("Channels", ChannelPar);
-  //}
 
   ASKAPLOG_DEBUG_STR(logger, "Getting advice on missing parameters");
 
@@ -553,6 +529,8 @@ void ContinuumWorker::processSnapshot()
 }
 void ContinuumWorker::processChannels()
 {
+  ASKAPTRACE("ContinuumWorker::processChannels");
+
   ASKAPLOG_INFO_STR(logger, "Processing Channel Allocation");
 
   if (itsWriteGrids) {
@@ -748,6 +726,7 @@ void ContinuumWorker::processChannels()
 
     // write out the beam log
     ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
+
     logBeamInfo();
     logWeightsInfo();
 
@@ -828,10 +807,7 @@ void ContinuumWorker::processChannels()
       double frequency=workUnits[workUnitCount].get_channelFrequency();
       const string colName = itsParset.getString("datacolumn", "DATA");
 
-
-      int localChannel;
-      int globalChannel;
-
+      int localChannel = 0;
       bool usetmpfs = itsParset.getBool("usetmpfs", false);
       bool clearcache = itsParset.getBool("clearcache", false);
 
@@ -839,9 +815,6 @@ void ContinuumWorker::processChannels()
         // probably in spectral line mode
         // copy the caching here ...
         cacheWorkUnit(workUnits[workUnitCount]);
-
-        localChannel = 0;
-
       } else {
         localChannel = workUnits[workUnitCount].get_localChannel();
         if (clearcache) {
@@ -849,33 +822,32 @@ void ContinuumWorker::processChannels()
         }
       }
 
+      double globalFrequency = workUnits[workUnitCount].get_channelFrequency();
+
       const string ms = workUnits[workUnitCount].get_dataset();
-      globalChannel = workUnits[workUnitCount].get_globalChannel();
+      int globalChannel = workUnits[workUnitCount].get_globalChannel();
 
       // MEMORY_BUFFERS mode opens the MS readonly
       TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, colName);
 
       /// Need to set up the rootImager here
       if (updateDir) {
-        itsAdvisor->updateDirectionFromWorkUnit(workUnits[workUnitCount]);
-      }
-      if (updateDir) {
+            itsAdvisor->updateDirectionFromWorkUnit(workUnits[workUnitCount]);
             // change gridder for initial calcNE in updateDir mode
             LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
             tmpParset.replace("gridder","SphFunc");
-            boost::shared_ptr<CalcCore> tempIm(new CalcCore(tmpParset,itsComms,ds,localChannel));
+            boost::shared_ptr<CalcCore> tempIm(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
             rootImagerPtr = tempIm;
       } else if (!gridder_initialized) {
-            boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,ds,localChannel));
+            boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency));
             rootImagerPtr = tempIm;
             gridder_initialized = true;
       } else {
-        boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel));
+        boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency));
         rootImagerPtr = tempIm;
       }
 
       CalcCore& rootImager = *rootImagerPtr; // just for the semantics
-      //// CalcCore rootImager(itsParsets[workUnitCount], itsComms, ds, localChannel);
       /// set up the image for this channel
       /// this will actually build a full image for the first - it is not actually used tho.
       ///
@@ -908,13 +880,13 @@ void ContinuumWorker::processChannels()
         rootImager.calcNE(); // why do this -
         // this essentially forces me to
         // image the full FOV for a single beam
-        // but all I want is somthing to linmos into.
+        // but all I want is something to linmos into.
         // But I need this for the solver ....
         // I should find a away to get the NE initialised w/o regridding
         // which would be much better.
-        // Why not just use a spheroidal for the PSF gridders / full FOV
+        // Why not just use a spheroidal for the PSF gridders (use sphfuncforpsf)/ full FOV (done)
         // FIXME
-        if (updateDir == true) {
+        if (updateDir) {
           rootINERef.weightType(FROM_WEIGHT_IMAGES);
           rootINERef.weightState(WEIGHTED);
           rootImager.zero(); // then we delete all our work ....
@@ -950,16 +922,14 @@ void ContinuumWorker::processChannels()
         // clearer if it were called nextWorkUnit - but this is essentially the workunit we are starting this loop on.
 
 
-
         // now we are going to actually image this work unit
         // This loops over work units that are the same baseFrequency
         // but probably not the same epoch or beam ....
 
-
         while (tempWorkUnitCount < workUnits.size())   {
 
           /// need a working imager to allow a merge over epochs for this channel
-          /// assuming subsequency workunits are the same channel but either different
+          /// assuming subsequent workunits are the same channel but either different
           /// epochs or look directions.
 
           if (frequency != workUnits[tempWorkUnitCount].get_channelFrequency()) {
@@ -974,9 +944,7 @@ void ContinuumWorker::processChannels()
           if (usetmpfs) {
             // probably in spectral line mode
             cacheWorkUnit(workUnits[tempWorkUnitCount]);
-
             localChannel = 0;
-
           } else {
             localChannel = workUnits[tempWorkUnitCount].get_localChannel();
             if (clearcache) {
@@ -984,6 +952,7 @@ void ContinuumWorker::processChannels()
             }
           }
           globalChannel = workUnits[tempWorkUnitCount].get_globalChannel();
+          double globalFrequency = workUnits[workUnitCount].get_channelFrequency();
 
           const string myMs = workUnits[tempWorkUnitCount].get_dataset();
           TableDataSource myDs(myMs, TableDataSource::MEMORY_BUFFERS, colName);
@@ -997,11 +966,11 @@ void ContinuumWorker::processChannels()
               // in updateDir mode I cannot cache the gridders as they have a tangent point.
               // FIXED: by just having 2 possible working imagers depending on the mode. ... easy really
 
-              boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,localChannel));
+              boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,localChannel,globalFrequency));
               workingImagerPtr = tempIm;
             }
             else {
-              boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,rootImager.gridder(),localChannel));
+              boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,rootImager.gridder(),localChannel,globalFrequency));
               workingImagerPtr = tempIm;
             }
 
@@ -1200,7 +1169,6 @@ void ContinuumWorker::processChannels()
           }
           catch (const askap::AskapError& e) {
             ASKAPLOG_WARN_STR(logger, "Askap error in calcNE after majorcycle: " << e.what());
-
           }
         }
         else if (stopping && !localSolver) {
@@ -1214,9 +1182,7 @@ void ContinuumWorker::processChannels()
             }
             catch (const askap::AskapError& e) {
               ASKAPLOG_WARN_STR(logger, "Askap error in calcNE after majorcycle: " << e.what());
-
             }
-
           }
 
         }
@@ -1242,9 +1208,7 @@ void ContinuumWorker::processChannels()
         return;
       }
 
-      if (localSolver) {
-        rootImager.updateSolver();
-      }
+      rootImager.updateSolver();
 
       // At this point we have finished our last major cycle. We have the "best" model from the
       // last minor cycle. Which should be in the archive - or full coordinate system
@@ -1387,53 +1351,18 @@ void ContinuumWorker::processChannels()
       /// outside the clean-loop write out the slice
     }
 
-    catch (const askap::AskapError& e) {
-
-      if (!localSolver) {
-        ASKAPLOG_WARN_STR(logger, "Askap error processing a channel in continuum mode");
-        throw;
-      }
-
-      ASKAPLOG_WARN_STR(logger, "Askap error in channel processing skipping: " << e.what());
-      std::cerr << "Askap error in: " << e.what() << std::endl;
-
-      // Need to either send an empty map - or
-      if (itsComms.isWriter()) {
-        ASKAPLOG_INFO_STR(logger, "Marking bad channel as processed in count for writer\n");
-        itsComms.removeChannelFromWriter(itsComms.rank());
-      } else {
-        int goodUnitCount = workUnitCount - 1; // last good one - needed for the correct freq label and writer
-        ASKAPLOG_INFO_STR(logger, "Failed on count " << goodUnitCount);
-        ASKAPLOG_INFO_STR(logger, "Sending blankparams to writer " << workUnits[goodUnitCount].get_writer());
-        askap::scimath::Params::ShPtr blankParams;
-
-        blankParams.reset(new Params(true));
-        ASKAPCHECK(blankParams, "blank parameters (images) not initialised");
-        setupImage(blankParams, workUnits[goodUnitCount].get_channelFrequency());
-
-
-        ContinuumWorkRequest result;
-        result.set_params(blankParams);
-        result.set_globalChannel(workUnits[goodUnitCount].get_globalChannel());
-        /// send the work to the writer with a blocking send
-        result.sendRequest(workUnits[goodUnitCount].get_writer(), itsComms);
-        ASKAPLOG_INFO_STR(logger, "Sent\n");
-      }
-      // No need to increment workunit. Although this assumes that we are here becuase we failed the solveNE not the calcNE
-
-
-    }
-
     catch (const std::exception& e) {
-      ASKAPLOG_WARN_STR(logger, "Unexpected exception in: " << e.what());
-      std::cerr << "Unexpected exception in: " << e.what();
-      // I need to repeat the bookkeeping here as errors other than AskapErrors are thrown by solveNE
+
       if (!localSolver) {
         /// this is MFS/continuum mode
         /// throw this further up - this avoids a failure in continuum mode generating bogus - or furphy-like
         /// error messages
-        throw e;
+        ASKAPLOG_WARN_STR(logger, "Error processing a channel in continuum mode");
+        throw;
       }
+
+      ASKAPLOG_WARN_STR(logger, "Error in channel processing, skipping: " << e.what());
+      std::cerr << "Skipping channel due to error and continuing: " << e.what() << std::endl;
 
       // Need to either send an empty map - or
       if (itsComms.isWriter()) {
@@ -1447,9 +1376,7 @@ void ContinuumWorker::processChannels()
 
         blankParams.reset(new Params(true));
         ASKAPCHECK(blankParams, "blank parameters (images) not initialised");
-
         setupImage(blankParams, workUnits[goodUnitCount].get_channelFrequency());
-
 
         ContinuumWorkRequest result;
         result.set_params(blankParams);
@@ -1492,6 +1419,7 @@ void ContinuumWorker::processChannels()
 
   // write out the beam log
   ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
+  itsComms.barrier(itsComms.theWorkers());
   logBeamInfo();
   logWeightsInfo();
 
@@ -1574,13 +1502,24 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
       }
   }
 
-  // Write the grids
+  // Write the grids - we write all or none, so only need to set gridShape once
+  IPosition gridShape;
   if (params->has("grid.slice") && (itsVisGridCube||itsVisGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("grid.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(params->shape("psf.slice")));
+    ASKAPLOG_INFO_STR(logger,"grid.slice shape= "<<params->shape("grid.slice"));
+    // turns out we don't always have psf.slice, so need some alternative way to get shape
+    if (params->has("psf.slice")) {
+        gridShape = params->shape("psf.slice");
+    } else if (itsVisGridCubeReal) {
+        gridShape = itsVisGridCubeReal->imageHandler()->shape(itsVisGridCubeReal->filename()).getFirst(2);
+    } else {
+        gridShape = itsVisGridCube->imageHandler()->shape(itsVisGridCube->filename()).getFirst(2);
+    }
+    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing Vis Grid and writing it as a real image");
       askap::scimath::fft2d(grid,false);
+      grid *= static_cast<casacore::Float>(grid.nelements());
       itsVisGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
     } else {
       if (itsGridType == "casa") {
@@ -1595,10 +1534,11 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
   if (params->has("pcf.slice") && (itsPCFGridCube||itsPCFGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("pcf.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(params->shape("psf.slice")));
+    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing PCF Grid and writing it as a real image");
       askap::scimath::fft2d(grid,false);
+      grid *= static_cast<casacore::Float>(grid.nelements());
       itsPCFGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
 
     } else {
@@ -1614,10 +1554,11 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
   if (params->has("psfgrid.slice") && (itsPSFGridCube||itsPSFGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("psfgrid.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(params->shape("psf.slice")));
+    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing PSF Grid and writing it as a real image");
       askap::scimath::fft2d(grid,false);
+      grid *= static_cast<casacore::Float>(grid.nelements());
       itsPSFGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
     } else {
       if (itsGridType == "casa") {
@@ -1810,7 +1751,6 @@ void ContinuumWorker::logWeightsInfo()
           if (itsResidualCube) {
             itsResidualCube->setInfo(wtInfo);
           }
-          // TODO: which other images should have the weights?
         }
     }
   }
