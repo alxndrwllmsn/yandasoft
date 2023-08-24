@@ -79,7 +79,7 @@ ASKAP_LOGGER(logger, ".CalcCore");
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::TableDataSource ds, int localChannel, double frequency)
-    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsChannel(localChannel),itsFrequency(frequency)
+    : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsChannel(localChannel),itsFrequency(frequency)
 {
     /// We need to set the calibration info here
     /// the ImagerParallel constructor will do the work to
@@ -101,14 +101,14 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
     bool writePsfImage = parset.getBool("write.psfimage",false);
     parset.replace(LOFAR::KVpair("restore.savepsfimage",writePsfImage));
     itsSolver = ImageSolverFactory::make(parset);
-    itsGridder_p = VisGridderFactory::make(parset); // this is private to an inherited class so have to make a new one
+    itsGridder = VisGridderFactory::make(parset); // this is private to an inherited class so have to make a new one
     itsRestore = parset.getBool("restore", false);
 }
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
                        int localChannel, double frequency)
-    : ImagerParallel(comms,parset), itsComms(comms),itsData(ds),itsGridder_p(gdr), itsChannel(localChannel),
+    : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsGridder(gdr), itsChannel(localChannel),
       itsFrequency(frequency)
 {
   const std::string solver_par = parset.getString("solver");
@@ -117,10 +117,106 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
   itsRestore = parset.getBool("restore", false);
 }
 
-CalcCore::~CalcCore()
+/// @brief make data iterator
+/// @details This helper method makes an iterator based on the configuration in the current parset and
+/// data fields of this class such as itsChannel and itsFrequency
+/// @return shared pointer to the iterator over original data
+accessors::IDataSharedIter CalcCore::makeDataIterator() const
 {
+   IDataSelectorPtr sel = itsDataSource.createSelector();
 
+   sel->chooseCrossCorrelations();
+   sel << parset();
+
+   // This is the logic that switches on the combination of channels.
+   // Earlier logic has updated the Channels parameter in the parset ....
+   const bool combineChannels = parset().getBool("combinechannels",false);
+   const bool dopplerTracking = parset().getBool("dopplertracking",false);
+
+   if (!combineChannels) {
+       if (dopplerTracking) {
+           // To allow a doppler tracking reference position to be specified we need
+           // a chooseFrequencies function that takes a MFrequency with reference frame
+           const std::vector<string> direction = parset().getStringVector("dopplertracking.direction",{},false);
+           casacore::MFrequency::Ref freqRef = getFreqRefFrame();
+           if (direction.size() == 3) {
+               const casacore::MeasFrame frame(asMDirection(direction));
+               freqRef.set(frame);
+           }
+           sel->chooseFrequencies(1, casacore::MFrequency(casacore::MVFrequency(itsFrequency),freqRef), casacore::MVFrequency(0));
+       } else {
+           sel->chooseChannels(1, itsChannel);
+       }
+   }
+
+   IDataConverterPtr conv = itsDataSource.createConverter();
+   conv->setFrequencyFrame(casacore::MFrequency::Ref(casacore::MFrequency::TOPO), "Hz");
+   conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
+   conv->setEpochFrame();
+
+   return itsDataSource.createIterator(sel, conv);
 }
+
+/// @brief make calibration iterator if necessary, otherwise same as makeDataIterator
+/// @details This method is equivalent to makeDataIterator but it wraps the iterator into a calibration iterator adapter
+/// if calibration is to be performed (i.e. if solution source is defined). 
+/// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
+accessors::IDataSharedIter CalcCore::makeCalibratedDataIteratorIfNeeded() const
+{
+   // Setup data iterator
+   const accessors::IDataSharedIter origIt = makeDataIterator();
+   if (getSolutionSource()) {
+       ASKAPLOG_DEBUG_STR(logger, "Calibration will be performed using solution source");
+       const boost::shared_ptr<ICalibrationApplicator> calME(new CalibrationApplicatorME(getSolutionSource()));
+       // fine tune parameters
+       ASKAPDEBUGASSERT(calME);
+       calME->scaleNoise(parset().getBool("calibrate.scalenoise",false));
+       calME->allowFlag(parset().getBool("calibrate.allowflag",false));
+       calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
+       calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+
+       // calibration iterator to replace the original one for the purpose of measurement equation creation
+       const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
+       return calIter;
+   } 
+   ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
+   return origIt;
+}
+
+/// @brief create measurement equation 
+/// @details This method creates measurement equation as appropriate (with calibration application or without) using
+/// internal state of this class and the parset
+void CalcCore::createMeasurementEquation()
+{
+   // Setup data iterator
+   accessors::IDataSharedIter it = makeCalibratedDataIteratorIfNeeded();
+
+   ASKAPCHECK(itsModel, "Model not defined");
+   ASKAPCHECK(gridder(), "Prototype gridder not defined");
+
+   ASKAPLOG_DEBUG_STR(logger, "building FFT/measurement equation" );
+   // the ImageFFTEquation actually clones the gridders and stores them internally
+   // which is good - but you do not get the expected behaviour here. You would think that
+   // this gridder is the one that is being used - unfortunately it is not.
+   // You therefore get no benefit from initialising the gridder.
+   // Also this is why you cannot get at the grid from outside FFT equation
+   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
+   ASKAPDEBUGASSERT(fftEquation);
+// DAM TRADITIONAL
+   if (parset().isDefined("gridder.robustness")) {
+       const float robustness = parset().getFloat("gridder.robustness");
+       ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+       // also check that it is spectral line? Or do that earlier
+       //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
+       //  - won't work with Taylor terms
+       fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
+   }
+   fftEquation->useAlternativePSF(parset());
+   fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+   // MV: it is not great that the code breaks encapsulation here by changing the data member of a base class, leave it as is for now
+   itsEquation = fftEquation;
+}
+
 void CalcCore::doCalc()
 {
     ASKAPTRACE("CalcCore::doCalc");
@@ -130,100 +226,8 @@ void CalcCore::doCalc()
 
     ASKAPLOG_DEBUG_STR(logger, "Calculating NE .... for channel " << itsChannel);
     if (!itsEquation) {
-
-        accessors::TableDataSource ds = itsData;
-
-        // Setup data iterator
-
-        IDataSelectorPtr sel = ds.createSelector();
-
-        sel->chooseCrossCorrelations();
-        sel << parset();
-
-        // This is the logic that switches on the combination of channels.
-        // Earlier logic has updated the Channels parameter in the parset ....
-        bool combineChannels = parset().getBool("combinechannels",false);
-        bool dopplerTracking = parset().getBool("dopplertracking",false);
-
-        if (!combineChannels) {
-            if (dopplerTracking) {
-                // To allow a doppler tracking reference position to be specified we need
-                // a chooseFrequencies function that takes a MFrequency with reference frame
-                std::vector<string> direction = parset().getStringVector("dopplertracking.direction",{},false);
-                casacore::MFrequency::Ref freqRef = getFreqRefFrame();
-                if (direction.size() == 3) {
-                    casacore::MeasFrame frame(asMDirection(direction));
-                    freqRef.set(frame);
-                }
-                sel->chooseFrequencies(1, casacore::MFrequency(casacore::MVFrequency(itsFrequency),freqRef), casacore::MVFrequency(0));
-            } else {
-                sel->chooseChannels(1, itsChannel);
-            }
-        }
-
-        IDataConverterPtr conv = ds.createConverter();
-        conv->setFrequencyFrame(casacore::MFrequency::Ref(casacore::MFrequency::TOPO), "Hz");
-        conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
-        conv->setEpochFrame();
-
-        IDataSharedIter it = ds.createIterator(sel, conv);
-
-
-        ASKAPCHECK(itsModel, "Model not defined");
-        ASKAPCHECK(gridder(), "Prototype gridder not defined");
-        // calibration can go below if required
-
-        if (!getSolutionSource()) {
-            ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
-            ASKAPLOG_DEBUG_STR(logger, "building FFT/measurement equation" );
-            // the ImageFFTEquation actually clones the gridders and stores them internally
-            // which is good - but you do not get the expected behaviour here. You would think that
-            // this gridder is the one that is being used - unfortunately it is not.
-            // You therefore get no benefit from initialising the gridder.
-            // Also this is why you cannot get at the grid from outside FFT equation
-            boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
-            ASKAPDEBUGASSERT(fftEquation);
-// DAM TRADITIONAL
-            if (parset().isDefined("gridder.robustness")) {
-                const float robustness = parset().getFloat("gridder.robustness");
-                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
-                // also check that it is spectral line? Or do that earlier
-                //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
-                //  - won't work with Taylor terms
-                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
-            }
-            fftEquation->useAlternativePSF(parset());
-            fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
-            itsEquation = fftEquation;
-        } else {
-            ASKAPLOG_DEBUG_STR(logger, "Calibration will be performed using solution source");
-            boost::shared_ptr<ICalibrationApplicator> calME(\
-            new CalibrationApplicatorME(getSolutionSource()));
-            // fine tune parameters
-            ASKAPDEBUGASSERT(calME);
-            calME->scaleNoise(parset().getBool("calibrate.scalenoise",false));
-            calME->allowFlag(parset().getBool("calibrate.allowflag",false));
-            calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
-            calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
-
-            //
-            IDataSharedIter calIter(new CalibrationIterator(it,calME));
-            boost::shared_ptr<ImageFFTEquation> fftEquation( \
-            new ImageFFTEquation (*itsModel, calIter, gridder()));
-            ASKAPDEBUGASSERT(fftEquation);
-// DAM TRADITIONAL
-            if (parset().isDefined("gridder.robustness")) {
-                const float robustness = parset().getFloat("gridder.robustness");
-                ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
-                fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
-            }
-            fftEquation->useAlternativePSF(parset());
-            fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
-            itsEquation = fftEquation;
-        }
-
-    }
-    else {
+        createMeasurementEquation();
+    } else {
         ASKAPLOG_INFO_STR(logger, "Reusing measurement equation and updating with latest model images" );
         // Try changing this to reference instead of copy - passes tests
         //itsEquation->setParameters(*itsModel);
@@ -235,81 +239,106 @@ void CalcCore::doCalc()
 
     ASKAPLOG_INFO_STR(logger,"Calculated normal equations in "<< timer.real()
                       << " seconds ");
-
 }
 
-casacore::Array<casacore::Complex> CalcCore::getGrid() {
-
-    ASKAPCHECK(itsEquation, "Equation not defined");
-    ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
-    boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-
-    // We will need to loop over all completions i.e. all sources
-    const std::vector<std::string> completions(itsModel->completions("image"));
-
-    std::vector<std::string>::const_iterator it=completions.begin();
-    const string imageName("image"+(*it));
-    boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getResidualGridder(imageName));
-    return tvg->getGrid();
+/// @brief first image name in the model
+/// @details This is a helper method to obtain the name of the first encountered image parameter in the model. 
+/// @note It is written as part of the refactoring of various getGrid methods. However, in principle we could have multiple
+/// image parameters simultaneously. The original approach getting the first one won't work in this case.
+/// @return name of the first encountered image parameter in the model
+std::string CalcCore::getFirstImageName() const
+{
+   ASKAPASSERT(itsModel);
+   const std::vector<std::string> completions(itsModel->completions("image"));
+   const std::vector<std::string>::const_iterator it=completions.begin();
+   ASKAPCHECK(it != completions.end(), "There are no images in the current model!");
+   return "image"+(*it);
 }
-casacore::Array<casacore::Complex> CalcCore::getPCFGrid() {
 
-    ASKAPCHECK(itsEquation, "Equation not defined");
-    ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
-    boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-    // We will need to loop over all completions i.e. all sources
-    const std::vector<std::string> completions(itsModel->completions("image"));
-
-    std::vector<std::string>::const_iterator it=completions.begin();
-    const string imageName("image"+(*it));
-    boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPreconGridder(imageName));
-    ASKAPCHECK(tvg,"PreconGridder not defined, make sure preservecf is set to true")
-
-    return tvg->getGrid();
+/// @brief obtain measurement equation cast to ImageFFTEquation
+/// @details This helper method encapsulates operations common to a number of methods of this class to obtain the 
+/// current measurement equation with the type as created in createMeasurementEquation (i.e. ImageFFTEquation) and 
+/// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
+/// @return shared pointer of the appropriate type to the current measurement equation
+boost::shared_ptr<ImageFFTEquation> CalcCore::getMeasurementEquation() const 
+{
+   ASKAPCHECK(itsEquation, "Equation not defined");
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
+   ASKAPCHECK(fftEquation, "Incompatible type of the measurement equation is in use (this shouldn't happen - logic error suspected).");
+   return fftEquation;
 }
-casacore::Array<casacore::Complex> CalcCore::getPSFGrid() {
 
-    ASKAPCHECK(itsEquation, "Equation not defined");
-    ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
-    boost::shared_ptr<ImageFFTEquation> fftEquation = boost::dynamic_pointer_cast<ImageFFTEquation>(itsEquation);
-// We will need to loop over all completions i.e. all sources
-    const std::vector<std::string> completions(itsModel->completions("image"));
-
-    std::vector<std::string>::const_iterator it=completions.begin();
-    const string imageName("image"+(*it));
-    boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPSFGridder(imageName));
-    ASKAPCHECK(tvg,"PSFGridder not defined")
-
-    return tvg->getGrid();
+casacore::Array<casacore::Complex> CalcCore::getGrid() const 
+{
+   ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
+   const string imageName = getFirstImageName();
+   // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
+   const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getResidualGridder(imageName));
+   ASKAPCHECK(tvg, "Incompatible type of residual gridder is used in FFTEquation");
+   return tvg->getGrid();
 }
+
+casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const 
+{
+   ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
+   const string imageName = getFirstImageName();
+   // in principle, we can pass the shared pointer on interface straight to dynamic cast and test the result only
+   // (it will be null pointer if getPreconGridder returns the null pointer). But doing the separate check allows us to
+   // distinguish the situations when preconditioning gridder is not defined (possible use case) vs. when
+   // the preconditioning gridder is of an unsupported type (logic error somewhere).
+   const boost::shared_ptr<IVisGridder> gridder = fftEquation->getPreconGridder(imageName);
+   if (gridder) {
+       const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(gridder);
+       ASKAPCHECK(tvg, "Incompatible type of PCF gridder is used in FFTEquation");
+       return tvg->getGrid();
+   }
+
+   ASKAPLOG_WARN_STR(logger,"PreconGridder not defined, make sure preservecf is set to true");
+   return casacore::Array<casacore::Complex>();
+}
+
+casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const 
+{
+   ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
+   const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
+   const string imageName = getFirstImageName();
+   // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
+   const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPSFGridder(imageName));
+   ASKAPCHECK(tvg, "Incompatible type of PSF gridder is used in FFTEquation");
+   return tvg->getGrid();
+}
+
 void CalcCore::calcNE()
 {
-
-
 
     init();
 
     doCalc();
 
-
-
-
 }
-void CalcCore::zero() {
 
+void CalcCore::zero() const {
+
+  ASKAPCHECK(itsNe, "Normal equations are not setup");
+  // the following would throw bad_cast exception if the wrong type is used
   ImagingNormalEquations &zeroRef =
   dynamic_cast<ImagingNormalEquations&>(*itsNe);
 
   zeroRef.zero(*itsModel);
 }
 
-void CalcCore::updateSolver() {
+void CalcCore::updateSolver() const {
   ASKAPLOG_INFO_STR(logger,"Updating the Ne in the solver with the current NE set");
+  ASKAPCHECK(itsSolver, "Solver uninitialised inside CalcCore::updateSolver");
   itsSolver->init();
   itsSolver->addNormalEquations(*itsNe);
 }
+
 void CalcCore::init()
 {
+  // MV - leave as is for now, but reset would throw an exception if itsNe is uninitialised, so the following if-statement is redundant
 
   reset();
 
@@ -324,16 +353,17 @@ void CalcCore::init()
 
 }
 
-void CalcCore::reset()
+void CalcCore::reset() const
 {
-
     ASKAPLOG_DEBUG_STR(logger,"Reset NE");
+    ASKAPCHECK(itsNe, "Normal equations are not setup inside CalcCore::reset");
     itsNe->reset();
     ASKAPLOG_DEBUG_STR(logger,"Reset NE - done");
 }
 
-void CalcCore::check()
+void CalcCore::check() const
 {
+    ASKAPCHECK(itsNe, "Normal equations are not defined inside CalcCore::check");
     std::vector<std::string> names = itsNe->unknowns();
     const ImagingNormalEquations &checkRef =
     dynamic_cast<const ImagingNormalEquations&>(*itsNe);
@@ -348,11 +378,10 @@ void CalcCore::check()
 }
 void CalcCore::solveNE()
 {
-
-
     casacore::Timer timer;
     timer.mark();
 
+    ASKAPCHECK(itsSolver, "Solver is not defined in solveNE!");
     itsSolver->init();
     itsSolver->addNormalEquations(*itsNe);
 
@@ -387,7 +416,7 @@ void CalcCore::solveNE()
 }
 
 // This code is not called from anywhere at present
-void CalcCore::writeLocalModel(const std::string &postfix) {
+void CalcCore::writeLocalModel(const std::string &postfix) const {
 
     ASKAPLOG_DEBUG_STR(logger, "Writing out results as images");
     ASKAPDEBUGASSERT(itsModel);
@@ -466,7 +495,7 @@ void CalcCore::writeLocalModel(const std::string &postfix) {
     }
 
 }
-void CalcCore::restoreImage()
+void CalcCore::restoreImage() const
 {
     ASKAPDEBUGASSERT(itsModel);
     boost::shared_ptr<ImageRestoreSolver>

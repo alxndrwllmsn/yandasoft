@@ -694,7 +694,7 @@ void WProjectVisGridder::setup(int& nx, int& ny, int& qnx, int& qny,
         float nuy = std::abs(float(iy - qny / 2)) / float(qny / 2);
         ccfy(iy) = grdsf(nuy) / float(qny);
     }
-    if (itsInterp) {
+    if (doInterpolation()) {
         // The spheroidal is undefined and set to zero at nu=1, but that
         // is not the numerical limit. Estimate it from its neighbours.
         interpolateEdgeValues(ccfx);

@@ -452,9 +452,13 @@ void ContinuumWorker::compressWorkUnits() {
     ContinuumWorkUnit startUnit = workUnits[0];
 
     unsigned int contiguousCount = 1;
+    int sign = 1;
     if (workUnits.size() == 1) {
         ASKAPLOG_WARN_STR(logger,"Asked to compress channels but workunit count 1");
     }
+    ContinuumWorkUnit compressedWorkUnit = startUnit;
+
+
     for ( int count = 1; count < workUnits.size(); count++) {
 
         ContinuumWorkUnit nextUnit = workUnits[count];
@@ -463,18 +467,27 @@ void ContinuumWorker::compressWorkUnits() {
         int startChannel = startUnit.get_localChannel();
         std::string nextDataset = nextUnit.get_dataset();
         int nextChannel = nextUnit.get_localChannel();
+        if (contiguousCount == 1 && nextChannel == startChannel - 1) {
+            // channels are running backwards
+            sign = -1;
+        }
+
 
         if ( startDataset.compare(nextDataset) == 0 ) { // same dataset
-            if (nextChannel == (startChannel + contiguousCount)) { // next channel is contiguous to previous
+            ASKAPLOG_DEBUG_STR(logger,"nextChannel "<<nextChannel<<" startChannel "<<startChannel<<" contiguousCount"<< contiguousCount);
+            if (nextChannel == (startChannel + sign * contiguousCount)) { // next channel is contiguous to previous
                 contiguousCount++;
                 ASKAPLOG_DEBUG_STR(logger, "contiguous channel detected: count " << contiguousCount);
-                startUnit.set_nchan(contiguousCount); // update the nchan count for this workunit
+                if (sign < 0) {
+                    compressedWorkUnit = nextUnit;
+                }
+                compressedWorkUnit.set_nchan(contiguousCount); // update the nchan count for this workunit
                 // Now need to update the parset details
-                string ChannelParam = "["+toString(contiguousCount)+","+toString(startUnit.get_localChannel())+"]";
+                string ChannelParam = "["+toString(contiguousCount)+","+
+                    toString(compressedWorkUnit.get_localChannel())+"]";
                 ASKAPLOG_DEBUG_STR(logger, "compressWorkUnit: ChannelParam = "<<ChannelParam);
                 itsParset.replace("Channels",ChannelParam);
-            }
-            else { // no longer contiguous channels reset the count
+            } else { // no longer contiguous channels reset the count
                 contiguousCount = 0;
             }
         }
@@ -484,8 +497,9 @@ void ContinuumWorker::compressWorkUnits() {
         }
         if (count == (workUnits.size()-1) || contiguousCount == 0) { // last unit
             ASKAPLOG_DEBUG_STR(logger, "Adding unit to compressed list");
-            compressedList.insert(compressedList.end(),startUnit);
+            compressedList.insert(compressedList.end(),compressedWorkUnit);
             startUnit = nextUnit;
+            compressedWorkUnit = startUnit;
         }
 
     }
@@ -1232,8 +1246,11 @@ void ContinuumWorker::processChannels()
         rootImager.params()->addComplexVector("grid.slice",garrVec);
         ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
         casacore::Array<casacore::Complex> pcfarr = rootImager.getPCFGrid();
-        casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(IPosition(1,pcfarr.nelements())));
-        rootImager.params()->addComplexVector("pcf.slice",pcfVec);
+        if (pcfarr.nelements()) {
+            ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
+            casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(IPosition(1,pcfarr.nelements())));
+            rootImager.params()->addComplexVector("pcf.slice",pcfVec);
+        }
         ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
         casacore::Array<casacore::Complex> psfarr = rootImager.getPSFGrid();
         casacore::Vector<casacore::Complex> psfVec(psfarr.reform(IPosition(1,psfarr.nelements())));

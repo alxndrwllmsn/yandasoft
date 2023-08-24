@@ -347,7 +347,7 @@ void AWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAcc
             const double nuy = std::abs(double(qiy) - double(qny / 2)) / double(qny / 2);
             ccfy(qiy) = grdsf(nuy);
         }
-        if (itsInterp) {
+        if (doInterpolation()) {
           // The spheroidal is undefined and set to zero at nu=1, but that
           // is not the numerical limit. Estimate it from its neighbours.
           interpolateEdgeValues(ccfx);
@@ -656,7 +656,7 @@ void AWProjectVisGridder::finaliseWeights(casacore::Array<imtype>& out)
              ccfy(iy) = val > itsSpheroidalWeightsCutoff ? val : 0.;
         }
         // this isn't really needed unless itsSpheroidalWeightsCutoff==0. But shouldn't hurt
-        if (itsInterp) {
+        if (doInterpolation()) {
           // The spheroidal is undefined and set to zero at nu=1, but that
           // is not the numerical limit. Estimate it from its neighbours.
           interpolateEdgeValues(ccfx);

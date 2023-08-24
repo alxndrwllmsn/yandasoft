@@ -125,6 +125,42 @@ bool UVWeightCollection::exists(casacore::uInt index) const
    return ci != itsData.end();
 }
 
+/// @brief merge content from another collection
+/// @details This method is equivalent to a set of get and add calls done for all indices present in the input collection.
+/// Weights corresponding to new indices (i.e. not present in this class at the time of running this method) are added by
+/// reference. In the typical use case of this method this would be equivalent to the ownership transfer of the particular 
+/// weight cube.
+/// @param[in] src input collection to merge from
+void UVWeightCollection::merge(const UVWeightCollection &src)
+{
+   for (std::map<casacore::uInt, casacore::Cube<float> >::const_iterator ci = src.itsData.begin(); ci != src.itsData.end(); ++ci) {
+        std::map<casacore::uInt, casacore::Cube<float> >::iterator match = itsData.find(ci->first);
+        if (match != itsData.end()) {
+            // check matching shape, although we could've left this to the array but the error message will be less readable
+            ASKAPCHECK(match->second.shape() == ci->second.shape(), "UVWeight shape mismatch in an attempt to merge two collections, input shape = "
+                       <<ci->second.shape()<<" existing element with index = "<<ci->first<<" has shape "<<match->second.shape());
+            match->second += ci->second;
+        } else {
+            itsData.emplace(*ci);
+        }
+   }
+}
+
+/// @brief obtain a set of indices in this collection
+/// @details As the indices are sparse we need a way to obtain a list of indices in the given collection. The C++ way of 
+/// doing it is to have begin/end iterators. However, to do this without exposing internal structure (i.e. the map class) 
+/// would require a specialised iterator type. For now just build and return a set of indices for simplicity although it
+/// would imply more overhead. In practice, the number of indices we use is expected to be small, so it is hard to justify
+/// extra complexity at this stage.
+std::set<casacore::uInt> UVWeightCollection::indices() const
+{
+   std::set<casacore::uInt> result;
+   for (std::map<casacore::uInt, casacore::Cube<float> >::const_iterator ci = itsData.begin(); ci != itsData.end(); ++ci) {
+        result.insert(ci->first);
+   }
+   return result;
+}
+
 } // namespace synthesis
 
 } // namespace askap

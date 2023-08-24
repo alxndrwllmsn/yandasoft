@@ -457,7 +457,7 @@ void CalibratorParallel::calcOne(const std::string& ms, bool discard)
       ASKAPLOG_INFO_STR(logger, "Creating measurement equation" );
       if (!itsIteratorAdapter) {
           ASKAPLOG_INFO_STR(logger, "Creating iterator over data" );
-          TableDataSource ds(ms, TableDataSource::DEFAULT, dataColumn());
+          TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
           ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
           IDataSelectorPtr sel=ds.createSelector();
           if (itsChannelsPerWorker > 0) {
