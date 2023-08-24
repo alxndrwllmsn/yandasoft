@@ -44,6 +44,11 @@
 #include <casacore/casa/Quanta/Quantum.h>
 #include <casacore/casa/Arrays/Vector.h>
 #include <askap/dataaccess/TableDataSource.h>
+#include <askap/dataaccess/SharedIter.h>
+#include <askap/measurementequation/ImageFFTEquation.h>
+
+// boost includes
+#include <boost/noncopyable.hpp>
 
 // Local includes
 
@@ -52,7 +57,8 @@ namespace askap {
 namespace cp {
 
 /// @brief Core Normal Equation Calculation functionality required by the imager.
-    class CalcCore : public synthesis::ImagerParallel
+    class CalcCore : public synthesis::ImagerParallel,
+                     public boost::noncopyable
 
     {
     public:
@@ -67,58 +73,91 @@ namespace cp {
                 accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
                  int localChannel=1, double frequency=0);
 
-        virtual ~CalcCore();
-
         /// @brief Calc the normal equations
         /// @detail Overrides the virtual function in the ImagerParallel base
-        void calcNE();
+        virtual void calcNE() override;
 
-        void solveNE();
+        /// @brief Solve the normal equations (runs in the solver)
+        /// @details Runs minor cycle
+        virtual void solveNE() override;
 
         void doCalc();
 
         void init();
 
-        void updateSolver();
+        void updateSolver() const;
 
-        void reset();
+        void reset() const;
 
-        void zero();
+        void zero() const;
 
-        void check();
+        void check() const;
 
-        void restoreImage();
+        void restoreImage() const;
 
-        void writeLocalModel(const std::string& postfix);
+        void writeLocalModel(const std::string& postfix) const;
 
-        askap::synthesis::IVisGridder::ShPtr gridder() { return itsGridder_p;};
+        /// @brief obtain the current gridder template
+        /// @return shared pointer to the gridder which can be cloned
+        askap::synthesis::IVisGridder::ShPtr gridder() const { return itsGridder;};
 
         /// @brief return the residual grid
-        casacore::Array<casacore::Complex> getGrid();
+        casacore::Array<casacore::Complex> getGrid() const;
         /// @brief return the PCF grid
-        casacore::Array<casacore::Complex> getPCFGrid();
+        casacore::Array<casacore::Complex> getPCFGrid() const;
         /// @brief return the PSF grid
-        casacore::Array<casacore::Complex> getPSFGrid();
+        casacore::Array<casacore::Complex> getPSFGrid() const;
 
+    protected:
+        /// @brief make data iterator
+        /// @details This helper method makes an iterator based on the configuration in the current parset and
+        /// data fields of this class such as itsChannel and itsFrequency
+        /// @return shared pointer to the iterator over original data
+        accessors::IDataSharedIter makeDataIterator() const;
+
+        /// @brief make calibration iterator if necessary, otherwise same as makeDataIterator
+        /// @details This method is equivalent to makeDataIterator but it wraps the iterator into a calibration iterator adapter
+        /// if calibration is to be performed (i.e. if solution source is defined). 
+        /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
+        accessors::IDataSharedIter makeCalibratedDataIteratorIfNeeded() const;
+       
+
+        /// @brief create measurement equation 
+        /// @details This method creates measurement equation as appropriate (with calibration application or without) using
+        /// internal state of this class and the parset
+        void createMeasurementEquation();
+
+        /// @brief first image name in the model
+        /// @details This is a helper method to obtain the name of the first encountered image parameter in the model. 
+        /// @note It is written as part of the refactoring of various getGrid methods. However, in principle we could have multiple
+        /// image parameters simultaneously. The original approach getting the first one won't work in this case.
+        /// @return name of the first encountered image parameter in the model
+        std::string getFirstImageName() const;
+
+        /// @brief obtain measurement equation cast to ImageFFTEquation
+        /// @details This helper method encapsulates operations common to a number of methods of this class to obtain the 
+        /// current measurement equation with the type as created in createMeasurementEquation (i.e. ImageFFTEquation) and 
+        /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
+        /// @return shared pointer of the appropriate type to the current measurement equation
+        boost::shared_ptr<synthesis::ImageFFTEquation> getMeasurementEquation() const;
 
     private:
 
         // Communications class
         askap::askapparallel::AskapParallel& itsComms;
 
-        // Solver
+        /// @brief shared pointer to the solver
         askap::scimath::Solver::ShPtr itsSolver;
 
-        // Restore Solver
+        /// @brief run restore solver?
         bool itsRestore;
 
-        // Data: vector of the stored datasources
-        accessors::TableDataSource itsData;
+        /// @brief data source to work with (essentially a measurement set)
+        accessors::TableDataSource itsDataSource;
 
-
-        // Pointer to the gridder prototype
-        // WARNING this is cloned by the Equation - so you get little from specifying it
-        askap::synthesis::IVisGridder::ShPtr itsGridder_p;
+        /// @brief shared pointer to the gridder prototype
+        /// @details WARNING this is cloned by the Equation - so you get little from specifying it
+        askap::synthesis::IVisGridder::ShPtr itsGridder;
 
         // Its channel in the dataset
         int itsChannel;
@@ -126,11 +165,6 @@ namespace cp {
         // Its frequency in the output cube
         double itsFrequency;
 
-        // No support for assignment
-        CalcCore& operator=(const CalcCore& rhs);
-
-        // No support for copy constructor
-        CalcCore(const CalcCore& src);
 };
 };
 };

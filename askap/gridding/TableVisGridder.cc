@@ -592,18 +592,6 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
            }
        }
 
-       if (!forward && !isPSFGridder() && !isPCFGridder() && itsUVWeightAccessor) {
-           uvWeight = itsUVWeightAccessor->getWeight(acc.feed1()(i), currentFieldIndex(), itsSourceIndex);
-           ASKAPDEBUGASSERT(uvWeight.uSize() == shape()(0));
-           ASKAPDEBUGASSERT(uvWeight.vSize() == shape()(1));
-       }
-
-       if (!forward && !isPSFGridder() && !isPCFGridder() && itsUVWeightBuilder) {
-           uvWeightRW = itsUVWeightBuilder->addWeight(acc.feed1()(i), currentFieldIndex(), itsSourceIndex);
-           ASKAPDEBUGASSERT(uvWeightRW.uSize() == shape()(0));
-           ASKAPDEBUGASSERT(uvWeightRW.vSize() == shape()(1));
-       }
-
        if (itsFirstGriddedVis && isPSFGridder()) {
            // data members related to representative feed and field are used for
            // reverse problem only (from visibilities to image).
@@ -625,6 +613,20 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
            double pa1=acc.feed1PA()(i) + itsPARotAngle;
            double pa2=acc.feed2PA()(i) + itsPARotAngle;
            itsPolConv.setParAngle(pa1,pa2);
+       }
+
+       // we need to allow uv-weight application for both PSF and PCF gridders, perhaps such
+       // gridders can be used to build weight as well?
+       if (!forward && itsUVWeightAccessor) {
+           uvWeight = itsUVWeightAccessor->getWeight(acc.feed1()(i), currentFieldIndex(), itsSourceIndex);
+           ASKAPDEBUGASSERT(uvWeight.uSize() == shape()(0));
+           ASKAPDEBUGASSERT(uvWeight.vSize() == shape()(1));
+       }
+
+       if (!forward && !isPSFGridder() && !isPCFGridder() && itsUVWeightBuilder) {
+           uvWeightRW = itsUVWeightBuilder->addWeight(acc.feed1()(i), currentFieldIndex(), itsSourceIndex);
+           ASKAPDEBUGASSERT(uvWeightRW.uSize() == shape()(0));
+           ASKAPDEBUGASSERT(uvWeightRW.vSize() == shape()(1));
        }
 
        for (uint chan=0; chan<nChan; ++chan) {
@@ -759,7 +761,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                    ASKAPCHECK(convFunc.nrow() % 2 == 1,
                            "Expect convolution function with an odd number of pixels for each axis, CF["<<
                            cInd<<"] has shape="<<convFunc.shape());
-;
+
                    // we now use support size for this given plane in the CF cache; itsSupport is a maximum
                    // support across all CFs (this allows plane-dependent support size)
                    const int support = (int(convFunc.nrow()) - 1) / 2;
@@ -1274,9 +1276,10 @@ void TableVisGridder::initialiseCellSize(const scimath::Axes& axes)
 /// cases, so no harm). Having a separate method is neater. 
 void TableVisGridder::initialiseWeightBuilder()
 {
+  // why to exclude PSF and PCF gridder here? It can be controlled on the user side
   if (itsUVWeightBuilder && !isPSFGridder() && !isPCFGridder()) {
       ASKAPCHECK(itsShape.nelements()>=2, "Shape has not been initialised before initialiseWeightBuilder is called");
-      itsUVWeightBuilder->initialise(itsShape[0], itsShape[1], itsShape.nelements() >= 3 ? itsShape[2] : 1u);
+      itsUVWeightBuilder->initialise(itsShape[0], itsShape[1], itsShape.nelements() > 3 ? itsShape[3] : 1u);
   } 
 }
 

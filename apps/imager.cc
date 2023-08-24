@@ -58,7 +58,7 @@ ASKAP_LOGGER(logger, ".imager");
 class ImagerApp : public askap::Application
 {
     public:
-        virtual int run(int argc, char* argv[])
+        virtual int run(int argc, char* argv[]) override
         {
             // Instantiate the comms class
 

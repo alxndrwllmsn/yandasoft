@@ -81,7 +81,8 @@ public:
    /// This is the core operation of the doSubtraction method, which manages the parallel aspect of it.
    /// All actual calculations are done inside this helper method.
    /// @param[in] ms measurement set name
-   void calcOne(const std::string &ms);
+   /// @param[in] distributeByTile set to true to do distribution by tiles if possible
+   void calcOne(const std::string &ms, bool distributeByTile = false);
 
    // stubs for pure virtual methods which we don't use
    /// @brief calculate normal equations
@@ -114,7 +115,6 @@ public:
    /// can either be read in the master and distributed across the workers or read
    /// by workers directly. This data member is true, if the model is read by the master
    bool itsModelReadByMaster;
-
    /// @brief do 'uvlin' like fit and subtract of residual continuum emission
    bool itsDoUVlin;
    /// @brief order of 'uvlin' like fit and subtract of residual continuum emission

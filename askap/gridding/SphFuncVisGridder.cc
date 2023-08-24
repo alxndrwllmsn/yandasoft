@@ -43,14 +43,13 @@ namespace askap
     SphFuncVisGridder::SphFuncVisGridder(const float alpha,
                                          const int support,
                                          const int oversample) :
-        itsSphFunc(casacore::C::pi*support, alpha), itsAlpha(static_cast<double>(alpha))
+        itsSphFunc(casacore::C::pi*support, alpha), itsInterp(true), itsAlpha(static_cast<double>(alpha))
     {
        ASKAPASSERT(support>=3);
        ASKAPASSERT(oversample>=1);
        ASKAPASSERT(alpha>=0. && alpha<=2.);
        itsOverSample = oversample;
        itsSupport = support;
-       itsInterp = true;
     }
 
     SphFuncVisGridder::~SphFuncVisGridder()
@@ -273,7 +272,7 @@ namespace askap
       ASKAPDEBUGASSERT(itsShape(0)>1);
       ASKAPDEBUGASSERT(itsShape(1)>1);
       ASKAPDEBUGASSERT(itsShape==grid.shape());
-      correctConvolution(grid, itsSphFunc, itsSupport, itsInterp);
+      correctConvolution(grid, itsSphFunc, itsSupport, doInterpolation());
     }
 
     /*
