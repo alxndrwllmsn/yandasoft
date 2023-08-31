@@ -67,6 +67,8 @@ void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
     generic(chunk,true);
 }
 
+// Note that the CalibrationME class can also be used to do predict, but not (yet) DDCal type predict
+// This predict method was created to allow the DDCal path to be implemented more easily
 void CalibrationApplicatorME::predict(accessors::IDataAccessor &chunk) const
 {
     generic(chunk,false);
@@ -236,6 +238,7 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
       boost::shared_ptr<accessors::IDataAccessor> chunkPtr(&chunk, utility::NullDeleter());
       ASKAPDEBUGASSERT(chunkPtr);
       noiseAndFlagDA = boost::dynamic_pointer_cast<accessors::IFlagAndNoiseDataAccessor>(chunkPtr);
+      ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
       rwFlag.reference(noiseAndFlagDA->rwFlag());
   }
   // MV: we can do something more clever, but accessing original read-only flags is not too bad
@@ -360,7 +363,7 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
                     for (casa::uInt pol = 0; pol < nPol; ++pol) {
                         rwFlag(row,chan,pol)=true;
-                        rwVis(row,chan,pol)=0.;
+                        rwVis(visRow,chan,pol)=0.;
                     }
                     continue;
                 }

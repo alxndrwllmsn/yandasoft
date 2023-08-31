@@ -434,29 +434,30 @@ void ContSubtractParallel::modelSpectrum(casacore::Vector<casacore::Float> & mod
 
 void ContSubtractParallel::subtractContFit(casacore::Cube<casacore::Complex>& vis,
         const casacore::Cube<casacore::Bool>& flag, const casacore::Matrix<casacore::Complex>& phasor) {
-    const int nPol = vis.shape()(0);
+    const int nPol = vis.shape()(2);
     const int nChan = vis.shape()(1);
-    const int nRow = vis.shape()(2);
+    const int nRow = vis.shape()(0);
     casacore::Vector<casacore::Float> visreal(nChan), visimag(nChan), modelreal(nChan), modelimag(nChan);
     casacore::Vector<casacore::Bool> mask(nChan);
     const bool rotate = phasor.nelements() > 0;
+    ASKAPDEBUGASSERT(!rotate || (phasor.nrow()==nRow && phasor.ncolumn()==nChan));
     for (int row=0; row<nRow; row++) {
         for (int pol=0; pol<nPol; pol++) {
             for (int chan=0; chan<nChan; chan++) {
-                casacore::Complex v = vis(pol,chan,row);
+                casacore::Complex v = vis(row,chan,pol);
                 if (rotate) {
                     v *= phasor(row,chan);
                 }
                 visreal(chan) = casacore::real(v);
                 visimag(chan) = casacore::imag(v);
-                mask(chan) = !flag(pol,chan,row);
+                mask(chan) = !flag(row,chan,pol);
             }
             modelSpectrum(modelreal,visreal,mask);
             modelSpectrum(modelimag,visimag,mask);
             for (int chan=0; chan<nChan; chan++) {
-                vis(pol,chan,row) -= casacore::Complex(modelreal(chan),modelimag(chan));
+                vis(row,chan,pol) -= casacore::Complex(modelreal(chan),modelimag(chan));
                 if (rotate) {
-                    vis(pol,chan,row) *= conj(phasor(row,chan));
+                    vis(row,chan,pol) *= conj(phasor(row,chan));
                 }
             }
         }
@@ -474,6 +475,10 @@ void ContSubtractParallel::computePhasor(const accessors::IDataSharedIter& it,
         // where to get position? only avalable inside table iterator classes
         const boost::shared_ptr<accessors::TableConstDataIterator> tableIt =
             it.dynamicCast<accessors::TableConstDataIterator>();
+        if (!it) {
+            ASKAPTHROW(AskapError, "Bad cast in ContSubtractParallel::computePhasor, most likely this means "
+                   "there is a logical error");
+        }
         const casacore::MPosition mroPos = tableIt->subtableInfo().getAntenna().getPosition(0);
         const casacore::MeasFrame frame(epoch, mroPos);
         const casacore::MDirection j2000dir = casacore::MDirection::Convert(newDir,
@@ -620,10 +625,15 @@ void ContSubtractParallel::doSubtraction()
 void ContSubtractParallel::loadSubtables(const accessors::IDataSharedIter& it)
 {
     auto ti = it.dynamicCast<TableConstDataIterator>();
-    ti->subtableInfo().getAntenna();
-    ti->subtableInfo().getDataDescription();
-    ti->subtableInfo().getFeed();
-    ti->subtableInfo().getField();
-    ti->subtableInfo().getSpWindow();
-    ti->subtableInfo().getPolarisation();
+    if (ti) {
+        ti->subtableInfo().getAntenna();
+        ti->subtableInfo().getDataDescription();
+        ti->subtableInfo().getFeed();
+        ti->subtableInfo().getField();
+        ti->subtableInfo().getSpWindow();
+        ti->subtableInfo().getPolarisation();
+    } else {
+        ASKAPTHROW(AskapError, "Bad cast in ContSubtractParallel::loadSubtables, most likely this means "
+               "there is a logical error");
+    }
 }
