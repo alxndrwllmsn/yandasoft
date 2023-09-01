@@ -146,7 +146,8 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
             casacore::Vector<casacore::Bool> unflaggedMask(nChan,casacore::False);
             bool allFlagged = true;
             for (uInt chan = 0; chan < nChan; chan++) {
-                if (!flags(k,chan,corr)) {
+                //if (!flags(k,chan,corr)) {
+                if (!flags(corr,chan,k)) {
                     unflaggedMask(chan) = casacore::True;
                     allFlagged = false;
                 }
@@ -168,7 +169,8 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                 // get the spectrum
                 casacore::Vector<casacore::Float> spectrumAmplitudes(nChan);
                 for (uInt chan = 0; chan < nChan; chan++) {
-                    spectrumAmplitudes(chan) = abs(data(k,chan,corr));
+                    //spectrumAmplitudes(chan) = abs(data(k,chan,corr));
+                    spectrumAmplitudes(chan) = abs(data(corr,chan,k));
                 }
                 if ( itsAutoThresholds ) {
 
@@ -208,7 +210,8 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
 
                 // look for individual peaks and do any integrations
                 for (size_t chan = 0; chan < nChan; ++chan) {
-                    if (flags(k, chan, corr)) {
+                    //if (flags(k, chan, corr)) {
+                    if (flags(corr, chan, k)) {
                         itsStats.visAlreadyFlagged++;
                         continue;
                     }
@@ -217,7 +220,8 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                     const float amp = spectrumAmplitudes(chan);
                     if ((hasLowLimit && (amp < itsLowLimit)) ||
                         (hasHighLimit && (amp > itsHighLimit))) {
-                        flags(k, chan, corr) = true;
+                        //flags(k, chan, corr) = true;
+                        flags(corr, chan, k) = true;
                         wasUpdatedRow = true;
                         itsStats.visFlagged++;
                     }
@@ -258,8 +262,10 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                     // but not sure that all applications support flagRow
                     if ( !itsMaskTimes[key][itsCountTimes[key]] ) {
                         for (size_t chan = 0; chan < nChan; ++chan) {
-                            if (flags(k, chan, corr)) continue;
-                                flags(k, chan, corr) = true;
+                            //if (flags(k, chan, corr)) continue;
+                            if (flags(corr, chan, k)) continue;
+                                //flags(k, chan, corr) = true;
+                                flags(corr, chan, k) = true;
                                 wasUpdatedRow = true;
                                 itsStats.visFlagged++;
                         }
@@ -272,8 +278,10 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                 // apply itsIntegrateSpectra flags
                 if ( itsIntegrateSpectra ) {
                     for (size_t chan = 0; chan < nChan; ++chan) {
-                        if ( !flags(k, chan, corr) && !itsMaskSpectra[key][chan] ) {
-                            flags(k, chan, corr) = true;
+                        //if ( !flags(k, chan, corr) && !itsMaskSpectra[key][chan] ) {
+                        if ( !flags(corr, chan, k) && !itsMaskSpectra[key][chan] ) {
+                            //flags(k, chan, corr) = true;
+                            flags(corr, chan, k) = true;
                             wasUpdatedRow = true;
                             itsStats.visFlagged++;
                         }

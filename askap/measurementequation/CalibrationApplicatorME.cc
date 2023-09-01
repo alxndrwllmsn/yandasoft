@@ -111,13 +111,16 @@ void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
   const casacore::Cube<casacore::Bool> &flag = noiseAndFlagDA ? noiseAndFlagDA->rwFlag() : chunk.flag();
 
   for (casacore::uInt row = 0; row < chunk.nRow(); ++row) {
-       casacore::Matrix<casacore::Complex> thisRow = rwVis.yzPlane(row);
-       casacore::Matrix<casacore::Bool> thisRowFlag = flag.yzPlane(row);
+       //casacore::Matrix<casacore::Complex> thisRow = rwVis.yzPlane(row);
+       casacore::Matrix<casacore::Complex> thisRow = rwVis.xyPlane(row);
+       //casacore::Matrix<casacore::Bool> thisRowFlag = flag.yzPlane(row);
+       casacore::Matrix<casacore::Bool> thisRowFlag = flag.xyPlane(row);
        for (casacore::uInt chan = 0; chan < chunk.nChannel(); ++chan) {
             bool allFlagged = true;
             // we don't really support partial polarisation flagging, but to avoid nasty surprises it is better to flag such samples completely.
             bool needFlag = false;
-            ASKAPDEBUGASSERT(thisRowFlag.ncolumn() == nPol);
+            //ASKAPDEBUGASSERT(thisRowFlag.ncolumn() == nPol);
+            ASKAPDEBUGASSERT(thisRowFlag.nrow() == nPol);
             for (casacore::uInt pol = 0; pol < nPol; ++pol) {
                  if (thisRowFlag(chan,pol)) {
                      needFlag = true;
@@ -159,13 +162,15 @@ void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
             }
 
             // mv: this is actually known to be slow (casacore slice from slice), need to change this to access given channel as matrix
-            casacore::Vector<casacore::Complex> thisChan = thisRow.row(chan);
+            //casacore::Vector<casacore::Complex> thisChan = thisRow.row(chan);
+            casacore::Vector<casacore::Complex> thisChan = thisRow.column(chan);
 
             const float detThreshold = 1e-25;
             if (itsFlagAllowed) {
                 if (casacore::abs(det)<detThreshold || !validSolution || needFlag) {
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
-                    noiseAndFlagDA->rwFlag().yzPlane(row).row(chan).set(true);
+                    //noiseAndFlagDA->rwFlag().yzPlane(row).row(chan).set(true);
+                    noiseAndFlagDA->rwFlag().xyPlane(row).column(chan).set(true);
                     thisChan.set(0.);
                     continue;
                 }
@@ -188,7 +193,8 @@ void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
             }
             if (itsScaleNoise) {
                 ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of the noise estimate");
-                casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+                //casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+                casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().xyPlane(row).column(chan);
                 const casacore::Vector<casacore::Complex> origNoise = thisChanNoise.copy();
                 ASKAPDEBUGASSERT(thisChanNoise.nelements() == nPol);
                 // propagating noise estimate through the matrix multiplication
@@ -257,7 +263,8 @@ void CalibrationApplicatorME::correct4(accessors::IDataAccessor &chunk) const
         bool needFlag = false;
         //ASKAPDEBUGASSERT(thisRowFlag.ncolumn() == nPol);
         for (casa::uInt pol = 0; pol < nPol; ++pol) {
-             if (flag(row,chan,pol)) {
+             //if (flag(row,chan,pol)) {
+             if (flag(pol,chan,row)) {
                  needFlag = true;
              } else {
                  allFlagged = false;
@@ -338,7 +345,8 @@ void CalibrationApplicatorME::correct4(accessors::IDataAccessor &chunk) const
         }
         if (validSolution) {
             for (casa::uInt pol = 0; pol < nPol; ++pol) {
-                vis(pol) = rwVis(row,chan,pol);
+                //vis(pol) = rwVis(row,chan,pol);
+                vis(pol) = rwVis(pol,chan,row);
             }
         }
 
@@ -346,8 +354,10 @@ void CalibrationApplicatorME::correct4(accessors::IDataAccessor &chunk) const
             if (det <= detThreshold || !validSolution || needFlag) {
                 ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
                 for (casa::uInt pol = 0; pol < nPol; ++pol) {
-                    rwFlag(row,chan,pol)=true;
-                    rwVis(row,chan,pol)=0.;
+                    //rwFlag(row,chan,pol)=true;
+                    rwFlag(pol,chan,row)=true;
+                    //rwVis(row,chan,pol)=0.;
+                    rwVis(pol,chan,row)=0.;
                 }
                 continue;
             }
@@ -364,7 +374,8 @@ void CalibrationApplicatorME::correct4(accessors::IDataAccessor &chunk) const
 
         // write back to chunk
         for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-            rwVis(row,chan,pol) = vis(pol);
+            //rwVis(row,chan,pol) = vis(pol);
+            rwVis(pol,chan,row) = vis(pol);
         }
 
         if (itsScaleNoise) {

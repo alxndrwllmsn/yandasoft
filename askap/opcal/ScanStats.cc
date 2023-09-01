@@ -184,11 +184,15 @@ void ScanStats::inspect(const std::string &name, const accessors::IConstDataShar
 casacore::Matrix<casacore::Bool> ScanStats::allChannelsFlagged(const casacore::Cube<casacore::Bool> &flags)
 {
    ASKAPDEBUGASSERT(flags.nelements() > 0);
-   casacore::Matrix<casacore::Bool> result(flags.nrow(), flags.nplane(), true);
-   for (casacore::uInt row = 0; row < flags.nrow(); ++row) {
-        for (casacore::uInt pol = 0; pol < flags.nplane(); ++pol) {
+   //casacore::Matrix<casacore::Bool> result(flags.nrow(), flags.nplane(), true);
+   casacore::Matrix<casacore::Bool> result(flags.nplane(), flags.nrow(), true);
+   //for (casacore::uInt row = 0; row < flags.nrow(); ++row) {
+   for (casacore::uInt row = 0; row < flags.nplane(); ++row) {
+        //for (casacore::uInt pol = 0; pol < flags.nplane(); ++pol) {
+        for (casacore::uInt pol = 0; pol < flags.nrow(); ++pol) {
              for (casacore::uInt chan = 0; chan < flags.ncolumn(); ++chan) {
-                  if (!flags(row,chan,pol)) {
+                  //if (!flags(row,chan,pol)) {
+                  if (!flags(pol,chan,row)) {
                       result(row,pol) = false;
                       break;
                   }

@@ -142,10 +142,12 @@ void ElevationFlagger::processRows(const IDataSharedIter& di,
 void ElevationFlagger::flagRow(casacore::Cube<casacore::Bool>& flag, const casacore::uInt row, const bool dryRun)
 {
 
-    itsStats.visFlagged += flag.shape()(1) * flag.shape()(2);
+    //itsStats.visFlagged += flag.shape()(1) * flag.shape()(2);
+    itsStats.visFlagged += flag.shape()(1) * flag.shape()(0);
     itsStats.rowsFlagged++;
 
     if (!dryRun) {
-        flag(casacore::Slice(row),casacore::Slice(),casacore::Slice()) = true;
+        //flag(casacore::Slice(row),casacore::Slice(),casacore::Slice()) = true;
+        flag(casacore::Slice(),casacore::Slice(),casacore::Slice(row)) = true;
     }
 }

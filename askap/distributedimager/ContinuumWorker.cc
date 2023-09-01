@@ -57,6 +57,7 @@
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
+/*
 #include <askap/dataaccess/IConstDataSource.h>
 #include <askap/dataaccess/TableConstDataSource.h>
 #include <askap/dataaccess/IConstDataIterator.h>
@@ -64,6 +65,7 @@
 #include <askap/dataaccess/IDataSelector.h>
 #include <askap/dataaccess/IDataIterator.h>
 #include <askap/dataaccess/SharedIter.h>
+*/
 #include <askap/scimath/utils/PolConverter.h>
 #include <Common/ParameterSet.h>
 #include <Common/Exceptions.h>

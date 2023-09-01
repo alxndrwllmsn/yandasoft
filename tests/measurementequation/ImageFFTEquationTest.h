@@ -152,11 +152,14 @@ namespace askap
 
          accessors::DataAccessorStub &da = dynamic_cast<accessors::DataAccessorStub&>(*idi);
          da.itsStokes.assign(stokes.copy());
-         da.itsVisibility.resize(da.nRow(), 2 ,4);
+         //da.itsVisibility.resize(da.nRow(), 2 ,4);
+         da.itsVisibility.resize(4,2,da.nRow());
          da.itsVisibility.set(casacore::Complex(-10.,15.));
-         da.itsNoise.resize(da.nRow(),da.nChannel(),da.nPol());
+         //da.itsNoise.resize(da.nRow(),da.nChannel(),da.nPol());
+         da.itsNoise.resize(da.nPol(),da.nChannel(),da.nRow());
          da.itsNoise.set(1.);
-         da.itsFlag.resize(da.nRow(),da.nChannel(),da.nPol());
+         //da.itsFlag.resize(da.nRow(),da.nChannel(),da.nPol());
+         da.itsFlag.resize(da.nPol(),da.nChannel(),da.nRow());
          da.itsFlag.set(casacore::False);
 
 
@@ -166,10 +169,15 @@ namespace askap
 
          for (casacore::uInt row=0; row<da.nRow(); ++row) {
               for (casacore::uInt ch=0; ch<da.nChannel(); ++ch) {
-                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(1.,0.) - casacore::DComplex(da.visibility()(row,ch,0)))<1e-5);
-                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(0.01,0.) - casacore::DComplex(da.visibility()(row,ch,1)))<1e-5);
-                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(-0.01,0.) - casacore::DComplex(da.visibility()(row,ch,2)))<1e-5);
-                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(0.9,0.) - casacore::DComplex(da.visibility()(row,ch,3)))<1e-5);
+                   //CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(1.,0.) - casacore::DComplex(da.visibility()(row,ch,0)))<1e-5);
+                   //CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(0.01,0.) - casacore::DComplex(da.visibility()(row,ch,1)))<1e-5);
+                   //CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(-0.01,0.) - casacore::DComplex(da.visibility()(row,ch,2)))<1e-5);
+                   //CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(0.9,0.) - casacore::DComplex(da.visibility()(row,ch,3)))<1e-5);
+
+                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(1.,0.) - casacore::DComplex(da.visibility()(0,ch,row)))<1e-5);
+                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(0.01,0.) - casacore::DComplex(da.visibility()(1,ch,row)))<1e-5);
+                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(-0.01,0.) - casacore::DComplex(da.visibility()(2,ch,row)))<1e-5);
+                   CPPUNIT_ASSERT(casacore::abs(casacore::DComplex(0.9,0.) - casacore::DComplex(da.visibility()(3,ch,row)))<1e-5);
               }
          }
       }

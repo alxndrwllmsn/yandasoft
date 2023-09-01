@@ -312,19 +312,23 @@ void SelectionFlagger::checkDetailed(const IDataSharedIter& di,
         }
 
         if (!dryRun) {
-            flag(row, Slice(startCh,stopCh,1,true), Slice()) = true;
+            //flag(row, Slice(startCh,stopCh,1,true), Slice()) = true;
+            flag(Slice(), Slice(startCh,stopCh,1,true), row) = true;
         }
-        itsStats.visFlagged += (stopCh-startCh+1)*flag.nplane();
+        //itsStats.visFlagged += (stopCh-startCh+1)*flag.nplane();
+        itsStats.visFlagged += (stopCh-startCh+1)*flag.nrow();
     }
 }
 
 void SelectionFlagger::flagRow(casacore::Cube<casacore::Bool>& flag, const casacore::uInt row, const bool dryRun)
 {
 
-    itsStats.visFlagged += flag.shape()(1) * flag.shape()(2);
+    //itsStats.visFlagged += flag.shape()(1) * flag.shape()(2);
+    itsStats.visFlagged += flag.shape()(1) * flag.shape()(0);
     itsStats.rowsFlagged++;
 
     if (!dryRun) {
-        flag(casacore::Slice(row),casacore::Slice(),casacore::Slice()) = true;
+        //flag(casacore::Slice(row),casacore::Slice(),casacore::Slice()) = true;
+        flag(casacore::Slice(),casacore::Slice(),casacore::Slice(row)) = true;
     }
 }
