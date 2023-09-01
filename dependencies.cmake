@@ -20,5 +20,5 @@ set ( BASE_ASKAPPARALLEL_TAG       tags/1.6.0       CACHE  STRING    "base-askap
 set ( BASE_SCIMATH_TAG             tags/1.11.0      CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.8.0       CACHE  STRING    "base-components version"          FORCE )
 #set ( BASE_ACCESSORS_TAG           tags/1.11.0      CACHE  STRING    "base-accessors version"           FORCE )
-set ( BASE_ACCESSORS_TAG           feature/AXA-2580-modify-dataaccess-code-for-axa-2558/1.11.0      CACHE  STRING    "base-accessors version"           FORCE )
+set ( BASE_ACCESSORS_TAG           feature/AXA-2580-modify-dataaccess-code-for-axa-2558      CACHE  STRING    "base-accessors version"           FORCE )
 
