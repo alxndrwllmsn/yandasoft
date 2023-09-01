@@ -235,9 +235,13 @@ namespace askap
 
       // DDCALTAG -- set increased buffer size
       if (itsNDir > 1) {
-         DDCalBufferDataAccessor accBuffer(*itsIdi);
-         ASKAPLOG_DEBUG_STR(logger, "calling accBuffer.setNDir("<<itsNDir<<")");
-         accBuffer.setNDir(itsNDir);
+         try {
+             DDCalBufferDataAccessor& accBuffer = dynamic_cast<DDCalBufferDataAccessor&>(*itsIdi);
+             ASKAPLOG_DEBUG_STR(logger, "calling accBuffer.setNDir("<<itsNDir<<")");
+             accBuffer.setNDir(itsNDir);
+         } catch (const std::bad_cast&) {
+             ASKAPTHROW(AskapError, "Wrong accessor type for DDCalibration in ImageFFTEquation::predict()");
+         }
       }
       int dirIndex = itsNDir > 1 ? -1 : 0;
 
@@ -281,15 +285,14 @@ namespace askap
                 dirIndex++;
             }
             ASKAPLOG_DEBUG_STR(logger, "degridding "<<imageName<<" into buffer "<<dirIndex);
-            try {
-                // Only possible in DDCalBufferDataAccessor, so cast first
-                const boost::shared_ptr<TableVisGridder const> &tGridder =
-                       boost::dynamic_pointer_cast<TableVisGridder const>(itsModelGridders[imageName]);
+            const boost::shared_ptr<TableVisGridder const> &tGridder =
+                   boost::dynamic_pointer_cast<TableVisGridder const>(itsModelGridders[imageName]);
+            if (!tGridder) {
+                ASKAPTHROW(AskapError,
+                    "Wrong gridder type for DDCalibration in ImageFFTEquation::predict()");
+            } else {
                 tGridder->setSourceIndex(dirIndex);
             }
-            catch (std::bad_cast&) {}
-            ASKAPCHECK(dirIndex <= itsNDir,
-                "The number of specified calibration directions is less than the number calibration image fields");
         }
 
       }
@@ -345,9 +348,9 @@ namespace askap
     /// (same uv-weight for all Taylor terms) and translation the image name
     /// into parameter name in the model (via the appropriate Params helper class).
     /// Also index translation is encapsulated.
-    /// @param[in] name image parameter name (the full one with "image" prefix - 
+    /// @param[in] name image parameter name (the full one with "image" prefix -
     /// we always deal with the full name makes the code more readable, although we
-    /// could've cut down some operations if we take the name without the leading 
+    /// could've cut down some operations if we take the name without the leading
     /// "image").
     /// @return shared pointer to the uv-weight accessor object accepted by gridders
     boost::shared_ptr<IUVWeightAccessor> ImageFFTEquation::makeUVWeightAccessor(const std::string &name) const
@@ -405,8 +408,8 @@ namespace askap
         if(itsModelGridders.count(imageName)==0) {
            itsModelGridders[imageName]=itsGridder->clone();
         }
-        // obtain uv-weights accessor if the appropriate details are present in the model 
-        // (otherwise an empty shared pointer is returned). The logic inside makeUVWeightAccessor 
+        // obtain uv-weights accessor if the appropriate details are present in the model
+        // (otherwise an empty shared pointer is returned). The logic inside makeUVWeightAccessor
         // ensures Taylor terms are handled appropriately
         const boost::shared_ptr<IUVWeightAccessor const> wtAcc = makeUVWeightAccessor(imageName);
         if (wtAcc) {
