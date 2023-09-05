@@ -380,7 +380,8 @@ void CalibrationApplicatorME::correct4(accessors::IDataAccessor &chunk) const
 
         if (itsScaleNoise) {
             ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of the noise estimate");
-            casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+            //casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+            casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().xyPlane(row).column(chan);
             ASKAPDEBUGASSERT(thisChanNoise.nelements() == nPol);
             // propagating noise estimate through the matrix multiplication
             casa::RigidVector<casa::Complex,4> noise = thisChanNoise;
