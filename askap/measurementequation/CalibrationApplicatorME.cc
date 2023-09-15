@@ -361,7 +361,7 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
             if (validSolution) {
                 for (casa::uInt pol = 0; pol < nPol; ++pol) {
                     //vis(pol) = rwVis(row,chan,pol);
-                    vis(pol) = rwVis(pol,chan,row);
+                    vis(pol) = rwVis(pol,chan,visRow);
                 }
             }
 
@@ -372,7 +372,7 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                         //rwFlag(row,chan,pol)=true;
                         rwFlag(pol,chan,row)=true;
                         //rwVis(row,chan,pol)=0.;
-                        rwVis(pol,chan,row)=0.;
+                        rwVis(pol,chan,visRow)=0.;
                     }
                     continue;
                 }
@@ -389,7 +389,7 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
             // write back to chunk
             for (casacore::uInt pol = 0; pol < nPol; ++pol) {
                 //rwVis(row,chan,pol) = vis(pol);
-                rwVis(pol,chan,row) = vis(pol);
+                rwVis(pol,chan,visRow) = vis(pol);
             }
 
             if (itsScaleNoise) {
