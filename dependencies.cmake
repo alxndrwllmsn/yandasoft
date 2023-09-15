@@ -22,3 +22,4 @@ set ( BASE_COMPONENTS_TAG          tags/1.8.0       CACHE  STRING    "base-compo
 #set ( BASE_ACCESSORS_TAG           tags/1.11.0      CACHE  STRING    "base-accessors version"           FORCE )
 set ( BASE_ACCESSORS_TAG           feature/AXA-2580-modify-dataaccess-code-for-axa-2558      CACHE  STRING    "base-accessors version"           FORCE )
 
+#set ( BASE_ACCESSORS_TAG           7b96bd875da90419aa2f70b229cc5bb61fcf5041 CACHE  STRING    "base-accessors version"           FORCE )

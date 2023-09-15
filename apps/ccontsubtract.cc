@@ -66,14 +66,13 @@ class CcontsubtractApp : public askap::Application
                     }
                 }
                 // We cannot issue log messages until MPI is initialized!
-                ContSubtractParallel csub(comms, subset);
 
                 ASKAPLOG_INFO_STR(logger, "ASKAP synthesis continuum subtraction application " << ASKAP_PACKAGE_VERSION);
 
                 if (comms.isMaster()) {
                     ASKAPLOG_INFO_STR(logger, "Parset file contents:\n" << config());
                 }
-
+                ContSubtractParallel csub(comms, subset);
                 csub.init();
                 csub.doSubtraction();
             } catch (const askap::AskapError& e) {

@@ -1822,7 +1822,7 @@ namespace askap
 
        // DDCALTAG COMPTAG -- link this component to its source ID
        //ASKAPLOG_INFO_STR(logger, "DDCALTAG linking component "<< compName<<
-       //    " to source "<<params->scalarValue("sourceID."+srcName));
+       //   " to source "<<params->scalarValue("sourceID."+srcName));
        params->add("source."+compName, params->scalarValue("sourceID."+srcName));
 
        // now iterate through all parameters
