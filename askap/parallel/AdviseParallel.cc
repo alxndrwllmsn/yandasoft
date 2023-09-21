@@ -242,9 +242,9 @@ void AdviseParallel::calcOne(const std::string &ms)
    conv->setFrequencyFrame(getFreqRefFrame(), "Hz");
    conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
    conv->setEpochFrame(); // time since 0 MJD
-   accessors::IDataSharedIter it=ds.createIterator(sel, conv);
-   ASKAPLOG_DEBUG_STR(logger, "Initialised iterator");
-   for (; it.hasMore(); it.next()) {
+
+   ASKAPLOG_DEBUG_STR(logger, "Initialise iterator");
+   for (accessors::IConstDataSharedIter it=ds.createConstIterator(sel, conv); it.hasMore(); it.next()) {
         // iteration over the dataset
         itsEstimator->process(*it);
 
