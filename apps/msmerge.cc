@@ -588,8 +588,10 @@ void merge(const std::vector<std::string>& inFiles, const std::string& outFile, 
     uInt nRow = 0;
     bool sameSize = true;
     casa::String telescope;
+
     for (it = inFiles.begin(); it != inFiles.end(); ++it) {
         const boost::shared_ptr<const casa::MeasurementSet> p(new casa::MeasurementSet(*it));
+        ASKAPCHECK(p->nrow(),"One of the input files has zero rows: "<<*it);
         in.push_back(p);
         inColumns.push_back(boost::shared_ptr<const ROMSColumns>(new ROMSColumns(*p)));
         nChanOut += inColumns.back()->data().shape(0)(1);
@@ -787,8 +789,11 @@ int main(int argc, const char** argv)
                 inNamesVec.push_back(*it);
         }
 
-        merge(inNamesVec, outName, tileNcorr, tileNchan, tileNrow, dryRun);
-
+        if (inNamesVec.size() > 0) {
+            merge(inNamesVec, outName, tileNcorr, tileNchan, tileNrow, dryRun);
+        } else {
+            ASKAPLOG_WARN_STR(logger,"No input files could be found");
+        }
         stats.logSummary();
         ///==============================================================================
     } catch (boost::exception &ex) {
