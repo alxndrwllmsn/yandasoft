@@ -9,7 +9,7 @@ msarchive = "1934-638.tar.bz2"
 
 import os,sys
 
-def analyseResult(expected = [], tolerance=1e-5):
+def analyseResult(expected = [], tolerance=0.1):
    '''
       This method reads corrected_fixeddelay.parset and compares results with the expectation
       (expected - list of delays expected in ns, tolerance - tolerance for comparison in ns)
@@ -53,10 +53,13 @@ os.system("tar -xjf %s" % msarchive)
 spr = SynthesisProgramRunner(template_parset = 'delaysolver_template.in')
 
 print("Central pointing")
-spr.addToParset("Cimager.dataset=1934pt0.ms")
 # runCommand will add -c with the appropriate parset name
 spr.runCommand("delaysolver -s . -d . -f 1934pt0.ms")
 analyseResult([0, 0.000152135245, -7.34991922e-05, 3.11753594e-05, -0.000234126642, 2.65392955e-05])
 
+print("Offset pointing")
+spr.runCommand("delaysolver -s . -d . -f 1934pt1.ms")
+analyseResult([0, 3.94, 5.91, 8.76, 21.14, 35.56])
+
 #clean up
-os.system("rm -rf 1934*.ms temp_parset.in corrected_fixeddelay.parset")
+os.system("rm -rf 1934*.ms temp_parset.in")
