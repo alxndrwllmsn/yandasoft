@@ -30,6 +30,7 @@
 #include <askap/gridding/ConjugatesAdderFFT.h>
 #include <askap/gridding/RobustUVWeightCalculator.h>
 #include <askap/gridding/CompositeUVWeightCalculator.h>
+#include <askap/gridding/ReciprocalUVWeightCalculator.h>
 #include <cppunit/extensions/HelperMacros.h>
 
 // for saveAsCasaImage (it was needed for debugging)
@@ -45,6 +46,7 @@ class UVWeightCalculatorTest : public CppUnit::TestFixture
    CPPUNIT_TEST(testConjugatesAdderFFT);
    CPPUNIT_TEST(testRobustWeights);
    CPPUNIT_TEST(testCompositeUVWeightCalculator);
+   CPPUNIT_TEST(testReciprocalUVWeightCalculator);
    CPPUNIT_TEST_SUITE_END();
 public:
 
@@ -116,6 +118,37 @@ public:
         CPPUNIT_ASSERT_DOUBLES_EQUAL(25.f / avgWt * pow(10., -2.*robustness), peak, 1e-4 * peak);
         
         //scimath::saveAsCasaImage("tst.img", buf);
+   }
+
+   void testReciprocalUVWeightCalculator() {
+        casacore::Matrix<float> buf(128, 64, 1.f);
+        for (casacore::uInt row = 0; row < buf.nrow(); ++row) {
+             const float x = (static_cast<float>(row) - buf.nrow() / 2);
+             for (casacore::uInt col = 0; col < buf.ncolumn(); ++col) {
+                  const float y = (static_cast<float>(col) - buf.ncolumn() / 2);
+                  buf(row, col) += x*x + y*y;
+             }
+        }
+
+        ReciprocalUVWeightCalculator calc(3.f);
+        calc.process(buf);
+
+        // checking the result
+        casacore::uInt zeroCount = 0u;
+        for (casacore::uInt row = 0; row < buf.nrow(); ++row) {
+             const float x = (static_cast<float>(row) - buf.nrow() / 2);
+             for (casacore::uInt col = 0; col < buf.ncolumn(); ++col) {
+                  const float y = (static_cast<float>(col) - buf.ncolumn() / 2);
+                  const float val = buf(row, col);
+                  if (val > 0.f) {
+                      const float expected = (1.f + x*x + y*y);
+                      CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, 1.f / val, 2e-6 * expected);
+                  } else {
+                      ++zeroCount;
+                  }
+             }
+        }
+        CPPUNIT_ASSERT_EQUAL(9u, zeroCount);
    }
 
    void testCompositeUVWeightCalculator() {

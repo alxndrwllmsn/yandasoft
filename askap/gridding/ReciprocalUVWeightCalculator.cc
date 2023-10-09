@@ -46,7 +46,7 @@ void ReciprocalUVWeightCalculator::process(casacore::Matrix<float> &wt) const
     for (casacore::uInt iv=0; iv < wt.ncolumn(); ++iv) {
         for (casacore::uInt iu=0; iu < wt.nrow(); ++iu) {
              const float val = wt(iu,iv);
-	     wt(iu, iv) = val > itsThreshold ? 1.f / val : 0.f;
+             wt(iu, iv) = val > itsThreshold ? 1.f / val : 0.f;
         }
     }
 }
