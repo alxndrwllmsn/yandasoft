@@ -88,6 +88,16 @@ public:
         calc.process(buf);
 
         // need to check the result
+        // first undo the inversion (we put it there because the weights are applied via multiplication)
+        // by nature of the Wiener filter all values should be non-zero. But we check just in case.
+        for (casacore::uInt row = 0; row < buf.nrow(); ++row) {
+             for (casacore::uInt col = 0; col < buf.ncolumn(); ++col) {
+                  const float val = buf(row, col);
+                  CPPUNIT_ASSERT(val > 0.f);
+                  buf(row,col) = 1.f / val;
+             }
+        }
+        // now unroll the formula for the filter
         buf -= 1.f;
         // normalise to simplify the comparison
         const float peak = casacore::max(buf);       

@@ -1010,7 +1010,7 @@ namespace askap
                     } else {
                        // taper class comes here when we have it
                        ASKAPTHROW(AskapError, "Unknown type of the uv-weight calculator: "<<name);
-		    }
+                    }
                 }
             }
        }
