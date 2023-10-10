@@ -72,6 +72,7 @@ ASKAP_LOGGER(logger, ".parallel");
 // when/if we factor this out into a separate class
 #include <askap/gridding/CompositeUVWeightCalculator.h>
 #include <askap/gridding/RobustUVWeightCalculator.h>
+#include <askap/gridding/ReciprocalUVWeightCalculator.h>
 #include <askap/gridding/ConjugatesAdderFFT.h>
 
 #include <askap/gridding/GenericUVWeightBuilder.h>
@@ -1001,8 +1002,15 @@ namespace askap
                     const boost::shared_ptr<ConjugatesAdderFFT> calc(new ConjugatesAdderFFT());
                     calculators[index] = calc;
                 } else { 
-                    // taper class comes here when we have it
-                    ASKAPTHROW(AskapError, "Unknown type of the uv-weight calculator: "<<name);
+                    if (name == "Reciprocal") {
+                        const float threshold = parset().getFloat(keyword + ".recipthreshold", 1e-5); 
+                        ASKAPLOG_INFO_STR(logger, "        + "<<name<<": calculating reciprocal for weight application (threshold = "<<threshold<<")");
+                        const boost::shared_ptr<ReciprocalUVWeightCalculator> calc(new ReciprocalUVWeightCalculator(threshold));
+                        calculators[index] = calc;
+                    } else {
+                       // taper class comes here when we have it
+                       ASKAPTHROW(AskapError, "Unknown type of the uv-weight calculator: "<<name);
+                    }
                 }
             }
        }

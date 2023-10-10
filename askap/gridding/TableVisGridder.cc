@@ -578,7 +578,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
    // MV: always create UVWeight object even if traditional weighting is not done / it is not needed for this particular type of gridder.
    // This is the price paid to have a generic code. However, this object is lightweight (effectively only manages a pointer behind the scene +
    // has some basic metadata), so shouldn't be a huge overhead. It can be moved inside the samples loop (although it is not obvious whether
-   // this is better.
+   // this is better).
    UVWeight uvWeight;
 
    // Use a separate UVWeight object for the optional gridder-based builder (RW - read/write). Doing it this way (as opposed to reusing uvWeight declared above) allows us
