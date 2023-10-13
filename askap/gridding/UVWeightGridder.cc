@@ -47,7 +47,7 @@ namespace synthesis {
 /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
 UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.), 
        itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
-       itsPointingTolerance(0.0001)
+       itsPointingTolerance(0.0001), itsOversample(1)
 {}
 
 /// @brief constructor setting the weight builder up front
@@ -56,7 +56,7 @@ UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), it
 UVWeightGridder::UVWeightGridder(const boost::shared_ptr<IUVWeightBuilder> &wtBuilder) : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), 
        itsUVWeightBuilder(wtBuilder), itsMaxPointingSeparation(-1.),
        itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
-       itsPointingTolerance(0.0001)
+       itsPointingTolerance(0.0001), itsOversample(1)
 {}
 
 
@@ -185,11 +185,33 @@ void UVWeightGridder::accumulate(const accessors::IConstDataAccessor& acc) const
                     "comment this statement in the code if you're trying something non-standard. Frequency = "<<
                     frequencyList[chan]/1e9<<" GHz");
              }
-             /// Scale U,V to integer pixels, ignore fractional terms and dependence on oversampling factor in the current code (see AXA-2485)
+             /*
+             // commented out until AXA-2485 is sorted out
+             // Scale U,V to integer pixels, ignore fractional terms and dependence on oversampling factor in the current code (see AXA-2485)
              const double uScaled=reciprocalToWavelength * outUVW(i)(0) / itsUCellSize;
              const int iu = askap::nint(uScaled) + itsShape(0) / 2;
              const double vScaled=reciprocalToWavelength * outUVW(i)(1) / itsVCellSize;
              const int iv = askap::nint(vScaled) + itsShape(1) / 2;
+             */
+             // same approach as used with gridder which takes fractional term into account and assumes oversampling factor of 1.
+             const double uScaled=reciprocalToWavelength * outUVW(i)(0) / itsUCellSize;
+             int iu = askap::nint(uScaled);
+             const int fracu = askap::nint(itsOversample*(double(iu) - uScaled));
+             if (fracu < 0) {
+                 iu += 1;
+             } else if (fracu >= itsOversample) {
+                 iu -= 1;
+             }
+             const double vScaled=reciprocalToWavelength * outUVW(i)(1) / itsVCellSize;
+             int iv = askap::nint(vScaled);
+             const int fracv = askap::nint(itsOversample*(double(iv) - vScaled));
+             if (fracv < 0) {
+                 iv += 1;
+             } if (fracv >= itsOversample) {
+                 iv -= 1;
+             }
+             iu += itsShape(0) / 2;
+             iv += itsShape(1) / 2;
 
              // mimic the behaviour of the orginary gridder w.r.t. partial polarisation, i.e. ignore the whole sample
              bool allPolGood=true;

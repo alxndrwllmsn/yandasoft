@@ -909,6 +909,16 @@ namespace askap
            ASKAPLOG_INFO_STR(logger,"No padding at the weight gridder level");
        }
 
+       // technical debt!
+       // this is hopefully a temporary hack - due to the current way to place oversampling planes, the weight gridder needs to know 
+       // the oversampling factor used by the actual data gridder. The following code gets it from the parset and sets to the weight gridder
+       // Note, the weight gridder doesn't oversample its grid, it just needs to sample the same way for the first oversampling plane
+       const int oversample = parset().getInt32("gridder."+parset().getString("gridder")+".oversample", 1);
+       ASKAPCHECK(oversample > 0, "Oversampling factor is supposed to be positive, you have "<<oversample);
+       ASKAPLOG_INFO_STR(logger, "The weight gridder will assume that the data gridder is using the oversampling factor of "<<oversample);
+       gridder.setOversampleFactor(oversample);
+       //
+
        // now figure out the cell size and image shape, again similar code to that in ImageFFTEquation but we can't easily reuse it
        // (although, perhaps, some refactoring is possible). But first, we need to choose the appropriate image parameter and there is a
        // complication that we can have more than one (even after removing Taylor terms). For now, only support a single image, which would

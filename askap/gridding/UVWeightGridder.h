@@ -142,6 +142,14 @@ struct UVWeightGridder  {
    /// @note It is worth checking whether we can avoid storing this factor and just pass it to initialise method
    void setPaddingFactor(float padding) { itsPaddingFactor = padding; }
 
+   /// @brief set oversample factor used by data gridder
+   /// @details This is hopefully a temporary hack until AXA-2485 gets some resolution. We need to form the weight identically
+   /// to the actual gridder processing the data (or to be exact, the gridder which applies weights). Unfortunately, the way we
+   /// bin CFs into multiple oversampling planes depends on the oversampling factor. For now, we have to make this class aware 
+   /// about the oversampling factor used by the actual data gridder.
+   /// @param[in] oversample oversample factor used by the data gridder
+   void setOversampleFactor(int oversample) { itsOversample = oversample; }
+
 protected:
 
    /// @brief obtain the current field index
@@ -282,6 +290,13 @@ private:
    /// @brief pointing tolerance in radians used to index fields
    /// @details See pointingTolerance for more info.
    double itsPointingTolerance;
+
+   /// @brief oversampling factor for the main gridder
+   /// @details This is hopefully a temporary hack until AXA-2485 gets some resolution. We need to form the weight identically
+   /// to the actual gridder processing the data (or to be exact, the gridder which applies weights). Unfortunately, the way we
+   /// bin CFs into multiple oversampling planes depends on the oversampling factor. For now, we have to make this class aware 
+   /// about the oversampling factor used by the actual data gridder.
+   int itsOversample;
 };
 
 } // namespace synthesis
