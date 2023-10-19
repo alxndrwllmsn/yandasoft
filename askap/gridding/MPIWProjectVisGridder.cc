@@ -352,12 +352,15 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
     // use the MPI_Initialized() function to test if the gridder is running in parallel or serial 
     // assuming that all multi ranks MPI task must first call MPI_init() and so if the MPI_Initialized() 
     // function returns false (0) then the task is not an MPI task
+    itsSerial = false;
     int mpiInitalised = 0;
     MPI_Initialized(&mpiInitalised);
     if ( mpiInitalised == 1 ) {
-        MPI_Comm_rank(MPI_COMM_WORLD, &itsWorldRank);
-        if ( itsWorldRank == 1 ) {
+        int numRanks = 0;
+        MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
+        if ( numRanks == 1 ) {
             // MPI has only one rank so it must be running in serial
+            ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in parallel");
             itsSerial = true;
         }
     }
@@ -407,6 +410,7 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
     } else {
         // The gridder is running in serial so it should behave as if it is a WProject gridder object
     }
+    
 }
 
 
@@ -429,6 +433,8 @@ void  MPIWProjectVisGridder::setupMpiMemory(size_t bufferSize /* in bytes */)
 	    ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << " - mpi shared memory already setup. ObjCount: " << ObjCount);
         return;
     }
+
+    ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << " - Setup mpi shared memory. ObjCount: " << ObjCount);
 
     itsMpiMemSetup = true;
 
