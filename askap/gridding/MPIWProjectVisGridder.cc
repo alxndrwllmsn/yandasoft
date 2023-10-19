@@ -80,6 +80,7 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const double wmax,
         WProjectVisGridder(wmax, nwplanes, cutoff,overSample,maxSupport,limitSupport,name,alpha,shareCF),
         itsMpiMemPreSetup(mpipresetup), itsCFRank(cfRank), itsSerial(false), itsMasterDoesWork(masterDoesWork)
 {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::constructor");
     ASKAPCHECK(overSample > 0, "Oversampling must be greater than 0");
     ASKAPCHECK(maxSupport > 0, "Maximum support must be greater than 0")
     
@@ -89,12 +90,14 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const double wmax,
 
 MPIWProjectVisGridder::~MPIWProjectVisGridder()
 {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor");
     std::lock_guard<std::mutex> lk(ObjCountMutex);
     //int rank;
     //MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     ObjCount -= 1;
 
-    if ( ObjCount == 0 ) {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor. itsSerial: " << itsSerial << ", ObjCount: " << ObjCount);
+    if ( ObjCount == 0 && !itsSerial ) {
         if ( itsWorldGroup != MPI_GROUP_NULL )
             MPI_Group_free(&itsWorldGroup);
 
@@ -126,6 +129,7 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const MPIWProjectVisGridder &other)
         itsSerial(other.itsSerial),
         itsMasterDoesWork(other.itsMasterDoesWork)
 {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::copy");
 	std::lock_guard<std::mutex> lk(ObjCountMutex);
 	ObjCount += 1;
 }
@@ -134,6 +138,7 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const MPIWProjectVisGridder &other)
 /// Clone a copy of this Gridder
 IVisGridder::ShPtr MPIWProjectVisGridder::clone()
 {
+    ASKAPLOG_INFO_STR(logger,"MPIWProjectVisGridder::clone");
     return IVisGridder::ShPtr(new MPIWProjectVisGridder(*this));
 }
 
@@ -142,6 +147,7 @@ IVisGridder::ShPtr MPIWProjectVisGridder::clone()
 void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAccessor& acc)
 {
     ASKAPTRACE("MPIWProjectVisGridder::initConvolutionFunction");
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::initConvolutionFunction");
 
     if ( itsSerial ) {
         ASKAPLOG_INFO_STR(logger,"MPI WPRoject gridder runs in serial mode. Delegate the call to WProjectVisGridder::initConvolutionFunction");
@@ -360,12 +366,13 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
         MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
         if ( numRanks == 1 ) {
             // MPI has only one rank so it must be running in serial
-            ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in parallel");
+            ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in serial");
             itsSerial = true;
         }
     }
 
     if ( !itsSerial ) {
+        ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in parallel");
         // Each rank should only run the code below once.
         if ( ObjCount > 1 ) return;
 
@@ -409,6 +416,7 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
         }
     } else {
         // The gridder is running in serial so it should behave as if it is a WProject gridder object
+        ASKAPLOG_INFO_STR(logger,"MPI gridder is running in serial so it should behave as if it is a WProject gridder");
     }
     
 }
