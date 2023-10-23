@@ -33,7 +33,7 @@
 using namespace std;
 using namespace casacore;
 
-void tout( const string tag, const Timer &timer ) {
+void tout( const string& tag, const Timer &timer ) {
     cout << setw(24) << tag
          << "  user: "   << setw(4) << timer.user()
          << "  system: " << setw(4) << timer.system()
@@ -56,6 +56,9 @@ int main(int argc, const char** argv) {
         timer.mark();
         c = 1.0f;
         tout("c=1",timer);
+        timer.mark();
+        c.set(1.1f);
+        tout("c.set(1.1)",timer);
 
         timer.mark();
         for (int k=0; k<n; k++) {
