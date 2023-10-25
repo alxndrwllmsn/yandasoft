@@ -147,10 +147,9 @@ IVisGridder::ShPtr MPIWProjectVisGridder::clone()
 void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAccessor& acc)
 {
     ASKAPTRACE("MPIWProjectVisGridder::initConvolutionFunction");
-    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::initConvolutionFunction");
 
     if ( itsSerial ) {
-        ASKAPLOG_INFO_STR(logger,"MPI WPRoject gridder runs in serial mode. Delegate the call to WProjectVisGridder::initConvolutionFunction");
+        ASKAPLOG_DEBUG_STR(logger,"MPI WPRoject gridder runs in serial mode. Delegate the call to WProjectVisGridder::initConvolutionFunction");
         WProjectVisGridder::initConvolutionFunction(acc);
     } else {
         /// We have to calculate the lookup function converting from
@@ -222,6 +221,7 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
             generate(startPlane,endPlane);
         }
         // ranks > itsCFRank of a given node wait here
+        ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << " waits at mpi barrier");
         MPI_Barrier(itsNodeComms);
         //MPI_Barrier(itsNonRankZeroComms);
 
@@ -383,6 +383,7 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
         int r;
         r = MPI_Comm_group(MPI_COMM_WORLD, &itsWorldGroup);
         ASKAPASSERT(r == MPI_SUCCESS);
+        ASKAPLOG_DEBUG_STR(logger,"itsMasterDoesWork: " << itsMasterDoesWork);
         if ( itsMasterDoesWork )  {
             // We have a master that wants to get its hand dirty and do some work. Good on you
             MPI_Comm_group(MPI_COMM_WORLD,&itsGridderGroup);
