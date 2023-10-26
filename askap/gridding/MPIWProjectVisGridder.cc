@@ -92,8 +92,6 @@ MPIWProjectVisGridder::~MPIWProjectVisGridder()
 {
     ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor");
     std::lock_guard<std::mutex> lk(ObjCountMutex);
-    //int rank;
-    //MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     ObjCount -= 1;
 
     ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor. itsSerial: " << itsSerial << ", ObjCount: " << ObjCount);
@@ -221,7 +219,7 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
             generate(startPlane,endPlane);
         }
         // ranks > itsCFRank of a given node wait here
-        ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << " waits at mpi barrier");
+        ASKAPLOG_DEBUG_STR(logger,"itsNodeRank: " << itsNodeRank << " waits at mpi barrier");
         MPI_Barrier(itsNodeComms);
         //MPI_Barrier(itsNonRankZeroComms);
 
