@@ -68,7 +68,7 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/parallel/AdviseParallel.h>
 #include <askap/utils/StatsAndMask.h>
 
-// this is used for uv-weight calculators factory, to be removed 
+// this is used for uv-weight calculators factory, to be removed
 // when/if we factor this out into a separate class
 #include <askap/gridding/CompositeUVWeightCalculator.h>
 #include <askap/gridding/RobustUVWeightCalculator.h>
@@ -459,8 +459,8 @@ namespace askap
       if (shapeNeeded && !parset.isDefined(param)) {
           std::ostringstream pstr;
           const double fieldSize = advice.squareFieldSize(1); // in deg
-          const long lSize = long(fieldSize * 3600 / cellSize[0]) + 1;
-          const long mSize = long(fieldSize * 3600 / cellSize[1]) + 1;
+          const int lSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[0]) + 1);
+          const int mSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[1]) + 1);
           pstr<<"["<<lSize<<","<<mSize<<"]";
           ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param <<": " << pstr.str().c_str());
           parset.add(param, pstr.str().c_str());
@@ -496,7 +496,7 @@ namespace askap
 
     /// @brief make calibration iterator if necessary, otherwise return unchanged interator
     /// @details This method wraps the iterator passed as the input into into a calibration iterator adapter
-    /// if calibration is to be performed (i.e. if solution source is defined). 
+    /// if calibration is to be performed (i.e. if solution source is defined).
     /// @param[in] origIt original iterator to uncalibrated data
     /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
     /// or the original iterator otherwise
@@ -515,7 +515,7 @@ namespace askap
             // calibration iterator to replace the original one for the purpose of measurement equation creation
             const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
             return calIter;
-       } 
+       }
        ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
        return origIt;
     }
@@ -574,8 +574,8 @@ namespace askap
     }
 
     /// @brief obtain measurement equation cast to ImageFFTEquation
-    /// @details This helper method encapsulates operations common to a number of methods of this and derived classes to obtain the 
-    /// current measurement equation with the original type as created (i.e. ImageFFTEquation) and 
+    /// @details This helper method encapsulates operations common to a number of methods of this and derived classes to obtain the
+    /// current measurement equation with the original type as created (i.e. ImageFFTEquation) and
     /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
     /// @return shared pointer of the appropriate type to the current measurement equation
     boost::shared_ptr<ImageFFTEquation> ImagerParallel::getMeasurementEquation() const
@@ -819,12 +819,12 @@ namespace askap
     }
 
     /// @brief helper method to extract weight builder object out of normal equations
-    /// @details For traditional weighting with distributed data we use normal equation merging 
+    /// @details For traditional weighting with distributed data we use normal equation merging
     /// mechanism to do the gather operation (and EstimatorAdapter). This method does required
     /// casts and checks to get the required shared pointer (which is guaranteed to be non-empty)
     /// @return shared pointer to the uv-weight builder object stored in the current normal equations
     boost::shared_ptr<GenericUVWeightBuilder> ImagerParallel::getUVWeightBuilder() const {
-       const boost::shared_ptr<scimath::EstimatorAdapter<GenericUVWeightBuilder> > adapter = 
+       const boost::shared_ptr<scimath::EstimatorAdapter<GenericUVWeightBuilder> > adapter =
              boost::dynamic_pointer_cast<scimath::EstimatorAdapter<GenericUVWeightBuilder> >(getNE());
        ASKAPCHECK(adapter, "Incompatible type of normal equations detected while trying to access UV Weight builder");
        const boost::shared_ptr<GenericUVWeightBuilder> builder = adapter->get();
@@ -832,9 +832,9 @@ namespace askap
        return builder;
     }
 
-    /// @brief compute uv weights using data stored via adapter in the normal equations 
+    /// @brief compute uv weights using data stored via adapter in the normal equations
     /// @details This method gets access to the uv-weight builder handled via EstimatorAdapter and
-    /// stored instead of normal equations by shared pointer. It then runs the finalisation step using 
+    /// stored instead of normal equations by shared pointer. It then runs the finalisation step using
     /// the stored shared pointer to the uv-weight calculator object. The resulting weight is added as
     /// a parameter to the existing model.
     /// @note This method assumes that it is called from the right place (i.e. on the correct rank) and
@@ -862,7 +862,7 @@ namespace askap
        // this may be needed for facets to work with traditional weighting!
        ASKAPCHECK(currentParamNames.size() == 1, "We currently support only one free image parameter with traditional weighting you have "<<currentParamNames.size());
        const std::string paramName = *currentParamNames.begin();
-       // for now, figure out and copy index translation details from the builder and pass it on as is. However, here we can setup more logic 
+       // for now, figure out and copy index translation details from the builder and pass it on as is. However, here we can setup more logic
        // to do non-trivial stuff, e.g. select a particular weight grid and apply to other data, etc
        const casacore::uInt coeffBeam = builder->indexOf(1u, 0u, 0u);
        const casacore::uInt coeffField = builder->indexOf(0u, 1u, 0u);
@@ -874,7 +874,7 @@ namespace askap
 
     /// @brief iterate over given data and accumulate samples for uv weights
     /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
-    /// and weight builder class. It expects the builder already setup and accessible via the normal equations 
+    /// and weight builder class. It expects the builder already setup and accessible via the normal equations
     /// shared pointer. The data iterator to work with is passed as a parameter. The image details are extracted from
     /// the model (to initialise sample grid).
     /// @param[in] iter shared pointer to the iterator to use (note it is advanced by this method to iterate over
@@ -910,7 +910,7 @@ namespace askap
        }
 
        // technical debt!
-       // this is hopefully a temporary hack - due to the current way to place oversampling planes, the weight gridder needs to know 
+       // this is hopefully a temporary hack - due to the current way to place oversampling planes, the weight gridder needs to know
        // the oversampling factor used by the actual data gridder. The following code gets it from the parset and sets to the weight gridder
        // Note, the weight gridder doesn't oversample its grid, it just needs to sample the same way for the first oversampling plane
        const int oversample = parset().getInt32("gridder."+parset().getString("gridder")+".oversample", 1);
@@ -925,7 +925,7 @@ namespace askap
        // break faceting. It is straightforward to extend the code to support multiple facets if we build just one weight for all facets, otherwise
        // more thoughts are needed (but, perhaps, using the 3rd index we could have facets factored in and even build separate weight for each facet).
 
-       // again some code duplication with what we have above, but here we want to retain the full parameter name 
+       // again some code duplication with what we have above, but here we want to retain the full parameter name
        // it would be nice to think about some refactoring
        ASKAPDEBUGASSERT(itsModel);
        const std::vector<std::string> completions = itsModel->completions("image");
@@ -947,7 +947,7 @@ namespace askap
        const scimath::Axes axes(itsModel->axes(*currentParamNames.begin()));
        const casacore::IPosition imageShape = itsModel->shape(*currentParamNames.begin());
        gridder.initialise(axes, imageShape);
- 
+
        // now the setup is done, so we can iterate over data and accumulate
        ASKAPLOG_INFO_STR(logger, "Iterating over data to compute the density of samples for uv-weight construction");
        IConstDataSharedIter it(iter);
@@ -969,15 +969,15 @@ namespace askap
     }
 
     /// @brief factory method creating uv weight calculator based on the parset
-    /// @details The main parameter controlling the mode of traditional weighting is 
+    /// @details The main parameter controlling the mode of traditional weighting is
     /// Cimager.uvweight which either can take a keyword describing some special method
     /// of getting the weights (which doesn't require iteration over data), e.g. reading from disk
     /// or a list of "effects" which should be applied to the density of uv samples obtained via
     /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
     /// case with the list of effects) or returns an empty pointer if no iteration over data is required
-    /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
-    /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight 
-    /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that 
+    /// (i.e. either some special algorithm is in use or there is no uv-weighting)
+    /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight
+    /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that
     /// there is no need obtaining the density because either no traditional weighting is done or
     /// we're using some special algorithm which does not require iteration over data
     void ImagerParallel::createUVWeightCalculator()
@@ -989,8 +989,8 @@ namespace askap
        }
        const std::vector<std::string> wtCalcList = parset().getStringVector(keyword);
        ASKAPCHECK(wtCalcList.size() > 0u, "Cimager.uvweight should contain either a single keyword describing how the weight is obtained or a vector with procedure names to apply these to measured uv-density");
-       
-       // also need to check here later on that Cimager.uvweight parameter is set to one of the resereved keywords and return an empty 
+
+       // also need to check here later on that Cimager.uvweight parameter is set to one of the resereved keywords and return an empty
        // shared pointer if this is the case. Or factor out this method into a separate class where the same logic would be done
        // some other way
 
@@ -1002,7 +1002,7 @@ namespace askap
             const std::string name = wtCalcList[index];
             if (name == "Robust") {
                 // we could've had parameters in the form Cimager.uvweight.Robust.robustness to follow a more structured apporach - can be changed if we want it
-                const float robustness = parset().getFloat(keyword + ".robustness"); 
+                const float robustness = parset().getFloat(keyword + ".robustness");
                 ASKAPLOG_INFO_STR(logger, "        + "<<name<<": robust weighting with robustness = "<<robustness);
                 const boost::shared_ptr<RobustUVWeightCalculator> calc(new RobustUVWeightCalculator(robustness));
                 calculators[index]  = calc;
@@ -1011,9 +1011,9 @@ namespace askap
                     ASKAPLOG_INFO_STR(logger, "        + "<<name<<": ensuring conjugate symmetry via FFT");
                     const boost::shared_ptr<ConjugatesAdderFFT> calc(new ConjugatesAdderFFT());
                     calculators[index] = calc;
-                } else { 
+                } else {
                     if (name == "Reciprocal") {
-                        const float threshold = parset().getFloat(keyword + ".recipthreshold", 1e-5); 
+                        const float threshold = parset().getFloat(keyword + ".recipthreshold", 1e-5);
                         ASKAPLOG_INFO_STR(logger, "        + "<<name<<": calculating reciprocal for weight application (threshold = "<<threshold<<")");
                         const boost::shared_ptr<ReciprocalUVWeightCalculator> calc(new ReciprocalUVWeightCalculator(threshold));
                         calculators[index] = calc;

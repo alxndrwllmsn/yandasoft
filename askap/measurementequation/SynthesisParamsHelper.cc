@@ -1014,8 +1014,8 @@ namespace askap
 
     /// @brief Find number no smaller than given one, with only factors of 2,3,5,7
     /// @param[in] int integer number
-    /// @return int smallest number with only factors or 2,3,5,7 >= given number
-    int nextFactor2357(int n)
+    /// @return int smallest number with only factors of 2,3,5,7 >= given number
+    int SynthesisParamsHelper::nextFactor2357(int n)
     {
         vector<int> factors = {2, 3, 5, 7};
         int next_number = n + (n % 2);
