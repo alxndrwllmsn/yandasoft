@@ -201,16 +201,13 @@ namespace askap
           da.itsStokes.assign(stokes.copy());
           const casacore::uInt nAnt = 6;
           const casacore::uInt nBaselines = nAnt * (nAnt - 1) / 2;
-          //da.itsVisibility.resize(nBaselines, 1 , stokes.nelements());
           da.itsVisibility.resize(stokes.nelements(), 1 , nBaselines);
           da.itsVisibility.set(casacore::Complex(-10.,15.));
           CPPUNIT_ASSERT_EQUAL(nBaselines, da.nRow());
           CPPUNIT_ASSERT_EQUAL(1u, da.nChannel());
           CPPUNIT_ASSERT_EQUAL(4u, da.nPol());
-          //da.itsNoise.resize(da.nRow(),da.nChannel(),da.nPol());
           da.itsNoise.resize(da.nPol(),da.nChannel(),da.nRow());
           da.itsNoise.set(1.);
-          //da.itsFlag.resize(da.nRow(),da.nChannel(),da.nPol());
           da.itsFlag.resize(da.nPol(),da.nChannel(),da.nRow());
           da.itsFlag.set(casacore::False);
           da.itsFrequency.resize(da.nChannel());

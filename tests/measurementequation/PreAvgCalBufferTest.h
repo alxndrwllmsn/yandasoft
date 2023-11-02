@@ -408,9 +408,7 @@ class PreAvgCalBufferTest : public CppUnit::TestFixture
          CPPUNIT_ASSERT_EQUAL(380u,pacBuf.nRow());
          CPPUNIT_ASSERT_EQUAL(8u,pacBuf.nChannel());
          CPPUNIT_ASSERT_EQUAL(4u,pacBuf.nPol());
-         //CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nRow()),size_t(pacBuf.flag().nrow()));
          CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nRow()),size_t(pacBuf.flag().nplane()));
-         //CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nPol()),size_t(pacBuf.flag().nplane()));
          CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nPol()),size_t(pacBuf.flag().nrow()));
          CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nChannel()),size_t(pacBuf.flag().ncolumn()));     
          CPPUNIT_ASSERT(itsME);
@@ -429,13 +427,10 @@ class PreAvgCalBufferTest : public CppUnit::TestFixture
          CPPUNIT_ASSERT_EQUAL(380u,pacBuf.nRow());
          CPPUNIT_ASSERT_EQUAL(8u,pacBuf.nChannel());
          CPPUNIT_ASSERT_EQUAL(4u,pacBuf.nPol());
-         //CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nRow()),size_t(pacBuf.flag().nrow()));
          CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nRow()),size_t(pacBuf.flag().nplane()));
-         //CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nPol()),size_t(pacBuf.flag().nplane()));
          CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nPol()),size_t(pacBuf.flag().nrow()));
          CPPUNIT_ASSERT_EQUAL(size_t(pacBuf.nChannel()),size_t(pacBuf.flag().ncolumn()));
 
-         //
          const scimath::PolXProducts &pxp = pacBuf.polXProducts();                            
          for (casacore::uInt row=0; row<pacBuf.nRow(); ++row) {
               CPPUNIT_ASSERT_EQUAL(pacBuf.feed1()[row], pacBuf.feed2()[row]);
@@ -451,7 +446,6 @@ class PreAvgCalBufferTest : public CppUnit::TestFixture
                         CPPUNIT_ASSERT_DOUBLES_EQUAL(0,double(imag(pxp.getModelProduct(row,chan,pol,pol))),1e-5);
                         // 1 channel and 100 Jy source give sums of 10000 per accessor summed in
                         CPPUNIT_ASSERT_DOUBLES_EQUAL(dataExpected && (pol == 0) ? 10000. : 0., double(real(pxp.getModelProduct(row,chan,pol,pol))),1e-2);
-                        //CPPUNIT_ASSERT_EQUAL(!dataExpected || (pol > 0), pacBuf.flag()(row,chan,pol));                                     
                         CPPUNIT_ASSERT_EQUAL(!dataExpected || (pol > 0), pacBuf.flag()(pol,chan,row));                                     
     
                         // checking cross-pol terms, if any

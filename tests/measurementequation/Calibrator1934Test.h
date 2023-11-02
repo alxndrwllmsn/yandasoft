@@ -74,16 +74,11 @@ public:
       for (casacore::uInt ch = 0; ch<acc.nChannel(); ++ch) {
            const casacore::Matrix<casacore::Complex> vis = acc.itsVisibility.xzPlane(ch);
            const double expectedFlux = fluxes[ch];
-           //CPPUNIT_ASSERT_EQUAL(size_t(acc.nRow()), size_t(vis.nrow()));
-           //CPPUNIT_ASSERT_EQUAL(size_t(acc.nPol()), size_t(vis.ncolumn()));
            CPPUNIT_ASSERT_EQUAL(size_t(acc.nRow()), size_t(vis.ncolumn()));
            CPPUNIT_ASSERT_EQUAL(size_t(acc.nPol()), size_t(vis.nrow()));
            
-           //for (casacore::uInt row = 0; row<vis.nrow(); ++row) {
            for (casacore::uInt row = 0; row<vis.ncolumn(); ++row) {
-                //for (casacore::uInt col = 0; col<vis.ncolumn(); ++col) {
                 for (casacore::uInt col = 0; col<vis.nrow(); ++col) {
-                     //const casacore::Complex simFlux = vis(row,col); 
                      const casacore::Complex simFlux = vis(col,row); 
                      CPPUNIT_ASSERT_DOUBLES_EQUAL(expectedFlux, static_cast<double>(real(simFlux)), 1e-3);
                      CPPUNIT_ASSERT_DOUBLES_EQUAL(0., static_cast<double>(imag(simFlux)), 1e-3);                     
