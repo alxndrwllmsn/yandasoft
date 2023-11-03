@@ -19,4 +19,4 @@ set ( BASE_IMAGEMATH_TAG           tags/1.11.0      CACHE  STRING    "base-image
 set ( BASE_ASKAPPARALLEL_TAG       tags/1.6.0       CACHE  STRING    "base-askapparallel version"       FORCE )
 set ( BASE_SCIMATH_TAG             tags/1.11.0      CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.8.0       CACHE  STRING    "base-components version"          FORCE )
-set ( BASE_ACCESSORS_TAG           update_to_1.11   CACHE  STRING    "base-accessors version"           FORCE )
+set ( BASE_ACCESSORS_TAG           adios_integration_mpi   CACHE  STRING    "base-accessors version"           FORCE )

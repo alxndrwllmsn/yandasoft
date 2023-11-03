@@ -43,6 +43,7 @@
 #include <casacore/casa/Arrays/Array.h>
 #include <casacore/coordinates/Coordinates/CoordinateSystem.h>
 #include <casacore/casa/Quanta.h>
+#include <askap/distributedimager/CubeComms.h>
 
 namespace askap {
 namespace cp {
@@ -62,6 +63,14 @@ class CubeBuilder {
                     const casacore::IPosition & shape,
                     const casacore::CoordinateSystem & coordSys,
                     const std::string& name = "");
+
+        CubeBuilder(askapparallel::AskapParallel& comm,
+                    const LOFAR::ParameterSet& parset,
+                    const casacore::uInt nchan,
+                    const casacore::Quantity& f0,
+                    const casacore::Quantity& inc,
+                    const std::string& name = "",
+                    const bool uvcoord = false);
 
         CubeBuilder(const LOFAR::ParameterSet& parset,const std:: string& name);
 
