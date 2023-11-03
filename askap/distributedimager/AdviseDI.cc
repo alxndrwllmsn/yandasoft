@@ -805,14 +805,10 @@ void AdviseDI::addMissingParameters(bool extra)
      }
      else {
          ASKAPCHECK(!itsParset.getBool("Images.nyquistgridding",false) && !itsParset.isDefined("Images.griddingcellsize"),
-             "Individual image cellsizes are not currently allowed with Nyquist gridding");
+             "Individual image cellsizes are not allowed with Nyquist gridding");
      }
      if (!itsParset.isDefined("Images."+imageNames[img]+".shape")) {
          shapeNeeded = true;
-     }
-     else {
-         ASKAPCHECK(!itsParset.getBool("Images.nyquistgridding",false) && !itsParset.isDefined("Images.griddingcellsize"),
-             "Individual image shapes are not currently allowed with Nyquist gridding");
      }
 
      param = "Images."+imageNames[img]+".frequency";

@@ -1039,33 +1039,58 @@ namespace askap
     // @todo should probably throw an exception if individual cell or image sizes are given
     void SynthesisParamsHelper::setNyquistSampling(const VisMetaDataStats& advice, LOFAR::ParameterSet& parset) {
         // add Nyquist gridding parameters if needed. Wait until after doing others requiring VisMetaDataStats.
-        // @todo should probably throw an exception if individual cell or image sizes are given
         ASKAPCHECK(!parset.isDefined("Images.extraoversampling"), "Images.extraoversampling cannot be set by user");
         if (parset.getBool("Images.nyquistgridding",false) || parset.isDefined("Images.griddingcellsize")) {
 
-            ASKAPCHECK(parset.isDefined("Images.cellsize") && parset.isDefined("Images.shape"),
-            "The global image cellsize and shape are currently required with Nyquist gridding");
-
+            ASKAPCHECK(parset.isDefined("Images.cellsize"),
+            "The global image cellsize is currently required with Nyquist gridding");
             const std::vector<double> cellSize = convertQuantity(parset.getStringVector("Images.cellsize"),"arcsec");
-            std::vector<int> imSize = parset.getInt32Vector("Images.shape");
+            ASKAPCHECK(cellSize.size() == 2, "nyquistgridding requires a cellsize vector of length 2");
+            ASKAPCHECK(cellSize[0] == cellSize[1], "nyquistgridding only set up for square pixels");
+
+            const std::vector<std::string> names = parset.getStringVector("Images.Names");
+            const int n = names.size();
+            Vector<int> sizes(n);
+            int minSize;
+            if (parset.isDefined("Images.shape")) {
+                auto shape = parset.getInt32Vector("Images.shape");
+                ASKAPCHECK(shape.size()==2,"The image shape needs two dimensions");
+                sizes = shape[0];
+                minSize = sizes[0];
+            }
+            // check if we have image specific image shapes - use smallest one to set gridding cellsize
+            // and make sure image shapes only differ by integer factors from smallest image
+            // find smallest image and make sure size is sensible
+            for (int i=0; i<n; i++) {
+                if (parset.isDefined("Images."+names[i]+".shape")) {
+                    sizes[i] = parset.getInt32Vector("Images."+names[i]+".shape")[0];
+                }
+            }
+            minSize = nextFactor2357(*std::min_element(sizes.begin(),sizes.end()));
+
+            // now make other images multiples of this
+            for (int i=0; i<n; i++) {
+                const int factor = static_cast<int>(ceil(static_cast<double>(sizes[i])/minSize));
+                if (sizes[i] % minSize != 0) {
+                    // adjust each size to be a multiple of minSize
+                    sizes[i] = minSize * factor;
+                    ASKAPLOG_INFO_STR(logger, "Adjusting image size for "<<names[i]<<
+                    " to be a multiple of smallest size ("<<minSize<<") - factor: "<<factor);
+                }
+            }
 
             // need to make sure that extraOsFactor results in an integer number of pixels,
             // which could get complicated for rectangular grids and pixels.
-            ASKAPCHECK(cellSize.size() == 2, "nyquistgridding requires a cellsize vector of length 2");
-            ASKAPCHECK(imSize.size() == 2, "nyquistgridding requires a shape vector of length 2");
-            ASKAPCHECK(cellSize[0] == cellSize[1], "nyquistgridding only set up for square pixels");
 
             std::vector<double> gCellSize(2);
             if (parset.isDefined("Images.griddingcellsize")) {
                 const std::vector<string> gParam = parset.getStringVector("Images.griddingcellsize");
                 ASKAPCHECK(gParam.size() == 2, "nyquistgridding requires a griddingcellsize vector of length 2");
                 gCellSize = SynthesisParamsHelper::convertQuantity(gParam,"arcsec");
-                ASKAPCHECK(gCellSize[0]==gCellSize[1], "nyquistgridding only set up for square pixels");
-                ASKAPCHECK(gCellSize[0]>=cellSize[0], "griddingcellsize must not be less than cellsize");
             }
             else {
                 const double uv_max = casacore::max(advice.maxU(), advice.maxV());
-                const double fov = cellSize[0] * imSize[0] * casacore::C::arcsec;
+                const double fov = cellSize[0] * sizes[0] * casacore::C::arcsec;
                 const double wk_max = 6/fov + advice.maxW()*fov;
                 ASKAPASSERT(uv_max > 0);
                 // calculate the resolution in arcsec corresponding to the smallest grid that will fit all the data
@@ -1074,26 +1099,29 @@ namespace askap
                 gCellSize[0] = 0.5 / (uv_max + 2*wk_max) / casacore::C::arcsec;
                 gCellSize[1] = gCellSize[0];
             }
+            ASKAPCHECK(gCellSize[0]==gCellSize[1], "nyquistgridding only set up for square pixels");
+            ASKAPCHECK(gCellSize[0]>=cellSize[0], "griddingcellsize must not be less than cellsize");
 
             // nominal ratio between gridding resolution and cleaning resolution
             ASKAPDEBUGASSERT(cellSize[0] > 0);
             double extraOsFactor = gCellSize[0]/cellSize[0];
             // now tweak the ratio to result in an integer number of pixels and reset the gridding cell size
             ASKAPDEBUGASSERT(extraOsFactor >= 1);
-            int nPix = static_cast<int>(ceil(imSize[0]/extraOsFactor));
+            int nPix = static_cast<int>(ceil(minSize/extraOsFactor));
             // ensure we only use factors of 2, 3, 5 and 7 to avoid slow FFT issues AXA-2430
             nPix = nextFactor2357(nPix);
 
             int nSubPix = 0;
             if (parset.isDefined("Images.subshape")) {
+                ASKAPCHECK(sizes.size()==1,"Cannot specify subshape if you have multiple images");
                 const std::vector<int> subSize = parset.getInt32Vector("Images.subshape");
                 ASKAPCHECK(subSize.size() == 2, "nyquistgridding requires a subshape vector of length 2");
                 ASKAPCHECK(subSize[0] > 1, "subshape image size too small: "<<subSize[0]);
-                const int factor = static_cast<int>(ceil(static_cast<double>(imSize[0])/subSize[0]));
-                if (imSize[0] % subSize[0] != 0) {
+                const int factor = static_cast<int>(ceil(static_cast<double>(sizes[0])/subSize[0]));
+                if (sizes[0] % subSize[0] != 0) {
                     // adjust imSize to be a multiple of subSize
-                    imSize[0] = subSize[0] * factor;
-                    ASKAPLOG_INFO_STR(logger, "Adjusting imsize to be a multiple of subsize - factor: "<<factor);
+                    sizes[0] = subSize[0] * factor;
+                    ASKAPLOG_INFO_STR(logger, "Adjusting image shape to be a multiple of subshape - factor: "<<factor);
                 }
                 nSubPix = static_cast<int>(ceil(subSize[0]/extraOsFactor));
                 ASKAPDEBUGASSERT(nSubPix > 1);
@@ -1104,7 +1132,7 @@ namespace askap
                 nPix = nSubPix * factor;
             } else {
                 // reset the extra multiplicative factor
-                extraOsFactor = static_cast<double>(imSize[0]) / nPix;
+                extraOsFactor = static_cast<double>(minSize) / nPix;
             }
 
             ASKAPDEBUGASSERT(extraOsFactor >= 1);
@@ -1116,13 +1144,29 @@ namespace askap
             //  - could require a minimum increase factor (20%, 50%, 100%, etc.)
             if (extraOsFactor > 1.) {
                 ASKAPLOG_INFO_STR(logger, "  Adding new parameter extraoversampling = "<<extraOsFactor);
+                parset.add("Images.extraoversampling", utility::toString(extraOsFactor));
                 ASKAPLOG_INFO_STR(logger, "  Changing cellsize from "<<parset.getStringVector("Images.cellsize")<<
                 " to "<<"["<<gCellSize[0]<<"arcsec,"<<gCellSize[1]<<"arcsec]");
-                ASKAPLOG_INFO_STR(logger, "  Changing shape from "<<parset.getInt32Vector("Images.shape")<<
-                " to "<<"["<<nPix<<","<<nPix<<"]");
-                parset.add("Images.extraoversampling", utility::toString(extraOsFactor));
                 parset.replace("Images.cellsize", "["+utility::toString(gCellSize[0])+"arcsec,"+utility::toString(gCellSize[1])+"arcsec]");
-                parset.replace("Images.shape", "["+utility::toString(nPix)+","+utility::toString(nPix)+"]");
+                const std::string imShape0("Images.shape");
+                bool first = true;
+                for (int i=0; i<n; i++) {
+                    const int factor = static_cast<int>(ceil(static_cast<double>(sizes[i])/minSize));
+                    sizes[i] = nPix * factor;
+                    const std::string imShape("Images."+names[i]+".shape");
+                    if (parset.isDefined(imShape)) {
+                        ASKAPLOG_INFO_STR(logger, "  Changing shape for "<<names[i]<<" from "<<parset.getInt32Vector(imShape)<<
+                        " to "<<"["<<sizes[i]<<","<<sizes[i]<<"]");
+                        parset.replace(imShape, "["+utility::toString(sizes[i])+","+utility::toString(sizes[i])+"]");
+                    } else {
+                        ASKAPLOG_INFO_STR(logger, "  Changing shape for "<<names[i]<<" from "<<parset.getInt32Vector(imShape0)<<
+                        " to "<<"["<<sizes[i]<<","<<sizes[i]<<"]");
+                        if (first) {
+                            parset.replace(imShape0, "["+utility::toString(sizes[i])+","+utility::toString(sizes[i])+"]");
+                            first = false;
+                        }
+                    }
+                }
                 if (nSubPix > 0) {
                     ASKAPLOG_INFO_STR(logger, "  Changing subshape from "<<parset.getInt32Vector("Images.subshape")<<
                     " to "<<"["<<nSubPix<<","<<nSubPix<<"]");
