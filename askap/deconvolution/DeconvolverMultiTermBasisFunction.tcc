@@ -1311,8 +1311,10 @@ namespace askap {
             // Report Times
             double sum_time = 0.0;
             for (int i = 0; i < no_timers; i++) {
-                ASKAPLOG_INFO_STR(decmtbflogger, "Section "<<i<<" Time: "<<Times[i]);
-                sum_time += Times[i];
+                if (Times[i] > 0) {
+                    ASKAPLOG_INFO_STR(decmtbflogger, "Section "<<i<<" Time: "<<Times[i]);
+                    sum_time += Times[i];
+                }
             }
 
             ASKAPLOG_INFO_STR(decmtbflogger, "Performed Multi-Term BasisFunction CLEAN for "

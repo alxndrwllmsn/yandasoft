@@ -80,6 +80,7 @@ namespace askap
                         const float alpha=1.,
                         const bool shareCF=false,
                         const int  cfRank = 1,
+                        const bool masterDoesWork = false,
                         const bool mpipresetup = false);
 
                 virtual ~MPIWProjectVisGridder();
@@ -115,7 +116,7 @@ namespace askap
                 /// used in derived classes to avoid too much duplication of the code. For this
                 /// particular class it configures variable/offset support and cutoff behavior.
                 /// @param[in] parset input parset file
-                void configureGridder(const LOFAR::ParameterSet& parset);
+                void configureGridder(const LOFAR::ParameterSet& parset) override;
 
                 /// Initialize convolution function
                 /// @param[in] acc const data accessor to work with
@@ -144,6 +145,7 @@ namespace askap
 		        /// @brief - get the group associated with the COMM_WORLD communicator
 		        static MPI_Group itsWorldGroup;
 		        /// @brief this communicator contains all the ranks except rank 0 of COMM_WORLD
+                ///        if itsMasterDoesWork flag is false otherwise it is the same as COMM_WORLD
                 static MPI_Comm itsNonRankZeroComms;
 		        /// @details - get the group associated with the itsNonRankZeroComms communicator.
 		        ///            This group does not contain rank 0
@@ -171,6 +173,9 @@ namespace askap
 
                 /// number of ranks to do the CF calculation
                 int itsCFRank; 
+
+                bool itsSerial;
+                bool itsMasterDoesWork;
         };
     }
 }

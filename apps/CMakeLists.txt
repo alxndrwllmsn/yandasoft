@@ -1,4 +1,5 @@
 set (_progs
+arrindexspeed
 delaysolver
 extractdata
 genoffsets

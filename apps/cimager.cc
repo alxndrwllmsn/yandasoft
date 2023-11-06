@@ -74,6 +74,9 @@ class CimagerApp : public askap::Application
             try {
                 StatReporter stats;
                 LOFAR::ParameterSet subset(config().makeSubset("Cimager."));
+                if (subset.empty()) {
+                    subset = config().makeSubset("imager.");
+                }
 
                 boost::scoped_ptr<askap::ProfileSingleton::Initialiser> profiler;
                 if (parameterExists("profile")) {

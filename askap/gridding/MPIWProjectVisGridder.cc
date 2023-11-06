@@ -75,10 +75,12 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const double wmax,
                                        const float alpha,
                                        const bool shareCF,
                                        const int cfRank,
+                                       const bool masterDoesWork,
                                        const bool mpipresetup) :
         WProjectVisGridder(wmax, nwplanes, cutoff,overSample,maxSupport,limitSupport,name,alpha,shareCF),
-        itsMpiMemPreSetup(mpipresetup), itsCFRank(cfRank)
+        itsMpiMemPreSetup(mpipresetup), itsCFRank(cfRank), itsSerial(false), itsMasterDoesWork(masterDoesWork)
 {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::constructor");
     ASKAPCHECK(overSample > 0, "Oversampling must be greater than 0");
     ASKAPCHECK(maxSupport > 0, "Maximum support must be greater than 0")
     
@@ -88,12 +90,12 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const double wmax,
 
 MPIWProjectVisGridder::~MPIWProjectVisGridder()
 {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor");
     std::lock_guard<std::mutex> lk(ObjCountMutex);
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     ObjCount -= 1;
 
-    if ( ObjCount == 0 ) {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor. itsSerial: " << itsSerial << ", ObjCount: " << ObjCount);
+    if ( ObjCount == 0 && !itsSerial ) {
         if ( itsWorldGroup != MPI_GROUP_NULL )
             MPI_Group_free(&itsWorldGroup);
 
@@ -121,8 +123,11 @@ MPIWProjectVisGridder::~MPIWProjectVisGridder()
 MPIWProjectVisGridder::MPIWProjectVisGridder(const MPIWProjectVisGridder &other) :
         IVisGridder(other), WProjectVisGridder(other),
         itsMpiMemPreSetup(other.itsMpiMemPreSetup),
-        itsCFRank(other.itsCFRank)
+        itsCFRank(other.itsCFRank),
+        itsSerial(other.itsSerial),
+        itsMasterDoesWork(other.itsMasterDoesWork)
 {
+    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::copy");
 	std::lock_guard<std::mutex> lk(ObjCountMutex);
 	ObjCount += 1;
 }
@@ -131,129 +136,137 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const MPIWProjectVisGridder &other)
 /// Clone a copy of this Gridder
 IVisGridder::ShPtr MPIWProjectVisGridder::clone()
 {
+    ASKAPLOG_INFO_STR(logger,"MPIWProjectVisGridder::clone");
     return IVisGridder::ShPtr(new MPIWProjectVisGridder(*this));
 }
 
 /// Initialize the convolution function into the cube. If necessary this
 /// could be optimized by using symmetries.
-void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAccessor&)
+void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAccessor& acc)
 {
     ASKAPTRACE("MPIWProjectVisGridder::initConvolutionFunction");
-    /// We have to calculate the lookup function converting from
-    /// row and channel to plane of the w-dependent convolution
-    /// function
 
-    if (itsSupport > 0) {
-        return;
-    }
+    if ( itsSerial ) {
+        ASKAPLOG_DEBUG_STR(logger,"MPI WPRoject gridder runs in serial mode. Delegate the call to WProjectVisGridder::initConvolutionFunction");
+        WProjectVisGridder::initConvolutionFunction(acc);
+    } else {
+        /// We have to calculate the lookup function converting from
+        /// row and channel to plane of the w-dependent convolution
+        /// function
 
-    itsSupport = 0;
+        if (itsSupport > 0) {
+            return;
+        }
 
-    if (isOffsetSupportAllowed()) {
-        // this command is executed only once when itsSupport is not set.
-        initConvFuncOffsets(nWPlanes());
-    }
+        itsSupport = 0;
 
-    if (isPCFGridder()) {
-        doPCFGridder();
-        return;
-    }
-
-    ASKAPLOG_DEBUG_STR(logger, "theirCFCache size: " << theirCFCache.size() << ", itsShareCF: " << itsShareCF);
-    if (itsShareCF && theirCFCache.size()>0) {
-        // we already have what we need
-        itsSupport = 1;
-        size_t size = deepRefCopyOfSTDVector(WProjectVisGridder::theirCFCache,itsConvFunc)/1024/1024;
-        ASKAPLOG_INFO_STR(logger, "Using cached convolution functions ("<<size<<" MB)");
         if (isOffsetSupportAllowed()) {
-            for (size_t i=0; i<WProjectVisGridder::theirConvFuncOffsets.size(); i++) {
-                setConvFuncOffset(i,WProjectVisGridder::theirConvFuncOffsets[i].first,WProjectVisGridder::theirConvFuncOffsets[i].second);
-            }
+            // this command is executed only once when itsSupport is not set.
+            initConvFuncOffsets(nWPlanes());
         }
-        return;
-    }
 
-    // generating the convolution plane for the cache can be time consumming so the idea
-    // here is to let each rank within a node to generate a portion the convoulution cache
-    // (ie each rank does a portion of nWPlanes()*itsOverSample*itsOverSample)
-    ASKAPCHECK(itsCFRank > 0,"CF Rank (i.e itsCFRank) is <= 0");
-    ASKAPCHECK(itsCFRank <= itsNodeSize,"CF Rank (i.e itsCFRank) is more than the number of ranks per node");
-    // itsCFRank => number of ranks that participate in the CF calculation
-    if ( itsNodeRank < itsCFRank ) {
-        int numberOfPlanePerNodeRank;
-        int startPlane;
-        int endPlane;
-        int rem = nWPlanes() % itsCFRank;
-        if ( rem == 0 ) {
-            numberOfPlanePerNodeRank = nWPlanes()/itsCFRank;
-            startPlane = itsNodeRank * numberOfPlanePerNodeRank;
-            endPlane = numberOfPlanePerNodeRank*(itsNodeRank + 1);
-        } else {
-            numberOfPlanePerNodeRank = (nWPlanes() - rem)/itsCFRank;
-            if ( itsNodeRank == itsCFRank - 1 ) {
-                startPlane = numberOfPlanePerNodeRank*(itsCFRank - 1);
-                endPlane = nWPlanes();
-            } else {
+        if (isPCFGridder()) {
+            doPCFGridder();
+            return;
+        }
+
+        ASKAPLOG_DEBUG_STR(logger, "theirCFCache size: " << theirCFCache.size() << ", itsShareCF: " << itsShareCF);
+        if (itsShareCF && theirCFCache.size()>0) {
+            // we already have what we need
+            itsSupport = 1;
+            size_t size = deepRefCopyOfSTDVector(WProjectVisGridder::theirCFCache,itsConvFunc)/1024/1024;
+            ASKAPLOG_INFO_STR(logger, "Using cached convolution functions ("<<size<<" MB)");
+            if (isOffsetSupportAllowed()) {
+                for (size_t i=0; i<WProjectVisGridder::theirConvFuncOffsets.size(); i++) {
+                    setConvFuncOffset(i,WProjectVisGridder::theirConvFuncOffsets[i].first,WProjectVisGridder::theirConvFuncOffsets[i].second);
+                }
+            }
+            return;
+        }
+
+        // generating the convolution plane for the cache can be time consumming so the idea
+        // here is to let each rank within a node to generate a portion the convoulution cache
+        // (ie each rank does a portion of nWPlanes()*itsOverSample*itsOverSample)
+        ASKAPCHECK(itsCFRank > 0,"CF Rank (i.e itsCFRank) is <= 0");
+        ASKAPCHECK(itsCFRank <= itsNodeSize,"CF Rank (i.e itsCFRank) is more than the number of ranks per node");
+        // itsCFRank => number of ranks that participate in the CF calculation
+        if ( itsNodeRank < itsCFRank ) {
+            int numberOfPlanePerNodeRank;
+            int startPlane;
+            int endPlane;
+            int rem = nWPlanes() % itsCFRank;
+            if ( rem == 0 ) {
+                numberOfPlanePerNodeRank = nWPlanes()/itsCFRank;
                 startPlane = itsNodeRank * numberOfPlanePerNodeRank;
-                endPlane = (itsNodeRank * numberOfPlanePerNodeRank) + numberOfPlanePerNodeRank;
+                endPlane = numberOfPlanePerNodeRank*(itsNodeRank + 1);
+            } else {
+                numberOfPlanePerNodeRank = (nWPlanes() - rem)/itsCFRank;
+                if ( itsNodeRank == itsCFRank - 1 ) {
+                    startPlane = numberOfPlanePerNodeRank*(itsCFRank - 1);
+                    endPlane = nWPlanes();
+                } else {
+                    startPlane = itsNodeRank * numberOfPlanePerNodeRank;
+                    endPlane = (itsNodeRank * numberOfPlanePerNodeRank) + numberOfPlanePerNodeRank;
+                }
             }
-        }
 
-        ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank 
+            ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank 
                             << ", itsCFRank: " << itsCFRank
                             << ", startPlane: " << startPlane
                             << ", endPlane: " << endPlane);
 
-        // Only ranks smaller than itsCFRank participate in the CF calculation
-        generate(startPlane,endPlane);
-    }
-    // ranks > itsCFRank of a given node wait here
-    MPI_Barrier(itsNodeComms);
-    //MPI_Barrier(itsNonRankZeroComms);
+            // Only ranks smaller than itsCFRank participate in the CF calculation
+            generate(startPlane,endPlane);
+        }
+        // ranks > itsCFRank of a given node wait here
+        ASKAPLOG_DEBUG_STR(logger,"itsNodeRank: " << itsNodeRank << " waits at mpi barrier");
+        MPI_Barrier(itsNodeComms);
+        //MPI_Barrier(itsNonRankZeroComms);
 
-    // calculate the total size of the matrix data in itsConvFunc vector. the itsConvFunc vector
-    // of each rank within the node only contains a partial of the data.
-    size_t total = 0;
-    for ( auto it = itsConvFunc.begin();
-        it != itsConvFunc.end(); ++it) {
-        total += it->nelements() * sizeof(imtypeComplex);
-    }
-    // now collect the total number of bytes from all the ranks to create the shared memory
-    unsigned long totalFromAllRanks = 0;
-    MPI_Reduce(&total,&totalFromAllRanks,1,MPI_UNSIGNED_LONG,MPI_SUM,0,itsNodeComms);
-    if ( ! itsMpiMemPreSetup ) {
-        std::lock_guard<std::mutex> lk(ObjCountMutex);
-        setupMpiMemory(totalFromAllRanks);
-    } else {
-        ASKAPLOG_INFO_STR(logger, "itsNodeRank: " << itsNodeRank << ".  memory has been presetup.");
-    }
-    // Copy the offsets from rank 0 to other ranks on a per node basis
-    if (isOffsetSupportAllowed()) {
-        copyConvFuncOffset();
-    }
-
-    MPI_Barrier(itsNodeComms);
-    //MPI_Barrier(itsNonRankZeroComms);
-    // Save the CF to the cache
-    if (itsShareCF) {
-        // copy itsConvFunc to shared memory
-        // itsConvFuncMatSize keeps an array of pairs whose values are number of rows and columns
-        // of the matrixes of the itsConvFunc vector. This variable is required by ranks > 0 because
-        // their itsConvFunc is empty up until now.
-        std::vector<std::pair<int,int> > itsConvFuncMatSize;
-        copyToSharedMemory(itsConvFuncMatSize);
-	    MPI_Barrier(itsNodeComms);
-
-    	//ASKAPLOG_DEBUG_STR(logger, "copy shared memory back to itsConvFunc");
-        copyFromSharedMemory(itsConvFuncMatSize);
-
-        //MPI_Barrier(itsNodeComms);
-        // this is the original code from WProjectVisGridder
-        total = deepRefCopyOfSTDVector(itsConvFunc,WProjectVisGridder::theirCFCache);
+        // calculate the total size of the matrix data in itsConvFunc vector. the itsConvFunc vector
+        // of each rank within the node only contains a partial of the data.
+        size_t total = 0;
+        for ( auto it = itsConvFunc.begin();
+            it != itsConvFunc.end(); ++it) {
+            total += it->nelements() * sizeof(imtypeComplex);
+        }
+        // now collect the total number of bytes from all the ranks to create the shared memory
+        unsigned long totalFromAllRanks = 0;
+        MPI_Reduce(&total,&totalFromAllRanks,1,MPI_UNSIGNED_LONG,MPI_SUM,0,itsNodeComms);
+        if ( ! itsMpiMemPreSetup ) {
+            std::lock_guard<std::mutex> lk(ObjCountMutex);
+            setupMpiMemory(totalFromAllRanks);
+        } else {
+            ASKAPLOG_INFO_STR(logger, "itsNodeRank: " << itsNodeRank << ".  memory has been presetup.");
+        }
+        // Copy the offsets from rank 0 to other ranks on a per node basis
         if (isOffsetSupportAllowed()) {
-            theirConvFuncOffsets.resize(nWPlanes());
-            for (int nw=0; nw<nWPlanes(); nw++) {
-                theirConvFuncOffsets[nw]=getConvFuncOffset(nw);
+            copyConvFuncOffset();
+        }
+
+        MPI_Barrier(itsNodeComms);
+        //MPI_Barrier(itsNonRankZeroComms);
+        // Save the CF to the cache
+        if (itsShareCF) {
+            // copy itsConvFunc to shared memory
+            // itsConvFuncMatSize keeps an array of pairs whose values are number of rows and columns
+            // of the matrixes of the itsConvFunc vector. This variable is required by ranks > 0 because
+            // their itsConvFunc is empty up until now.
+            std::vector<std::pair<int,int> > itsConvFuncMatSize;
+            copyToSharedMemory(itsConvFuncMatSize);
+	        MPI_Barrier(itsNodeComms);
+
+    	    //ASKAPLOG_DEBUG_STR(logger, "copy shared memory back to itsConvFunc");
+            copyFromSharedMemory(itsConvFuncMatSize);
+
+            //MPI_Barrier(itsNodeComms);
+            // this is the original code from WProjectVisGridder
+            total = deepRefCopyOfSTDVector(itsConvFunc,WProjectVisGridder::theirCFCache);
+            if (isOffsetSupportAllowed()) {
+                theirConvFuncOffsets.resize(nWPlanes());
+                for (int nw=0; nw<nWPlanes(); nw++) {
+                    theirConvFuncOffsets[nw]=getConvFuncOffset(nw);
+                }
             }
         }
     }
@@ -284,6 +297,8 @@ IVisGridder::ShPtr MPIWProjectVisGridder::createGridder(const LOFAR::ParameterSe
     const int cfRank = parset.getInt32("cfrank",1);
     const bool variablesupport  = parset.getBool("variablesupport", false);
 
+    const bool masterDoesWork = parset.getBool("masterDoesWork",false);
+
     // if we split CF calculation among ranks, variablesupport must be true
     // otherwise we get this error :
     // Askap error in: Peak of PSF(0) is at [1, 5]: not at centre pixel: [1024,1024] (thrown in yandasoft/askap/deconvolution/DeconvolverBase.tcc:99)
@@ -296,7 +311,7 @@ IVisGridder::ShPtr MPIWProjectVisGridder::createGridder(const LOFAR::ParameterSe
     ASKAPLOG_INFO_STR(logger, "Using " << (useDouble ? "double":"single")<<
                       " precision to calculate convolution functions");
     boost::shared_ptr<MPIWProjectVisGridder> gridder(new MPIWProjectVisGridder(wmax, nwplanes,
-            cutoff, oversample, maxSupport, limitSupport, tablename, alpha, useDouble,cfRank,mpipresetup));
+            cutoff, oversample, maxSupport, limitSupport, tablename, alpha, useDouble,cfRank,masterDoesWork,mpipresetup));
     gridder->configureGridder(parset);
     gridder->configureWSampling(parset);
 
@@ -338,42 +353,71 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
 
     itsShareCF = parset.getBool("sharecf",false);
 
-
-    MPI_Comm_rank(MPI_COMM_WORLD, &itsWorldRank);
-
-    // Each rank should only run the code below once.
-    if ( ObjCount > 1 ) return;
-
-    ASKAPLOG_INFO_STR(logger, "Setup MPI subgroup communicator for MPI Shared Memory");
-
-    // The code below setup a MPI communicator for each node where the 
-    // rank 0 (in the COMM_WORLD) of the first node is not included.
-    int r;
-    r = MPI_Comm_group(MPI_COMM_WORLD, &itsWorldGroup);
-    ASKAPASSERT(r == MPI_SUCCESS);
-    const int exclude_ranks[1] = {0};
-    r = MPI_Group_excl(itsWorldGroup, 1, exclude_ranks, &itsGridderGroup);
-    ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Group_excl() failed");
-    r = MPI_Comm_create_group(MPI_COMM_WORLD, itsGridderGroup, 0, &itsNonRankZeroComms);
-    ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Comm_create_group() failed");
-    r = MPI_Comm_split_type(itsNonRankZeroComms, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &itsNodeComms);
-	ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Comm_split_type() failed");
-    // number of ranks within the node
-    MPI_Comm_size(itsNodeComms, &itsNodeSize);
-    // rank within a node
-    MPI_Comm_rank(itsNodeComms, &itsNodeRank);
-    ASKAPCHECK(itsNodeComms != MPI_COMM_NULL, "rank: " << itsWorldRank << ", itsNodeRank: " << itsNodeRank << " has itsNodeComms = MPI_COMM_NULL");
-    MPI_Barrier(itsNodeComms);
-
-    ASKAPLOG_INFO_STR(logger,"rank: " << itsWorldRank << ", itsNodeSize: " << itsNodeSize << ", itsNodeRank: " << itsNodeRank);
-
-    if ( itsMpiMemPreSetup ) {
-        std::string mpiMem = parset.getString("mpipresetmemory","");
-        ASKAPCHECK(mpiMem != "", "mpipresetmemory option is not set");
-        unsigned long memoryInBytes = std::stoul(mpiMem);;
-        ASKAPLOG_INFO_STR(logger,"Presetup the shared memory. " << memoryInBytes);
-        setupMpiMemory(memoryInBytes); 
+    // use the MPI_Initialized() function to test if the gridder is running in parallel or serial 
+    // assuming that all multi ranks MPI task must first call MPI_init() and so if the MPI_Initialized() 
+    // function returns false (0) then the task is not an MPI task
+    itsSerial = false;
+    int mpiInitalised = 0;
+    MPI_Initialized(&mpiInitalised);
+    if ( mpiInitalised == 1 ) {
+        int numRanks = 0;
+        MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
+        if ( numRanks == 1 ) {
+            // MPI has only one rank so it must be running in serial
+            ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in serial");
+            itsSerial = true;
+        }
     }
+
+    if ( !itsSerial ) {
+        ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in parallel");
+        // Each rank should only run the code below once.
+        if ( ObjCount > 1 ) return;
+
+        ASKAPLOG_INFO_STR(logger, "Setup MPI subgroup communicator for MPI Shared Memory");
+
+        // The code below setup a MPI communicator for each node where the 
+        // rank 0 (in the COMM_WORLD) of the first node is not included.
+        int r;
+        r = MPI_Comm_group(MPI_COMM_WORLD, &itsWorldGroup);
+        ASKAPASSERT(r == MPI_SUCCESS);
+        ASKAPLOG_DEBUG_STR(logger,"itsMasterDoesWork: " << itsMasterDoesWork);
+        if ( itsMasterDoesWork )  {
+            // We have a master that wants to get its hand dirty and do some work. Good on you
+            MPI_Comm_group(MPI_COMM_WORLD,&itsGridderGroup);
+        } else {
+            // We have a lazy master that likes to sit around and farm out the work and get the
+            // reward and credit of its workers
+            const int exclude_ranks[1] = {0};
+            r = MPI_Group_excl(itsWorldGroup, 1, exclude_ranks, &itsGridderGroup);
+        }
+        
+        ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Group_excl() failed");
+        r = MPI_Comm_create_group(MPI_COMM_WORLD, itsGridderGroup, 0, &itsNonRankZeroComms);
+        ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Comm_create_group() failed");
+        r = MPI_Comm_split_type(itsNonRankZeroComms, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &itsNodeComms);
+	    ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Comm_split_type() failed");
+        // number of ranks within the node
+        MPI_Comm_size(itsNodeComms, &itsNodeSize);
+        // rank within a node
+        MPI_Comm_rank(itsNodeComms, &itsNodeRank);
+        ASKAPCHECK(itsNodeComms != MPI_COMM_NULL, "rank: " << itsWorldRank << ", itsNodeRank: " << itsNodeRank << " has itsNodeComms = MPI_COMM_NULL");
+        MPI_Barrier(itsNodeComms);
+
+        ASKAPLOG_INFO_STR(logger,"rank: " << itsWorldRank << ", itsNodeSize: " << itsNodeSize << ", itsNodeRank: " << itsNodeRank);
+
+        if ( itsMpiMemPreSetup ) {
+            std::string mpiMem = parset.getString("mpipresetmemory","");
+            ASKAPCHECK(mpiMem != "", "mpipresetmemory option is not set");
+            unsigned long memoryInBytes = std::stoul(mpiMem);;
+            ASKAPLOG_INFO_STR(logger,"Presetup the shared memory. " << memoryInBytes);
+            setupMpiMemory(memoryInBytes); 
+        }
+    } else {
+        // The gridder is running in serial so it should behave as if it is a WProject gridder object
+        ASKAPLOG_INFO_STR(logger,"MPI gridder is running in serial so it should behave as if it is a WProject gridder");
+    }
+    
 }
 
 
@@ -396,6 +440,8 @@ void  MPIWProjectVisGridder::setupMpiMemory(size_t bufferSize /* in bytes */)
 	    ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << " - mpi shared memory already setup. ObjCount: " << ObjCount);
         return;
     }
+
+    ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << " - Setup mpi shared memory. ObjCount: " << ObjCount);
 
     itsMpiMemSetup = true;
 

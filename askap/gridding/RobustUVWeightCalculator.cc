@@ -63,7 +63,10 @@ void RobustUVWeightCalculator::process(casacore::Matrix<float> &wt) const
 
     for (casacore::uInt iv=0; iv < wt.ncolumn(); ++iv) {
         for (casacore::uInt iu=0; iu < wt.nrow(); ++iu) {
-            wt(iu, iv) = (noisePower * wt(iu, iv) + 1.f);
+            // note, the weight is reciprocal to that in the original hack - this is because we apply the weight directly to visibilities
+            // by multiplication, not via noise method (sigma estimate) which enters as inverse variance weight resulting in a division.
+            // The user can use "Reciprocal" weight calculator in the chain if for some reason 1 / wt is desired instead.
+            wt(iu, iv) = 1.f / (noisePower * wt(iu, iv) + 1.f);
         }
     }
 
