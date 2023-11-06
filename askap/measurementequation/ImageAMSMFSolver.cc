@@ -409,7 +409,7 @@ namespace askap
             uInt ny(planeIter.planeShape()(1));
             IPosition centre(2, nx/2, ny/2);
 
-            itsPSFZeroArray=psfLongVec(0);
+            itsPSFZeroArray.assign(psfLongVec(0));
             if (firstcycle) {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._fc_norm+precnd");
 

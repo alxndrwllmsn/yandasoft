@@ -68,7 +68,7 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/parallel/AdviseParallel.h>
 #include <askap/utils/StatsAndMask.h>
 
-// this is used for uv-weight calculators factory, to be removed 
+// this is used for uv-weight calculators factory, to be removed
 // when/if we factor this out into a separate class
 #include <askap/gridding/CompositeUVWeightCalculator.h>
 #include <askap/gridding/RobustUVWeightCalculator.h>
@@ -125,6 +125,8 @@ namespace askap
         itsWriteSensitivityImage = parset.getBool("write.sensitivityimage", false);
         itsWriteGrids = parset.getBool("dumpgrids", false); // write (dump) the gridded data, psf and pcf
         itsWriteGrids = parset.getBool("write.grids",itsWriteGrids); // new name
+        itsWriteMultiple = parset.getBool("write.multiple", false); // Only write out the first image by default
+        itsWriteMultipleModels = parset.getBool("write.multiplemodels",true); // write all model images
 
         itsSensitivityCutoff = parset.getDouble("sensitivityimage.cutoff", 0.01);
 
@@ -150,6 +152,10 @@ namespace askap
             SynthesisParamsHelper::setUpImages(itsModel,
                                       parset.makeSubset("Images."));
         }
+        ASKAPCHECK(parset.getStringVector("Images.Names").size()>0,"No image names specified");
+        itsFirstImageName = parset.getStringVector("Images.Names")[0];
+        ASKAPCHECK(itsFirstImageName.find("image")==0,"Image names should start with 'image'");
+        itsFirstImageName = itsFirstImageName.substr(5);
 
         /// Create the solver from the parameterset definition
         itsSolver = ImageSolverFactory::make(parset);
@@ -459,8 +465,8 @@ namespace askap
       if (shapeNeeded && !parset.isDefined(param)) {
           std::ostringstream pstr;
           const double fieldSize = advice.squareFieldSize(1); // in deg
-          const long lSize = long(fieldSize * 3600 / cellSize[0]) + 1;
-          const long mSize = long(fieldSize * 3600 / cellSize[1]) + 1;
+          const int lSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[0]) + 1);
+          const int mSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[1]) + 1);
           pstr<<"["<<lSize<<","<<mSize<<"]";
           ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param <<": " << pstr.str().c_str());
           parset.add(param, pstr.str().c_str());
@@ -496,7 +502,7 @@ namespace askap
 
     /// @brief make calibration iterator if necessary, otherwise return unchanged interator
     /// @details This method wraps the iterator passed as the input into into a calibration iterator adapter
-    /// if calibration is to be performed (i.e. if solution source is defined). 
+    /// if calibration is to be performed (i.e. if solution source is defined).
     /// @param[in] origIt original iterator to uncalibrated data
     /// @return shared pointer to the data iterator with on-the-fly calibration application, if necessary
     /// or the original iterator otherwise
@@ -515,7 +521,7 @@ namespace askap
             // calibration iterator to replace the original one for the purpose of measurement equation creation
             const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
             return calIter;
-       } 
+       }
        ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
        return origIt;
     }
@@ -574,8 +580,8 @@ namespace askap
     }
 
     /// @brief obtain measurement equation cast to ImageFFTEquation
-    /// @details This helper method encapsulates operations common to a number of methods of this and derived classes to obtain the 
-    /// current measurement equation with the original type as created (i.e. ImageFFTEquation) and 
+    /// @details This helper method encapsulates operations common to a number of methods of this and derived classes to obtain the
+    /// current measurement equation with the original type as created (i.e. ImageFFTEquation) and
     /// does the appropriate checks (so the return is guaranteed to be a non-null shared pointer).
     /// @return shared pointer of the appropriate type to the current measurement equation
     boost::shared_ptr<ImageFFTEquation> ImagerParallel::getMeasurementEquation() const
@@ -819,12 +825,12 @@ namespace askap
     }
 
     /// @brief helper method to extract weight builder object out of normal equations
-    /// @details For traditional weighting with distributed data we use normal equation merging 
+    /// @details For traditional weighting with distributed data we use normal equation merging
     /// mechanism to do the gather operation (and EstimatorAdapter). This method does required
     /// casts and checks to get the required shared pointer (which is guaranteed to be non-empty)
     /// @return shared pointer to the uv-weight builder object stored in the current normal equations
     boost::shared_ptr<GenericUVWeightBuilder> ImagerParallel::getUVWeightBuilder() const {
-       const boost::shared_ptr<scimath::EstimatorAdapter<GenericUVWeightBuilder> > adapter = 
+       const boost::shared_ptr<scimath::EstimatorAdapter<GenericUVWeightBuilder> > adapter =
              boost::dynamic_pointer_cast<scimath::EstimatorAdapter<GenericUVWeightBuilder> >(getNE());
        ASKAPCHECK(adapter, "Incompatible type of normal equations detected while trying to access UV Weight builder");
        const boost::shared_ptr<GenericUVWeightBuilder> builder = adapter->get();
@@ -832,9 +838,9 @@ namespace askap
        return builder;
     }
 
-    /// @brief compute uv weights using data stored via adapter in the normal equations 
+    /// @brief compute uv weights using data stored via adapter in the normal equations
     /// @details This method gets access to the uv-weight builder handled via EstimatorAdapter and
-    /// stored instead of normal equations by shared pointer. It then runs the finalisation step using 
+    /// stored instead of normal equations by shared pointer. It then runs the finalisation step using
     /// the stored shared pointer to the uv-weight calculator object. The resulting weight is added as
     /// a parameter to the existing model.
     /// @note This method assumes that it is called from the right place (i.e. on the correct rank) and
@@ -862,7 +868,7 @@ namespace askap
        // this may be needed for facets to work with traditional weighting!
        ASKAPCHECK(currentParamNames.size() == 1, "We currently support only one free image parameter with traditional weighting you have "<<currentParamNames.size());
        const std::string paramName = *currentParamNames.begin();
-       // for now, figure out and copy index translation details from the builder and pass it on as is. However, here we can setup more logic 
+       // for now, figure out and copy index translation details from the builder and pass it on as is. However, here we can setup more logic
        // to do non-trivial stuff, e.g. select a particular weight grid and apply to other data, etc
        const casacore::uInt coeffBeam = builder->indexOf(1u, 0u, 0u);
        const casacore::uInt coeffField = builder->indexOf(0u, 1u, 0u);
@@ -874,7 +880,7 @@ namespace askap
 
     /// @brief iterate over given data and accumulate samples for uv weights
     /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
-    /// and weight builder class. It expects the builder already setup and accessible via the normal equations 
+    /// and weight builder class. It expects the builder already setup and accessible via the normal equations
     /// shared pointer. The data iterator to work with is passed as a parameter. The image details are extracted from
     /// the model (to initialise sample grid).
     /// @param[in] iter shared pointer to the iterator to use (note it is advanced by this method to iterate over
@@ -910,7 +916,7 @@ namespace askap
        }
 
        // technical debt!
-       // this is hopefully a temporary hack - due to the current way to place oversampling planes, the weight gridder needs to know 
+       // this is hopefully a temporary hack - due to the current way to place oversampling planes, the weight gridder needs to know
        // the oversampling factor used by the actual data gridder. The following code gets it from the parset and sets to the weight gridder
        // Note, the weight gridder doesn't oversample its grid, it just needs to sample the same way for the first oversampling plane
        const int oversample = parset().getInt32("gridder."+parset().getString("gridder")+".oversample", 1);
@@ -925,7 +931,7 @@ namespace askap
        // break faceting. It is straightforward to extend the code to support multiple facets if we build just one weight for all facets, otherwise
        // more thoughts are needed (but, perhaps, using the 3rd index we could have facets factored in and even build separate weight for each facet).
 
-       // again some code duplication with what we have above, but here we want to retain the full parameter name 
+       // again some code duplication with what we have above, but here we want to retain the full parameter name
        // it would be nice to think about some refactoring
        ASKAPDEBUGASSERT(itsModel);
        const std::vector<std::string> completions = itsModel->completions("image");
@@ -947,7 +953,7 @@ namespace askap
        const scimath::Axes axes(itsModel->axes(*currentParamNames.begin()));
        const casacore::IPosition imageShape = itsModel->shape(*currentParamNames.begin());
        gridder.initialise(axes, imageShape);
- 
+
        // now the setup is done, so we can iterate over data and accumulate
        ASKAPLOG_INFO_STR(logger, "Iterating over data to compute the density of samples for uv-weight construction");
        IConstDataSharedIter it(iter);
@@ -969,15 +975,15 @@ namespace askap
     }
 
     /// @brief factory method creating uv weight calculator based on the parset
-    /// @details The main parameter controlling the mode of traditional weighting is 
+    /// @details The main parameter controlling the mode of traditional weighting is
     /// Cimager.uvweight which either can take a keyword describing some special method
     /// of getting the weights (which doesn't require iteration over data), e.g. reading from disk
     /// or a list of "effects" which should be applied to the density of uv samples obtained via
     /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
     /// case with the list of effects) or returns an empty pointer if no iteration over data is required
-    /// (i.e. either some special algorithm is in use or there is no uv-weighting) 
-    /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight 
-    /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that 
+    /// (i.e. either some special algorithm is in use or there is no uv-weighting)
+    /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight
+    /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that
     /// there is no need obtaining the density because either no traditional weighting is done or
     /// we're using some special algorithm which does not require iteration over data
     void ImagerParallel::createUVWeightCalculator()
@@ -989,8 +995,8 @@ namespace askap
        }
        const std::vector<std::string> wtCalcList = parset().getStringVector(keyword);
        ASKAPCHECK(wtCalcList.size() > 0u, "Cimager.uvweight should contain either a single keyword describing how the weight is obtained or a vector with procedure names to apply these to measured uv-density");
-       
-       // also need to check here later on that Cimager.uvweight parameter is set to one of the resereved keywords and return an empty 
+
+       // also need to check here later on that Cimager.uvweight parameter is set to one of the resereved keywords and return an empty
        // shared pointer if this is the case. Or factor out this method into a separate class where the same logic would be done
        // some other way
 
@@ -1002,7 +1008,7 @@ namespace askap
             const std::string name = wtCalcList[index];
             if (name == "Robust") {
                 // we could've had parameters in the form Cimager.uvweight.Robust.robustness to follow a more structured apporach - can be changed if we want it
-                const float robustness = parset().getFloat(keyword + ".robustness"); 
+                const float robustness = parset().getFloat(keyword + ".robustness");
                 ASKAPLOG_INFO_STR(logger, "        + "<<name<<": robust weighting with robustness = "<<robustness);
                 const boost::shared_ptr<RobustUVWeightCalculator> calc(new RobustUVWeightCalculator(robustness));
                 calculators[index]  = calc;
@@ -1011,9 +1017,9 @@ namespace askap
                     ASKAPLOG_INFO_STR(logger, "        + "<<name<<": ensuring conjugate symmetry via FFT");
                     const boost::shared_ptr<ConjugatesAdderFFT> calc(new ConjugatesAdderFFT());
                     calculators[index] = calc;
-                } else { 
+                } else {
                     if (name == "Reciprocal") {
-                        const float threshold = parset().getFloat(keyword + ".recipthreshold", 1e-5); 
+                        const float threshold = parset().getFloat(keyword + ".recipthreshold", 1e-5);
                         ASKAPLOG_INFO_STR(logger, "        + "<<name<<": calculating reciprocal for weight application (threshold = "<<threshold<<")");
                         const boost::shared_ptr<ReciprocalUVWeightCalculator> calc(new ReciprocalUVWeightCalculator(threshold));
                         calculators[index] = calc;
@@ -1110,12 +1116,13 @@ namespace askap
         if ( parset().isDefined("imageHistory") ) {
             historyLines = parset().getStringVector("imageHistory");
         } else {
-            ASKAPLOG_INFO_STR(logger, "---> imageHistory is not defined");
+            ASKAPLOG_DEBUG_STR(logger, "---> imageHistory is not defined");
         }
 
         for (std::vector<std::string>::const_iterator it=resultimages.begin(); it
             !=resultimages.end(); it++) {
             const ImageParamsHelper iph(*it);
+            const bool doWrite = itsWriteMultiple || it->find(itsFirstImageName) != std::string::npos;
 
             // if true, "image.*" is retained for degridding but "fullres.*" is used for cleaning & restoring
             // always write model if writeAtMajorCycle is true (sets postfix)
@@ -1124,37 +1131,42 @@ namespace askap
                     // change "fullres" back to "image" for output
                     string tmpname = *it;
                     tmpname.replace(0,7,"image");
-                    ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << tmpname+postfix );
-                    accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
-                    SynthesisParamsHelper::saveImageParameter(*itsModel, *it, tmpname+postfix, boost::none, keywords, historyLines);
-                    // write the image stats to the image table
-                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,tmpname+postfix,parset());
+                    if (doWrite || itsWriteMultipleModels) {
+                        ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << tmpname+postfix );
+                        accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
+                        SynthesisParamsHelper::saveImageParameter(*itsModel, *it, tmpname+postfix, boost::none, keywords, historyLines);
+                        // write the image stats to the image table
+                        askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,tmpname+postfix,parset());
+                    }
                 }
             } else {
                 if ((it->find("image") == 0) && (itsWriteModelImage || postfix!="")) {
-                    ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
-                    accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
-                    SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, boost::none, keywords, historyLines);
-                    // write the image stats to the image table
-                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*it+postfix,parset());
+                    if (doWrite || itsWriteMultipleModels) {
+                        ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
+                        accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
+                        SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, boost::none, keywords, historyLines);
+                        // write the image stats to the image table
+                        askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*it+postfix,parset());
+                    }
                 }
             }
             if ((it->find("weights") == 0) && (itsWriteWtImage||itsWriteSensitivityImage))  {
-                if (itsWriteWtImage) {
+                if (itsWriteWtImage && doWrite) {
                     ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
                     SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor, keywords, historyLines);
                 }
-                if (itsWriteSensitivityImage && (it->find("weights") == 0) && (postfix == "")) {
-                    makeSensitivityImage(*it);
+                if (itsWriteSensitivityImage && (it->find("weights") == 0)
+                    && (postfix == "") && doWrite) {
+                        makeSensitivityImage(*it);
                 }
             }
-            if ((it->find("mask") == 0) && itsWriteMaskImage)  {
+            if ((it->find("mask") == 0) && itsWriteMaskImage && doWrite)  {
                 ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
                 SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor, keywords, historyLines);
             }
             if ((it->find("residual") == 0) && itsWriteResidual) {
                 if (!iph.isFacet()) {
-                    if (!itsRestore && itsWriteResidual) {
+                    if (!itsRestore && itsWriteResidual && doWrite) {
                         ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
                         SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor, keywords, historyLines);
                         // write the image stats to the image table
@@ -1163,7 +1175,7 @@ namespace askap
                     }
                 }
                 else {
-                    if (itsWriteResidual) {
+                    if (itsWriteResidual && doWrite) {
                         ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
                         SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor, keywords, historyLines);
                         // write the image stats to the image table
@@ -1173,7 +1185,7 @@ namespace askap
                 }
 
             }
-            if ((it->find("psf") == 0) && itsWritePsfRaw) {
+            if ((it->find("psf") == 0) && itsWritePsfRaw && doWrite) {
                 ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
                 SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor, keywords, historyLines);
             }
@@ -1220,7 +1232,7 @@ namespace askap
 
             for (uint pass=0; pass<n_passes; ++pass) {
                 if (pass == 0) {
-                    ASKAPLOG_INFO_STR(logger, "Restore images" <<
+                    ASKAPLOG_INFO_STR(logger, "Restoring images" <<
                       (n_passes == 1 || itsWriteFirstRestore ? " and writing them to disk" :""));
                     restore_suffix = "";
                 }
@@ -1275,47 +1287,51 @@ namespace askap
                 ir->copyNormalEquations(*template_solver);
                 Quality q;
 
+                // this solves for residual images and convolves and adds each model image
+                // FIX: if itsWriteMultiple==false we do restore work we throw away
                 ir->solveNormalEquations(*itsModel,q);
                 // merged image should be a fixed parameter without facet suffixes
                 if (n_passes == 1 || itsWriteFirstRestore || pass > 0) {
                     std::vector<std::string> resultimages2=itsModel->names();
                     for (std::vector<std::string>::const_iterator
                             ci=resultimages2.begin(); ci!=resultimages2.end(); ++ci) {
-                        const ImageParamsHelper iph(*ci);
-                        // if true, "image.*" is retained for degridding but "fullres.*" is used for restoring
-                        if (extraOSfactor) {
-                            if (!iph.isFacet() && ((ci->find("fullres") == 0)))  {
-                                string tmpname = *ci;
-                                tmpname.replace(0,7,"image");
-                                ASKAPLOG_INFO_STR(logger, "Saving restored image " << *ci << " with name "
-                                        << tmpname+restore_suffix+".restored" );
-                                SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, tmpname+restore_suffix+".restored", boost::none, keywords, historyLines);
+                        if (itsWriteMultiple || ci->find(itsFirstImageName)!=std::string::npos) {
+                            const ImageParamsHelper iph(*ci);
+                            // if true, "image.*" is retained for degridding but "fullres.*" is used for restoring
+                            if (extraOSfactor) {
+                                if (!iph.isFacet() && ((ci->find("fullres") == 0)))  {
+                                    string tmpname = *ci;
+                                    tmpname.replace(0,7,"image");
+                                    ASKAPLOG_INFO_STR(logger, "Saving restored image " << *ci << " with name "
+                                            << tmpname+restore_suffix+".restored" );
+                                    SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, tmpname+restore_suffix+".restored", boost::none, keywords, historyLines);
+                                    // write the image stats to the image table
+                                    accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
+                                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix+".restored",parset());
+                                }
+                            } else {
+                                if (!iph.isFacet() && ((ci->find("image") == 0)))  {
+                                    ASKAPLOG_INFO_STR(logger, "Saving restored image " << *ci << " with name "
+                                            << *ci+restore_suffix+".restored" );
+                                    SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, *ci+restore_suffix+".restored", boost::none, keywords, historyLines);
+                                    // write the image stats to the image table
+                                    accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
+                                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix+".restored",parset());
+                                }
+                            }
+                            if (!iph.isFacet() && ((ci->find("psf.image") == 0) && itsWritePsfImage))  {
+                                ASKAPLOG_INFO_STR(logger, "Saving psf image " << *ci << " with name "
+                                        << *ci+restore_suffix );
+                                SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, *ci+restore_suffix, extraOSfactor, keywords, historyLines);
+                            }
+                            if (!iph.isFacet() && ((ci->find("residual") == 0) && itsWriteResidual))  {
+                                ASKAPLOG_INFO_STR(logger, "Saving residual image " << *ci << " with name "
+                                        << *ci+restore_suffix );
+                                SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, *ci+restore_suffix, extraOSfactor, keywords, historyLines);
                                 // write the image stats to the image table
                                 accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
-                                askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix+".restored",parset());
+                                askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix,parset());
                             }
-                        } else {
-                            if (!iph.isFacet() && ((ci->find("image") == 0)))  {
-                                ASKAPLOG_INFO_STR(logger, "Saving restored image " << *ci << " with name "
-                                        << *ci+restore_suffix+".restored" );
-                                SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, *ci+restore_suffix+".restored", boost::none, keywords, historyLines);
-                                // write the image stats to the image table
-                                accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
-                                askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix+".restored",parset());
-                            }
-                        }
-                        if (!iph.isFacet() && ((ci->find("psf.image") == 0) && itsWritePsfImage))  {
-                            ASKAPLOG_INFO_STR(logger, "Saving psf image " << *ci << " with name "
-                                    << *ci+restore_suffix );
-                            SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, *ci+restore_suffix, extraOSfactor, keywords, historyLines);
-                        }
-                        if (!iph.isFacet() && ((ci->find("residual") == 0) && itsWriteResidual))  {
-                            ASKAPLOG_INFO_STR(logger, "Saving residual image " << *ci << " with name "
-                                    << *ci+restore_suffix );
-                            SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, *ci+restore_suffix, extraOSfactor, keywords, historyLines);
-                            // write the image stats to the image table
-                            accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
-                            askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix,parset());
                         }
                     }
                 }
