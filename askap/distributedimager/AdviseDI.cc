@@ -944,9 +944,9 @@ void AdviseDI::addMissingParameters(bool extra)
 
        param = "Images.shape"; // if image shape is undefined, use the advice.
        if (shapeNeeded && !itsParset.isDefined(param)) {
-           const double fieldSize = advice.squareFieldSize(1); // in deg
-           const int lSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[0]) + 1);
-           const int mSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[1]) + 1);
+           const double fieldSize = advice.squareFieldSize(1) * 3600; // in arcsec
+           const int lSize = SynthesisParamsHelper::nextFactor2357(static_cast<int>(fieldSize / cellSize[0]) + 1);
+           const int mSize = SynthesisParamsHelper::nextFactor2357(static_cast<int>(fieldSize / cellSize[1]) + 1);
            string pstr = "["+toString(lSize)+","+toString(mSize)+"]";
            ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param <<": " << pstr);
            itsParset.add(param, pstr);

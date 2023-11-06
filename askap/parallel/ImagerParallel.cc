@@ -152,6 +152,7 @@ namespace askap
             SynthesisParamsHelper::setUpImages(itsModel,
                                       parset.makeSubset("Images."));
         }
+        ASKAPCHECK(parset.getStringVector("Images.Names").size()>0,"No image names specified");
         itsFirstImageName = parset.getStringVector("Images.Names")[0];
         ASKAPCHECK(itsFirstImageName.find("image")==0,"Image names should start with 'image'");
         itsFirstImageName = itsFirstImageName.substr(5);
@@ -1121,7 +1122,7 @@ namespace askap
         for (std::vector<std::string>::const_iterator it=resultimages.begin(); it
             !=resultimages.end(); it++) {
             const ImageParamsHelper iph(*it);
-            bool doWrite = itsWriteMultiple || it->find(itsFirstImageName) != std::string::npos;
+            const bool doWrite = itsWriteMultiple || it->find(itsFirstImageName) != std::string::npos;
 
             // if true, "image.*" is retained for degridding but "fullres.*" is used for cleaning & restoring
             // always write model if writeAtMajorCycle is true (sets postfix)

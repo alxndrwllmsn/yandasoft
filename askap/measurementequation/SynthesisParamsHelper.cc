@@ -1050,11 +1050,13 @@ namespace askap
 
             const std::vector<std::string> names = parset.getStringVector("Images.Names");
             const int n = names.size();
+            ASKAPCHECK(n > 0,"At least one image name needs to be specified");
             Vector<int> sizes(n);
             int minSize;
             if (parset.isDefined("Images.shape")) {
                 auto shape = parset.getInt32Vector("Images.shape");
                 ASKAPCHECK(shape.size()==2,"The image shape needs two dimensions");
+                ASKAPCHECK(shape[0]==shape[1],"The image shape needs to be square for Nyqyuist gridding");
                 sizes = shape[0];
                 minSize = sizes[0];
             }
@@ -1063,6 +1065,9 @@ namespace askap
             // find smallest image and make sure size is sensible
             for (int i=0; i<n; i++) {
                 if (parset.isDefined("Images."+names[i]+".shape")) {
+                    auto shape = parset.getInt32Vector("Images."+names[i]+".shape");
+                    ASKAPCHECK(shape.size()==2,"The image shape needs two dimensions");
+                    ASKAPCHECK(shape[0]==shape[1],"The image shape needs to be square for Nyqyuist gridding");
                     sizes[i] = parset.getInt32Vector("Images."+names[i]+".shape")[0];
                 }
             }
