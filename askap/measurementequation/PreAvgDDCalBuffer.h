@@ -134,8 +134,6 @@ public:
    virtual const casacore::Vector<casacore::uInt>& feed2() const;
 
    /// Cube of flags corresponding to the output of visibility() 
-   /// @depreciated a reference to nRow x nChannel x nPol cube with flag 
-   ///         information. If True, the corresponding element is flagged bad.
    /// @return a reference to nPol x nChannel x nRow cube with flag 
    ///         information. If True, the corresponding element is flagged bad.
    virtual const casacore::Cube<casacore::Bool>& flag() const;

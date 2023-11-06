@@ -206,14 +206,9 @@ void DelaySolverImpl::process(const accessors::IConstDataAccessor &acc)
        }
    }
    
-   //const casa::Matrix<casa::Complex> vis = acc.visibility().xyPlane(pol2use);
    const casa::Matrix<casa::Complex> vis = acc.visibility().yzPlane(pol2use);
    for (casa::uInt row = 0; row < acc.nRow(); ++row) {
-        // This is because xyPlane in the old index order is the equivalent of the
-        // yzPlane in the new index order with the row and column reversed.
-        //const casa::Vector<casa::Complex> thisRowVis = vis.row(row);
         const casa::Vector<casa::Complex> thisRowVis = vis.column(row);
-        //const casa::Vector<bool> thisRowFlags = flags.row(row);
         const casa::Vector<bool> thisRowFlags = flags.column(row);
         ASKAPDEBUGASSERT(itsSpcBuffer.nrow() == acc.nRow());
         ASKAPDEBUGASSERT(itsAvgCounts.nrow() == acc.nRow());        

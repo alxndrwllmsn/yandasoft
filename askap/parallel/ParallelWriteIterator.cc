@@ -269,15 +269,12 @@ void ParallelWriteIterator::advance()
             ASKAPASSERT(itsAccessor.itsVisibility.ncolumn() == itsAccessor.itsFlag.ncolumn());
             ASKAPASSERT(itsAccessor.itsVisibility.nplane() == itsAccessor.itsFlag.nplane());
         } else {
-            //itsAccessor.itsVisibility.resize(itsAccessor.itsFlag.nrow(), itsAccessor.itsFlag.ncolumn(), itsAccessor.itsFlag.nplane());
-            itsAccessor.itsVisibility.resize(itsAccessor.itsFlag.nplane(),itsAccessor.itsFlag.ncolumn(), itsAccessor.itsFlag.nrow());
+            itsAccessor.itsVisibility.resize(itsAccessor.itsFlag.nrow(), itsAccessor.itsFlag.ncolumn(), itsAccessor.itsFlag.nplane());
             itsAccessor.itsVisibility.set(0.);    
         }
         // consistency checks
-        //ASKAPASSERT(itsAccessor.nRow() == itsAccessor.itsVisibility.nrow());
         ASKAPASSERT(itsAccessor.nRow() == itsAccessor.itsVisibility.nplane());
         ASKAPASSERT(itsAccessor.nChannel() == itsAccessor.itsVisibility.ncolumn());
-        //ASKAPASSERT(itsAccessor.nPol() == itsAccessor.itsVisibility.nplane());
         ASKAPASSERT(itsAccessor.nPol() == itsAccessor.itsVisibility.nrow());
         ASKAPASSERT(itsAccessor.nChannel() == itsAccessor.itsFrequency.nelements());            
       }

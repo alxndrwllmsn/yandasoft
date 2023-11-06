@@ -90,13 +90,11 @@ void PreAvgDDCalBuffer::initialise(const IConstDataAccessor &acc, const bool fdp
   const casacore::uInt numberOfRows = acc.nRow();
   const casacore::uInt numberOfPol = acc.nPol();
   const casacore::uInt numberOfChan = fdp ? acc.nChannel() : 1;
-  //if (itsFlag.shape() != casacore::IPosition(3,numberOfRows, numberOfChan, numberOfPol)) {
   if (itsFlag.shape() != casacore::IPosition(3,numberOfPol,numberOfChan,numberOfRows)) {
       // resizing buffers
       itsAntenna1.resize(numberOfRows);
       itsAntenna2.resize(numberOfRows);
       itsBeam.resize(numberOfRows);
-      //itsFlag.resize(numberOfRows, numberOfChan, numberOfPol);
       itsFlag.resize(numberOfPol, numberOfChan, numberOfRows);
       itsPolXProducts.resize(numberOfPol,
           casacore::IPosition(2,casacore::Int(numberOfRows),casacore::uInt(numberOfChan)),false);
@@ -239,8 +237,6 @@ const casacore::Vector<casacore::uInt>& PreAvgDDCalBuffer::feed2() const
 }
 
 /// Cube of flags corresponding to the output of visibility() 
-/// @depreciated a reference to nRow x nChannel x nPol cube with flag 
-///         information. If True, the corresponding element is flagged bad.
 /// @return a reference to nPol x nChannel x nRow cube with flag 
 ///         information. If True, the corresponding element is flagged bad.
 const casacore::Cube<casacore::Bool>& PreAvgDDCalBuffer::flag() const
@@ -298,7 +294,6 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
       return;
   }
   ASKAPCHECK(me, "Uninitialised shared pointer to the measurement equation has been encountered");
-  //if (itsFlag.nrow() == 0) {
   if (itsFlag.nplane() == 0) {
       // initialise using the given accessor as a template
       initialise(acc,fdp);
@@ -424,8 +419,6 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
                           // DDCALTAG -- loop over dir may be more efficient on the outside
                           for (casacore::uInt dir = 0; dir<itsNDir; ++dir) {
                               itsPolXProducts.addModelMeasProduct(bufRow+dir*bufLenPerDir, bufChan, pol, pol2,
-                                  // weight * std::conj(modelVis(row+dir*acc.nRow(),chan,pol)) *
-                                  // measuredVis(row,chan,pol2));
                                   weight * std::conj(modelVis(pol,chan,row+dir*acc.nRow())) *
                                                      measuredVis(pol2,chan,row));
                           }
@@ -433,8 +426,6 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
                           if (pol2<=pol) {
                               for (casacore::uInt dir = 0; dir<itsNDir; ++dir) {
                                   itsPolXProducts.addModelProduct(bufRow+dir*bufLenPerDir, bufChan, pol, pol2,
-                                      //weight * std::conj(modelVis(row+dir*acc.nRow(),chan,pol)) *
-                                      //                   modelVis(row+dir*acc.nRow(),chan,pol2));
                                       weight * std::conj(modelVis(pol,chan,row+dir*acc.nRow())) *
                                                          modelVis(pol2,chan,row+dir*acc.nRow()));
                                   
@@ -444,8 +435,6 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
                               for (casacore::uInt dir = 0; dir<itsNDir-1; ++dir) {
                                    for (casacore::uInt dir2 = dir+1; dir2<itsNDir; ++dir2) {
                                        itsPolXProducts.addModelProduct(bufRow+rowOffset, bufChan, pol, pol2,
-                                           //weight * std::conj(modelVis(row+dir*acc.nRow(),chan,pol)) *
-                                           //                   modelVis(row+dir2*acc.nRow(),chan,pol2));
                                            weight * std::conj(modelVis(pol,chan,row+dir*acc.nRow())) *
                                                               modelVis(pol2,chan,row+dir2*acc.nRow()));
                                        rowOffset += bufLenPerDir;
@@ -454,10 +443,6 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
                           }
 
                      }
-                     //std::cout<<"accumulated ("<<bufRow<<","<<pol<<"): "<<model<<
-                     //    " "<<measuredVis(row,chan,pol)<<std::endl;
-                     // unflag this row because it now has some data
-                     //itsFlag(bufRow,bufChan,pol) = false;
                      itsFlag(pol,bufChan,bufRow) = false;
                  } else {
                      ++itsFlagIgnored;

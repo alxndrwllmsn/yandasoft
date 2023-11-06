@@ -212,7 +212,6 @@ casacore::uInt PreAvgCalBuffer::nChannel() const throw()
 /// @return the number of polarization products (can be 1,2 or 4)
 casacore::uInt PreAvgCalBuffer::nPol() const throw()
 {
-  //return itsFlag.nplane();
   return itsFlag.nrow();
 }
 
@@ -249,8 +248,6 @@ const casacore::Vector<casacore::uInt>& PreAvgCalBuffer::feed2() const
 }
 
 /// Cube of flags corresponding to the output of visibility() 
-/// @depreciated a reference to nRow x nChannel x nPol cube with flag 
-///         information. If True, the corresponding element is flagged bad.
 /// @return a reference to nPol x nChannel x nRow cube with flag 
 ///         information. If True, the corresponding element is flagged bad.
 const casacore::Cube<casacore::Bool>& PreAvgCalBuffer::flag() const
@@ -306,7 +303,6 @@ void PreAvgCalBuffer::accumulate(const IConstDataAccessor &acc, const boost::sha
       return;
   }
   ASKAPCHECK(me, "Uninitialised shared pointer to the measurement equation has been encountered");
-  //if (itsFlag.nrow() == 0) {
   if (itsFlag.nplane() == 0) {
       // initialise using the given accessor as a template
       initialise(acc,fdp);
@@ -323,7 +319,6 @@ void PreAvgCalBuffer::accumulate(const IConstDataAccessor &acc, const boost::sha
   const casacore::Cube<casacore::Complex> &modelVis = modelAcc.visibility();
   const casacore::Cube<casacore::Complex> &measuredNoise = acc.noise();
   const casacore::Cube<casacore::Bool> &measuredFlag = acc.flag();
-  //ASKAPDEBUGASSERT(measuredFlag.nrow() == acc.nRow());
   ASKAPDEBUGASSERT(measuredFlag.nplane() == acc.nRow());
   ASKAPDEBUGASSERT(measuredFlag.ncolumn() == acc.nChannel());
   ASKAPDEBUGASSERT(measuredFlag.nrow() == acc.nPol());
@@ -356,7 +351,6 @@ void PreAvgCalBuffer::accumulate(const IConstDataAccessor &acc, const boost::sha
            continue;
        }
        const casacore::uInt bufRow = casacore::uInt(matchRow);
-       //ASKAPDEBUGASSERT(bufRow < itsFlag.nrow());
        ASKAPDEBUGASSERT(bufRow < itsFlag.nplane());
 
        // the code below works updates itsPolxProds for a row/channel at a time
@@ -382,7 +376,6 @@ void PreAvgCalBuffer::accumulate(const IConstDataAccessor &acc, const boost::sha
                  if (pol < bufferNPol) {
                      //const casacore::Complex model = modelVis(row,chan,pol);
                      const casacore::Complex model = modelVis(pol,chan,row);
-                     //const float visNoise = casacore::square(casacore::real(measuredNoise(row,chan,pol)));
                      const float visNoise = casacore::square(casacore::real(measuredNoise(pol,chan,row)));
                      const float weight = (visNoise > 0.) ? 1./visNoise : 0.;
                      for (casacore::uInt pol2 = 0; pol2<acc.nPol(); ++pol2) {
@@ -396,19 +389,11 @@ void PreAvgCalBuffer::accumulate(const IConstDataAccessor &acc, const boost::sha
                           */
                           // different polarisations can have different weight?
                           // ignoring for now
-                          //itsPolXProducts.addModelMeasProduct(bufRow, bufChan, pol, pol2, weight * std::conj(model) * measuredVis(row,chan,pol2));
                           itsPolXProducts.addModelMeasProduct(bufRow, bufChan, pol, pol2, weight * std::conj(model) * measuredVis(pol2,chan,row));
-                          //pxpSlice.addModelMeasProduct(pol,pol2,weight * std::conj(model) *
-                          //    (pol == pol2 ? measuredVis(row,chan,pol2) : casacore::Complex(0.,0.)));
                           if (pol2<=pol) {
-                              //itsPolXProducts.addModelProduct(bufRow, bufChan, pol, pol2, weight * std::conj(model) * modelVis(row,chan,pol2));
                               itsPolXProducts.addModelProduct(bufRow, bufChan, pol, pol2, weight * std::conj(model) * modelVis(pol2,chan,row));
                           }
                      }
-                     //std::cout<<"accumulated ("<<bufRow<<","<<pol<<"): "<<model<<
-                     //    " "<<measuredVis(row,chan,pol)<<std::endl;
-                     // unflag this row because it now has some data
-                     //itsFlag(bufRow,bufChan,pol) = false;
                      itsFlag(pol,bufChan,bufRow) = false;
                  } else {
                      ++itsFlagIgnored;

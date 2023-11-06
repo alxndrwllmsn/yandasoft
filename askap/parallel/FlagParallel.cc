@@ -116,10 +116,7 @@ void FlagParallel::flagOne(const std::string &ms, bool distributeByTile)
             uInt flagged = 0;
             Vector<Bool> rowFlag(nRow, False);
             for (rownr_t j = 0; j < nRow ; j++) {
-                // Slice is faster
-                //rowFlag(j) = allEQ(flag.yzPlane(j),True);
-                //rowFlag(j) = allEQ(flag(Slice(j),Slice(),Slice()),True);
-                rowFlag(j) = allEQ(flag(Slice(),Slice(),Slice(j)),True);
+                rowFlag(j) = allEQ(flag.xyPlane(j),True);
                 if (rowFlag(j)) {
                     flagged++;
                 }
