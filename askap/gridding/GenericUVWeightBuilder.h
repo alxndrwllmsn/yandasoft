@@ -111,7 +111,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// @param[in] nPlanes number of planes for the given weight (3rd dimension)
    /// @note This class is agnostic about the physical pixel sizes (e.g. uv cell size) -
    /// we assume it is always the same as in the setup of the gridder
-   virtual void initialise(casacore::uInt uSize, casacore::uInt vSize, casacore::uInt nPlanes);
+   virtual void initialise(casacore::uInt uSize, casacore::uInt vSize, casacore::uInt nPlanes) override final;
 
    /// @brief obtain weight grid for writing for the given metadata (indices)
    /// @details index interpretation is left for the implementation which can be different
@@ -128,7 +128,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// add it here just to keep things general as it is used in the gridder code)
    /// @return UVWeight object with the selected grid of weights
    /// @note This method can be called multiple times for the same indices, if necessary. The new grid will be created on demand.
-   virtual UVWeight addWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source);
+   virtual UVWeight addWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) override final;
 
    /// @brief merge weight information from the other builder
    /// @details This method is expected to be used in conjunction with the EstimatorAdapter and normal equation tree reduction
@@ -136,7 +136,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// processing.
    /// @param[in] src other builder to merge from
    /// @note The source should be the object which can be cast to the same type
-   virtual void merge(const IUVWeightBuilder &src);
+   virtual void merge(const IUVWeightBuilder &src) override final;
 
    /// @brief finalise uv weight computation by applying some post-processing to accumulated weight grids
    /// @details This method is expected to call the given object function for each weight in the collection.
@@ -146,7 +146,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// @return a reference to the uv-weight collection which is the final result (may be useful if the weight collection is
    /// owed by implementation of this interface instead of being supplied by reference).
    /// MV: should it be the const reference? The class itself is non-copyable by design.
-   virtual UVWeightCollection& finalise(const IUVWeightCalculator &calc);
+   virtual UVWeightCollection& finalise(const IUVWeightCalculator &calc) override final;
 
    // do we need a getter method to obtain a const reference to weight collection outside of the finalise call?
    // if so, it needs to be added in the interface
