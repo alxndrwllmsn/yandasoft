@@ -65,6 +65,7 @@ class CubeBuilder {
                     const std::string& name = "");
 
         CubeBuilder(askapparallel::AskapParallel& comm,
+                    size_t comm_index,
                     const LOFAR::ParameterSet& parset,
                     const casacore::uInt nchan,
                     const casacore::Quantity& f0,

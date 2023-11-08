@@ -374,6 +374,7 @@ CubeBuilder<T>::CubeBuilder(const LOFAR::ParameterSet& parset,
 
 template <class T>
 CubeBuilder<T>::CubeBuilder(askapparallel::AskapParallel& comm,
+                         size_t comm_index,
                          const LOFAR::ParameterSet& parset,
                          const casacore::uInt nchan,
                          const casacore::Quantity& f0,
@@ -440,7 +441,7 @@ CubeBuilder<T>::CubeBuilder(askapparallel::AskapParallel& comm,
                        "], f0: " << f0.getValue("MHz") << " MHz, finc: " <<
                        inc.getValue("kHz") << " kHz");
 
-    itsCube->create(itsFilename, cubeShape, csys);
+    itsCube->create(itsFilename, cubeShape, csys, comm_index);
 
     // default flux units are Jy/pixel. If we set the restoring beam
     // later on, can set to Jy/beam
