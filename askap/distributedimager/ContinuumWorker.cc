@@ -658,7 +658,7 @@ void ContinuumWorker::processChannels()
               itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name, true));
               itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name, true));
           } else if (itsGridType == "adios") {
-              size_t comm_index = itsComms.buildWriterIndex();
+              size_t comm_index = itsComms.theWorkers();
               itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
               itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
               itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));

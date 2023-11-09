@@ -385,7 +385,7 @@ CubeBuilder<T>::CubeBuilder(askapparallel::AskapParallel& comm,
     ASKAPLOG_INFO_STR(CubeBuilderLogger, "Instantiating Cube Builder by creating cube");
     itsFilename = makeImageName(parset, name);
 
-    itsCube = accessors::imageAccessFactory(parset, comm);
+    itsCube = accessors::imageAccessFactory(parset, comm, comm_index);
 
     const std::string restFreqString = parset.getString("Images.restFrequency", "-1.");
     if (restFreqString == "HI") {
@@ -441,7 +441,7 @@ CubeBuilder<T>::CubeBuilder(askapparallel::AskapParallel& comm,
                        "], f0: " << f0.getValue("MHz") << " MHz, finc: " <<
                        inc.getValue("kHz") << " kHz");
 
-    itsCube->create(itsFilename, cubeShape, csys, comm_index);
+    itsCube->create(itsFilename, cubeShape, csys);
 
     // default flux units are Jy/pixel. If we set the restoring beam
     // later on, can set to Jy/beam
