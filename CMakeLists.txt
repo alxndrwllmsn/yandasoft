@@ -131,7 +131,7 @@ FetchContent_Declare(base-imagemath
 
 # -------- base-askapparallel --------
 FetchContent_Declare(base-askapparallel
-  GIT_REPOSITORY    ${ASKAPSDP_GIT_URL}/base-askapparallel.git
+  GIT_REPOSITORY    git@github.com:alxndrwllmsn/base-askapparallel.git
   GIT_TAG           ${BASE_ASKAPPARALLEL_TAG}
   SOURCE_DIR        base-askapparallel
 )
