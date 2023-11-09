@@ -92,7 +92,7 @@ struct GenericUVWeightAccessor : virtual public UVWeightIndexTranslationHelper<I
    /// @param[in] source source index used to form direction-dependent offset index (not sure if it is needed, 
    /// add it here just to keep things general as it is used in the gridder code)
    /// @return UVWeight object with the selected grid of weights
-   virtual UVWeight getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const override final;
+   UVWeight getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const final;
 
 private:
 
