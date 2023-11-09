@@ -60,7 +60,7 @@ using namespace casacore;
 class ImContSubApp : public askap::Application
 {
     public:
-        virtual int run(int argc, char* argv[]) override
+        int run(int argc, char* argv[]) final
         {
             // This class must have scope outside the main try/catch block
             askapparallel::AskapParallel comms(argc, const_cast<const char**>(argv));
@@ -638,7 +638,7 @@ class ImContSubApp : public askap::Application
         }
 
     private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
             return pkgVersion;
         }

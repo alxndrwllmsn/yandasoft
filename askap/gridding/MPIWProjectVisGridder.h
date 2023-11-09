@@ -40,7 +40,7 @@ namespace askap
 {
     namespace synthesis
     {
-        /// @brief Visibility gridder using W projection by utilising MPI 
+        /// @brief Visibility gridder using W projection by utilising MPI
         ///        shared memory to reduce memory footprint.
         /// @details The visibilities are gridded using a convolution
         /// function that implements a Fresnel transform. This corrects
@@ -54,7 +54,7 @@ namespace askap
         ///
         /// The scaling is slow in data points, fast in w planes.
         ///
-        /// NOTE: At the moment, this class only works for the imager 
+        /// NOTE: At the moment, this class only works for the imager
         ///       but not cimager because it is setup in a way that rank
         ///       0 of the first node does not have the gridder.
         ///
@@ -92,7 +92,7 @@ namespace askap
                 MPIWProjectVisGridder(const MPIWProjectVisGridder &other);
 
                 /// Clone a copy of this Gridder
-                virtual IVisGridder::ShPtr clone();
+                IVisGridder::ShPtr clone() override;
 
                 /// @brief static method to get the name of the gridder
                 /// @details We specify parameters per gridder type in the parset file.
@@ -120,7 +120,7 @@ namespace askap
 
                 /// Initialize convolution function
                 /// @param[in] acc const data accessor to work with
-                virtual void initConvolutionFunction(const accessors::IConstDataAccessor& acc);
+                void initConvolutionFunction(const accessors::IConstDataAccessor& acc) override;
 
             private:
 
@@ -162,17 +162,17 @@ namespace askap
                 static imtypeComplex* itsMpiSharedMemory;
 
 		        /// @details - These are used to synchronise and keep track of how many
-		        ///            gridder objects are instantiated. The ObjCount member is 
+		        ///            gridder objects are instantiated. The ObjCount member is
 		        ///            employed to determined when the process should cleanup the
 		        ///            shared memory segment. This is done when ObjCount is 0.
                 static std::mutex ObjCountMutex;
                 static unsigned int ObjCount;
                 static bool     itsMpiMemSetup;
-                /// mpi shared memory on startup 
+                /// mpi shared memory on startup
                 bool itsMpiMemPreSetup;
 
                 /// number of ranks to do the CF calculation
-                int itsCFRank; 
+                int itsCFRank;
 
                 bool itsSerial;
                 bool itsMasterDoesWork;
