@@ -281,7 +281,7 @@ void ContinuumWorker::run(void)
       // 6*4 - 3*4
       // 3*4 = 12
       // (6 - 3 + 1) * 4
-      if (!itsComms.isSingleSink()) {
+      if (!itsComms.isSingleSink() && (itsGridType != "adios")) {
         ASKAPLOG_INFO_STR(logger, "MultiCube with multiple writers");
         this->nchanCube = (myMaxClient - myMinClient + 1) * nchanpercore;
         this->baseCubeGlobalChannel = (myMinClient - 1) * nchanpercore;
