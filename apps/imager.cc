@@ -58,7 +58,7 @@ ASKAP_LOGGER(logger, ".imager");
 class ImagerApp : public askap::Application
 {
     public:
-        virtual int run(int argc, char* argv[]) override
+        int run(int argc, char* argv[]) final
         {
             // Instantiate the comms class
 
@@ -72,7 +72,9 @@ class ImagerApp : public askap::Application
                 // Create a subset
 
                 LOFAR::ParameterSet subset(config().makeSubset("Cimager."));
-
+                if (subset.empty()) {
+                    subset = config().makeSubset("imager.");
+                }
                 boost::scoped_ptr<askap::ProfileSingleton::Initialiser> profiler;
                 if (parameterExists("profile")) {
                     std::string profileFileName("profile.imager");
@@ -135,7 +137,7 @@ class ImagerApp : public askap::Application
         }
 
     private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
             return pkgVersion;
         }

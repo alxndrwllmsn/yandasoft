@@ -141,6 +141,13 @@ TableVisGridder::TableVisGridder(const TableVisGridder &other) :
      itsTimeDegridded(other.itsTimeDegridded),
      itsDopsf(other.itsDopsf),
      itsDopcf(other.itsDopcf),
+     // MV: it looks like there is some technical debt / untidy design here. There is clearly an intention to do a real copy for data fields
+     // held by reference. However, we usually clone empty gridders (essentially, clone not to copy objects but to create from a template), so
+     // there is no duplication of data. With this usage in mind, it makes sense to have reference semantics for the weight accessor and builder 
+     // fields (i.e. only shared pointers are copied)
+     itsUVWeightAccessor(other.itsUVWeightAccessor),
+     itsUVWeightBuilder(other.itsUVWeightBuilder),
+     //
      itsFirstGriddedVis(other.itsFirstGriddedVis),
      itsFeedUsedForPSF(other.itsFeedUsedForPSF),
      itsPointingUsedForPSF(other.itsPointingUsedForPSF),
@@ -566,20 +573,18 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
        roVisNoise.reset(&acc.noise(), utility::NullDeleter());
    }
 
-   // MV: there is something untidy about itsSourceIndex - it doesn't seem to be set anywhere within this class
-   // suggesting that encapsulation is broken somewhere. Leave it as is for now.
    const uint iDDOffset = itsSourceIndex * nSamples;
 
    // MV: always create UVWeight object even if traditional weighting is not done / it is not needed for this particular type of gridder.
    // This is the price paid to have a generic code. However, this object is lightweight (effectively only manages a pointer behind the scene +
    // has some basic metadata), so shouldn't be a huge overhead. It can be moved inside the samples loop (although it is not obvious whether
-   // this is better.
+   // this is better).
    UVWeight uvWeight;
 
    // Use a separate UVWeight object for the optional gridder-based builder (RW - read/write). Doing it this way (as opposed to reusing uvWeight declared above) allows us
    // to both apply some preliminary weight and build accurate one during the same (first) major cycle (if we found this mode interesting). At this stage,
    // it looks like we're unlikely to use gridder-based weight builder long term. So if declaring a separate unused object here is found to be an unacceptable
-   // overhead, we can work with the temporary in the inner loop (which won't be invoked anyway if the builder is not associated with the gridder) 
+   // overhead, we can work with the temporary in the inner loop (which won't be invoked anyway if the builder is not associated with the gridder)
    UVWeight uvWeightRW;
 
    for (uint i=0; i<nSamples; ++i) {
@@ -707,7 +712,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                const int imageChan = itsFreqMapper(chan);
                ipStart(3) = imageChan;
 
-               // check that imageChan is within the shape of uvWeight grid, also cater for the 
+               // check that imageChan is within the shape of uvWeight grid, also cater for the
                // situation when weighting is not done
                ASKAPDEBUGASSERT(uvWeight.empty() || imageChan < uvWeight.nPlane());
                ASKAPDEBUGASSERT(uvWeightRW.empty() || imageChan < uvWeightRW.nPlane());
@@ -1140,6 +1145,7 @@ casacore::MVDirection TableVisGridder::getImageCentre() const
    casacore::Vector<casacore::Double> centrePixel(2);
    ASKAPDEBUGASSERT(itsShape.nelements()>=2);
    ASKAPDEBUGASSERT(paddingFactor()>0);
+
    for (size_t dim=0; dim<2; ++dim) {
         centrePixel[dim] = double(itsShape[dim])/2./double(paddingFactor());
    }
@@ -1273,14 +1279,14 @@ void TableVisGridder::initialiseCellSize(const scimath::Axes& axes)
 /// (and the weight builder assigned).
 /// We could've just added this code to initialiseCellSize, but it would be called unnecessary from
 /// initialiseDegrid and for PCF/PSF gridders (although, presumably, the builder won't be set in this
-/// cases, so no harm). Having a separate method is neater. 
+/// cases, so no harm). Having a separate method is neater.
 void TableVisGridder::initialiseWeightBuilder()
 {
   // why to exclude PSF and PCF gridder here? It can be controlled on the user side
   if (itsUVWeightBuilder && !isPSFGridder() && !isPCFGridder()) {
       ASKAPCHECK(itsShape.nelements()>=2, "Shape has not been initialised before initialiseWeightBuilder is called");
       itsUVWeightBuilder->initialise(itsShape[0], itsShape[1], itsShape.nelements() > 3 ? itsShape[3] : 1u);
-  } 
+  }
 }
 
 
@@ -1520,7 +1526,7 @@ void TableVisGridder::finaliseWeights(casacore::Array<imtype>& out) {
 
 void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
         const casacore::Array<imtype>& in) {
-   ASKAPTRACE("TableVisGridder::initialiseDegrid");
+    ASKAPTRACE("TableVisGridder::initialiseDegrid");
     configureForPSF(false);
     configureForPCF(false);
     itsShape = scimath::PaddingUtils::paddedShape(in.shape(),paddingFactor());
@@ -1542,10 +1548,15 @@ void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
         casacore::Array<imtype> scratch(itsShape,static_cast<imtype>(0.));
         scimath::PaddingUtils::extract(scratch, paddingFactor()) = in;
         correctConvolution(scratch);
+        #ifdef ASKAP_FLOAT_IMAGE_PARAMS
+        toComplex(itsGrid[0], scratch);
+        fft2d(itsGrid[0], true);
+        #else
         casacore::Array<imtypeComplex> scratch2(itsGrid[0].shape());
         toComplex(scratch2, scratch);
         fft2d(scratch2, true);
         casacore::convertArray<casacore::Complex,imtypeComplex>(itsGrid[0],scratch2);
+        #endif
     } else {
         ASKAPLOG_DEBUG_STR(logger, "No need to degrid: model is empty");
         itsModelIsEmpty=true;

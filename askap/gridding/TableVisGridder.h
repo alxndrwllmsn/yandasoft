@@ -157,7 +157,7 @@ namespace askap
       /// @details If setup (i.e. non-empty shared pointer), the uv weight accessr will be used to obtain
       /// weights for each sample during gridding (traditional weighting).
       /// @param[in] wtAcc shared pointer to the weight accessor
-      inline void setUVWeightAccessor(const boost::shared_ptr<IUVWeightAccessor> &wtAcc) { itsUVWeightAccessor = wtAcc; }
+      inline void setUVWeightAccessor(const boost::shared_ptr<IUVWeightAccessor const> &wtAcc) { itsUVWeightAccessor = wtAcc; }
 
       /// @brief assign uv weight builder
       /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build 
@@ -575,7 +575,7 @@ protected:
       /// @brief uv weight accessor
       /// @details If setup (i.e. non-empty shared pointer), the interface will be used to obtain
       /// weights for each sample during gridding (traditional weighting).
-      boost::shared_ptr<IUVWeightAccessor> itsUVWeightAccessor;
+      boost::shared_ptr<IUVWeightAccessor const> itsUVWeightAccessor;
 
       /// @brief uv weight builder
       /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build 

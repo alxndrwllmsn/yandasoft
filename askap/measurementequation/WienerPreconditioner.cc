@@ -119,9 +119,13 @@ namespace askap
       const casacore::IPosition shape(2,psf.shape()(0),psf.shape()(1));
 
       bool useCachedFilter = true;
-      if (itsWienerfilter.shape() == 0) {
+      if (itsWienerfilter.shape() == 0 || itsWienerfilter.shape() != shape) {
         useCachedFilter = false;
         itsWienerfilter.resize(shape);
+      }
+
+      if (itsPcf.shape() != shape) {
+          itsUseCachedPcf = false;
       }
 
       bool newFilter = true;
@@ -141,7 +145,7 @@ namespace askap
           newFilter = false;
       } else {
           ASKAPLOG_INFO_STR(logger, "Generating and applying Wiener filter of size " << pcfIn.nonDegenerate().shape());
-          // Usually only get here is itsPcf is empty. But with Nyquist gridding that may not be the case.
+          // Usually only get here if itsPcf is empty. But with Nyquist gridding that may not be the case.
           // So check, and if it has already be set but is a different size, reset it.
           if (!itsPcf.empty() && !itsPcf.shape().isEqual(pcfIn.nonDegenerate().shape())) {
               itsPcf.resize(pcfIn.nonDegenerate().shape());

@@ -130,7 +130,7 @@ class CdeconvolverApp : public askap::Application
             return std::make_pair(first_chan, num_chans);
         }
 
-        virtual int run(int argc, char* argv[]) override
+        int run(int argc, char* argv[]) final
         {
             askap::askapparallel::AskapParallel comms(argc, const_cast<const char**>(argv));
             try {
@@ -557,7 +557,7 @@ class CdeconvolverApp : public askap::Application
         }
 
     private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
             return pkgVersion;
         }

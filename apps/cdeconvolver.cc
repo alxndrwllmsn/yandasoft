@@ -55,7 +55,7 @@ using namespace askap::synthesis;
 class CdeconvolverApp : public askap::Application
 {
     public:
-        virtual int run(int argc, char* argv[]) override
+        int run(int argc, char* argv[]) final
         {
             StatReporter stats;
 
@@ -93,7 +93,7 @@ class CdeconvolverApp : public askap::Application
             return 0;
         }
     private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:" + ASKAP_PACKAGE_VERSION);
             return pkgVersion;
         }

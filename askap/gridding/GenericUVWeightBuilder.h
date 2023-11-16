@@ -42,6 +42,11 @@
 #include <askap/gridding/GenericUVWeightIndexTranslator.h>
 #include <askap/gridding/UVWeightCollection.h>
 
+// other 3rd party
+#include <Blob/BlobIStream.h>
+#include <Blob/BlobOStream.h>
+
+
 namespace askap {
 
 namespace synthesis {
@@ -69,6 +74,16 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// @param[in] coeffSource source index coefficient
    explicit GenericUVWeightBuilder(casacore::uInt coeffBeam = 0, casacore::uInt coeffField = 0, casacore::uInt coeffSource = 0);
 
+   /// @brief reset the object to a pristine state like after the default constructor
+   /// @details This method is a bit of the technical debt. It is not necessary for the uv-weight framework itself, but
+   /// needed to be able to reuse normal equations reduction code via the EstimatorAdapter. As defined in the normal equations
+   /// class hierarchy, it is supposed to restore the state of object as it would be after the default constructor. Note, in
+   /// the case of this class, the default constructor actually implies using zero for all coefficients (coeffBeam, etc). So if the
+   /// original object was setup with non-trivial mapping it would change. It is, however, expected that we won't add new data
+   /// to the builder following either reset or merge call (in our use case, reset could happen as part of the merge and only after
+   /// the appropriate portion of data has already been accumulated).
+   void reset();
+
    // a copy of the accessor method. May need changes, at least to the doco as it is not expected to be used
    // it may be possible to have the same behaviour as addWeight  
 
@@ -84,7 +99,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// @param[in] source source index used to form direction-dependent offset index (not sure if it is needed, 
    /// add it here just to keep things general as it is used in the gridder code)
    /// @return UVWeight object with the selected grid of weights
-   virtual UVWeight getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const override final;
+   UVWeight getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const final;
 
    /// @brief setup the shape for the uv weight grid
    /// @details This method can be called from a gridder when the grid shape is setup to
@@ -96,7 +111,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// @param[in] nPlanes number of planes for the given weight (3rd dimension)
    /// @note This class is agnostic about the physical pixel sizes (e.g. uv cell size) -
    /// we assume it is always the same as in the setup of the gridder
-   virtual void initialise(casacore::uInt uSize, casacore::uInt vSize, casacore::uInt nPlanes);
+   void initialise(casacore::uInt uSize, casacore::uInt vSize, casacore::uInt nPlanes) final;
 
    /// @brief obtain weight grid for writing for the given metadata (indices)
    /// @details index interpretation is left for the implementation which can be different
@@ -113,7 +128,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// add it here just to keep things general as it is used in the gridder code)
    /// @return UVWeight object with the selected grid of weights
    /// @note This method can be called multiple times for the same indices, if necessary. The new grid will be created on demand.
-   virtual UVWeight addWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source);
+   UVWeight addWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) final;
 
    /// @brief merge weight information from the other builder
    /// @details This method is expected to be used in conjunction with the EstimatorAdapter and normal equation tree reduction
@@ -121,7 +136,7 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// processing.
    /// @param[in] src other builder to merge from
    /// @note The source should be the object which can be cast to the same type
-   virtual void merge(const IUVWeightBuilder &src);
+   void merge(const IUVWeightBuilder &src) final;
 
    /// @brief finalise uv weight computation by applying some post-processing to accumulated weight grids
    /// @details This method is expected to call the given object function for each weight in the collection.
@@ -131,11 +146,22 @@ struct GenericUVWeightBuilder : virtual public UVWeightIndexTranslationHelper<IU
    /// @return a reference to the uv-weight collection which is the final result (may be useful if the weight collection is
    /// owed by implementation of this interface instead of being supplied by reference).
    /// MV: should it be the const reference? The class itself is non-copyable by design.
-   virtual UVWeightCollection& finalise(const IUVWeightCalculator &calc);
+   UVWeightCollection& finalise(const IUVWeightCalculator &calc) final;
 
    // do we need a getter method to obtain a const reference to weight collection outside of the finalise call?
    // if so, it needs to be added in the interface
 
+   // serialisation / deserialisation
+
+   /// @brief write the object to a blob stream
+   /// @param[in] os the output stream
+   void writeToBlob(LOFAR::BlobOStream& os) const;
+
+   /// @brief read the object from a blob stream
+   /// @param[in] is the input stream
+   /// @note Not sure whether the parameter should be made const or not
+   void readFromBlob(LOFAR::BlobIStream& is);
+ 
 private:
 
    /// @brief weight collection
@@ -152,6 +178,9 @@ private:
 
    /// @brief default number of planes in the weight grid (3rd dimension)
    casacore::uInt itsNPlanes;
+
+   /// @brief payload version for the serialisation
+   static constexpr int theirPayloadVersion = 1;
 };
 
 } // namespace synthesis

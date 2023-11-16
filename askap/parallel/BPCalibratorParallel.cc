@@ -63,6 +63,7 @@ ASKAP_LOGGER(logger, ".parallel");
 
 #include <askap/dataaccess/TableDataSource.h>
 #include <askap/dataaccess/ParsetInterface.h>
+#include <askap/dataaccess/DataIteratorStub.h>
 
 #include <askap/scimath/fitting/LinearSolver.h>
 #include <askap/scimath/fitting/GenericNormalEquations.h>
@@ -637,7 +638,7 @@ void BPCalibratorParallel::writeModel(const std::string &)
 /// CalibrationME template.
 /// @param[in] dsi data shared iterator
 /// @param[in] perfectME uncorrupted measurement equation
-void BPCalibratorParallel::createCalibrationME(const accessors::IDataSharedIter &dsi,
+void BPCalibratorParallel::createCalibrationME(const accessors::IConstDataSharedIter &dsi,
                 const boost::shared_ptr<IMeasurementEquation const> &perfectME)
 {
    ASKAPDEBUGASSERT(itsModel);
@@ -800,7 +801,7 @@ void BPCalibratorParallel::calcOne(const std::string& ms, const casacore::uInt c
       conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
       // ensure that time is counted in seconds since 0 MJD
       conv->setEpochFrame();
-      accessors::IDataSharedIter it=ds.createIterator(sel, conv);
+      accessors::IConstDataSharedIter it=ds.createConstIterator(sel, conv);
       ASKAPCHECK(it.hasMore(), "No data seem to be available for channel "<<chan<<" and beam "<<beam);
 
       ASKAPCHECK(itsModel, "Initial assumption of parameters is not defined");
@@ -820,8 +821,10 @@ void BPCalibratorParallel::calcOne(const std::string& ms, const casacore::uInt c
               // model is a number of components, don't need an adapter here
 
               // it doesn't matter which iterator is passed below. It is not used
+              accessors::IDataSharedIter stubIter(new accessors::DataIteratorStub(1));
+
               boost::shared_ptr<ComponentEquation>
-                  compEq(new ComponentEquation(*itsPerfectModel,it));
+                  compEq(new ComponentEquation(*itsPerfectModel,stubIter));
               itsPerfectME = compEq;
           }
       }

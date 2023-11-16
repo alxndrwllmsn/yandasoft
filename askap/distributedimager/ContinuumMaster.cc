@@ -168,14 +168,36 @@ void ContinuumMaster::run(void)
         ASKAPLOG_INFO_STR(logger, "Master no longer required");
         return;
     }
-    ASKAPLOG_DEBUG_STR(logger, "Master is about to broadcast first <empty> model");
-
     // this parset need to know direction and frequency for the final maps/models
     // But I dont want to run Cadvise as it is too specific to the old imaging requirements
 
+    synthesis::ImagerParallel imager(itsComms, itsParset);
+    // do a separate loop to build weights (in workers) if we are doing traditional weighting and build new weight grid
+    imager.createUVWeightCalculator();
+    if (imager.isSampleDensityGridNeeded()) {
+        // MV: a bit of technical debt / waste of resources here. Technically we don't need the initial model for weight calculation
+        // what we need is just the appropriate image names, their coordinate systems and shapes. Perhaps, in the future another communication
+        // pattern can be added to send just the required information and don't bother with broadcasting the pixel array
+        ASKAPLOG_DEBUG_STR(logger, "Master is about to broadcast initial model for uv-weight calculation");
+        imager.broadcastModel(); 
+        ASKAPLOG_DEBUG_STR(logger, "Master will merge weight grids from workers and compute final weights");
+        imager.setupUVWeightBuilder();
+        // cannot use receiveNE below, because it automatically assigns NE to the solver and this causes issues later
+        // (wrong type of NE will be stuck inside the solver - caused by some technical debt in the design, we should've 
+        //  separated receiving NE and assigning it to the solver)
+        imager.reduceNE(imager.getNE());
+        // this will compute weights and add them to the model (which is distributed back to workers later on)
+        imager.computeUVWeights();
+        ASKAPLOG_DEBUG_STR(logger, "uv-weight has been added to the model");
+        // reset normal equations back to the state suitable for imaging
+        // (this is actually redundant in the case of the master, because calcNE later on would do this, but the code is 
+        // cleaner this way when we do it explicitly)
+        imager.recreateNormalEquations();
+    }
+    //
+    ASKAPLOG_DEBUG_STR(logger, "Master is about to broadcast first <empty> model");
 
     if (nCycles == 0) { // no solve if ncycles is 0
-        synthesis::ImagerParallel imager(itsComms, itsParset);
         ASKAPLOG_DEBUG_STR(logger, "Master beginning single - empty model");
         imager.broadcastModel(); // initially empty model
 
@@ -186,7 +208,6 @@ void ContinuumMaster::run(void)
 
     }
     else {
-        synthesis::ImagerParallel imager(itsComms, itsParset);
         for (int cycle = 0; cycle < nCycles; ++cycle) {
             ASKAPLOG_DEBUG_STR(logger, "Master beginning major cycle ** " << cycle);
 
