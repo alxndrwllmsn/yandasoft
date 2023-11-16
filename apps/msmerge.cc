@@ -271,9 +271,9 @@ void copyPointing(const casacore::MeasurementSet& source, casacore::MeasurementS
 
     // Create and copy non-standard columns, if they exist.
     // dest row order is different to src when copes come after required columns, so do them first.
-    Bool doAz = source.pointing().actualTableDesc().isColumn("AZIMUTH");
-    Bool doEl = source.pointing().actualTableDesc().isColumn("ELEVATION");
-    Bool doPolAng = source.pointing().actualTableDesc().isColumn("POLANGLE");
+    const Bool doAz = source.pointing().actualTableDesc().isColumn("AZIMUTH");
+    const Bool doEl = source.pointing().actualTableDesc().isColumn("ELEVATION");
+    const Bool doPolAng = source.pointing().actualTableDesc().isColumn("POLANGLE");
     ScalarColumn<casacore::Float> dAz, dEl, dPolAng;
     ROScalarColumn<casacore::Float> sAz, sEl, sPolAng;
     if (doAz) {
@@ -623,7 +623,7 @@ void merge(const std::vector<std::string>& inFiles, const std::string& outFile,
     bool sameSize = true;
     casa::String telescope;
 
-
+    ASKAPASSERT(inFiles.size()>0);
     for (it = inFiles.begin(); it != inFiles.end(); ++it) {
         const boost::shared_ptr<const casa::MeasurementSet> p(new casa::MeasurementSet(*it));
         ASKAPCHECK(p->nrow(),"One of the input files has zero rows: "<<*it);
@@ -649,7 +649,7 @@ void merge(const std::vector<std::string>& inFiles, const std::string& outFile,
 
     if (tileNcorr < 1) tileNcorr = 1;
     if (tileNchan < 1) tileNchan = 1;
-    // Set tileNrow large, but not so large that caching takes > 2GB
+    // Set tileNrow large, but not so large that caching uses more than maxBuf
     bool detectMissingIntegrations = false;
     if (tileNrow==0) {
         const casa::uInt nTilesPerRow = (nChanOut-1)/tileNchan+1;
@@ -678,7 +678,10 @@ void merge(const std::vector<std::string>& inFiles, const std::string& outFile,
             << outFile << " already exists!");
     boost::shared_ptr<casa::MeasurementSet> out;
     if (!dryRun) {
-        out = boost::shared_ptr<casa::MeasurementSet>(create(outFile,option,tileNcorr,tileNchan,tileNrow));
+        out = create(outFile,option,tileNcorr,tileNchan,tileNrow);
+
+        ASKAPDEBUGASSERT(in.begin() != in.end());
+        ASKAPDEBUGASSERT(out);
 
         ASKAPLOG_INFO_STR(logger,  "First copy " << inFiles[0]<< " into " << outFile);
 
