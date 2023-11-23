@@ -143,7 +143,7 @@ TableVisGridder::TableVisGridder(const TableVisGridder &other) :
      itsDopcf(other.itsDopcf),
      // MV: it looks like there is some technical debt / untidy design here. There is clearly an intention to do a real copy for data fields
      // held by reference. However, we usually clone empty gridders (essentially, clone not to copy objects but to create from a template), so
-     // there is no duplication of data. With this usage in mind, it makes sense to have reference semantics for the weight accessor and builder 
+     // there is no duplication of data. With this usage in mind, it makes sense to have reference semantics for the weight accessor and builder
      // fields (i.e. only shared pointers are copied)
      itsUVWeightAccessor(other.itsUVWeightAccessor),
      itsUVWeightBuilder(other.itsUVWeightBuilder),
@@ -1022,10 +1022,19 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
                    const int iuOffset = iu + cfOffset.first;
                    const int ivOffset = iv + cfOffset.second;
 
-                   if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
-                       casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
-                       const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
-                       thisChanNoise *= rootInvWgt;
+                   if (iuOffset < 0 || ivOffset < 0 || iuOffset >= grid.nrow() || ivOffset >= grid.ncolumn()) {
+                       static bool once = true;
+                       if (once) {
+                           ASKAPLOG_WARN_STR(logger,"grid coordinates out of range in setWeight:"<< iuOffset <<", "<<ivOffset <<" grid.shape="<<grid.shape());
+                           once = false;
+                       }
+                   } else {
+
+                       if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
+                           casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
+                           const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
+                           thisChanNoise *= rootInvWgt;
+                       }
                    }
 
                }
