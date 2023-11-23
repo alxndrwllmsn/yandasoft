@@ -826,7 +826,6 @@ void ContinuumWorker::processChannels()
       int localChannel = 0;
       bool usetmpfs = itsParset.getBool("usetmpfs", false);
       bool clearcache = itsParset.getBool("clearcache", false);
-
       if (usetmpfs) {
         // probably in spectral line mode
         // copy the caching here ...
@@ -839,7 +838,6 @@ void ContinuumWorker::processChannels()
       }
 
       double globalFrequency = workUnits[workUnitCount].get_channelFrequency();
-
       const string ms = workUnits[workUnitCount].get_dataset();
       int globalChannel = workUnits[workUnitCount].get_globalChannel();
 
@@ -889,7 +887,7 @@ void ContinuumWorker::processChannels()
             rootImager.recreateNormalEquations();
         }
 
-        // 
+        //
         // MV: technically, this barrier should be redundant as we'd wait in receiveModel anyway
         // we need to wait for the first empty model.
         ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
@@ -998,9 +996,8 @@ void ContinuumWorker::processChannels()
                 cached_files.push_back(workUnits[tempWorkUnitCount].get_dataset());
             }
           }
-          globalChannel = workUnits[tempWorkUnitCount].get_globalChannel();
-          double globalFrequency = workUnits[workUnitCount].get_channelFrequency();
 
+          globalFrequency = workUnits[tempWorkUnitCount].get_channelFrequency();
           const string myMs = workUnits[tempWorkUnitCount].get_dataset();
           TableDataSource myDs(myMs, TableDataSource::MEMORY_BUFFERS, colName);
           myDs.configureUVWMachineCache(uvwMachineCacheSize, uvwMachineCacheTolerance);
@@ -1017,6 +1014,7 @@ void ContinuumWorker::processChannels()
               workingImagerPtr = tempIm;
             }
             else {
+
               boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,rootImager.gridder(),localChannel,globalFrequency));
               workingImagerPtr = tempIm;
             }
@@ -1031,7 +1029,6 @@ void ContinuumWorker::processChannels()
             if (updateDir) {
 
               useSubSizedImages = true;
-
               setupImage(workingImager.params(), frequency, useSubSizedImages);
 
               if (majorCycleNumber > 0) {
@@ -1081,7 +1078,7 @@ void ContinuumWorker::processChannels()
           if (frequency == workUnits[tempWorkUnitCount].get_channelFrequency()) {
             tempWorkUnitCount++;
             // NOTE: here we increment the workunit count.
-            // but the frequency in the same so this is just combining epochs or beams.
+            // but the frequency is the same so this is just combining epochs or beams.
             // the accumulator does <not> have to be clean.
           }
           else {
