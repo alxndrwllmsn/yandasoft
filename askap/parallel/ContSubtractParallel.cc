@@ -96,11 +96,7 @@ ContSubtractParallel::ContSubtractParallel(askapparallel::AskapParallel& comms,
         casacore::MDirection::getType(type, dir[0]);
         itsUVlinDirection = casacore::MDirection(type);
       } else if (dir.size()==3) {
-        const double ra = SynthesisParamsHelper::convertQuantity(dir[0],"rad");
-        const double dec = SynthesisParamsHelper::convertQuantity(dir[1],"rad");
-        casacore::MDirection::Types type;
-        casacore::MDirection::getType(type, dir[2]);
-        itsUVlinDirection = casacore::MDirection(casacore::MVDirection(ra, dec), type);
+        itsUVlinDirection = asMDirection(dir);
     } else {
         ASKAPLOG_WARN_STR(logger,"uvlin.direction specified incorrectly - phase rotation disabled");
         itsRotate = false;

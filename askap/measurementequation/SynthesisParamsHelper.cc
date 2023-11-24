@@ -288,8 +288,9 @@ namespace askap
                  "centreDir should have exactly 3 parameters or be empty, you have "<<centreDir.size());
       ASKAPCHECK(stokes.nelements()>=1, "At least one polarisation plane should be defined, you have defined none");
 
-      const double ra = convertQuantity(direction[0],"rad");
-      const double dec = convertQuantity(direction[1],"rad");
+      MDirection radec = asMDirection(direction);
+      const double ra = radec.getValue().getLong();
+      const double dec = radec.getValue().getLat();
 
       const double xcellsize =-1.0*convertQuantity(cellsize[0],"rad");
       const double ycellsize = convertQuantity(cellsize[1],"rad");
@@ -304,8 +305,9 @@ namespace askap
       if (centreDir.size()) {
           ASKAPCHECK(centreDir[2] == "J2000", "Only J2000 is implemented at the moment, you have requested "<<centreDir[2]);
           ASKAPLOG_INFO_STR(logger, "Image parameter "<<name<<" have tangent point "<<direction<<" and image centre "<<centreDir);
-          const double raCentre = convertQuantity(centreDir[0],"rad");
-          const double decCentre = convertQuantity(centreDir[1],"rad");
+          MDirection radec = asMDirection(centreDir);
+          const double raCentre = radec.getValue().getLong();
+          const double decCentre = radec.getValue().getLat();
           const casacore::MVDirection centre(raCentre, decCentre);
           casacore::Vector<casacore::Double> pix;
           dcTangent.toPixel(pix,centre);
@@ -358,8 +360,9 @@ namespace askap
       ASKAPCHECK(direction[2] == "J2000", "Only J2000 is implemented at the moment, you have requested "<<direction[2]);
       ASKAPCHECK(stokes.nelements()>=1, "At least one polarisation plane should be defined, you have defined none");
 
-      const double ra = convertQuantity(direction[0],"rad");
-      const double dec = convertQuantity(direction[1],"rad");
+      MDirection radec = asMDirection(direction);
+      const double ra = radec.getValue().getLong();
+      const double dec = radec.getValue().getLat();
 
       const double xcellsize =-1.0*convertQuantity(cellsize[0],"rad");
       const double ycellsize = convertQuantity(cellsize[1],"rad");
