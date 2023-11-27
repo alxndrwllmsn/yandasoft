@@ -288,7 +288,7 @@ namespace askap
                  "centreDir should have exactly 3 parameters or be empty, you have "<<centreDir.size());
       ASKAPCHECK(stokes.nelements()>=1, "At least one polarisation plane should be defined, you have defined none");
 
-      MDirection radec = asMDirection(direction);
+      const MDirection radec = asMDirection(direction);
       const double ra = radec.getValue().getLong();
       const double dec = radec.getValue().getLat();
 
@@ -305,10 +305,7 @@ namespace askap
       if (centreDir.size()) {
           ASKAPCHECK(centreDir[2] == "J2000", "Only J2000 is implemented at the moment, you have requested "<<centreDir[2]);
           ASKAPLOG_INFO_STR(logger, "Image parameter "<<name<<" have tangent point "<<direction<<" and image centre "<<centreDir);
-          MDirection radec = asMDirection(centreDir);
-          const double raCentre = radec.getValue().getLong();
-          const double decCentre = radec.getValue().getLat();
-          const casacore::MVDirection centre(raCentre, decCentre);
+          const casacore::MVDirection centre = asMDirection(centreDir).getValue();
           casacore::Vector<casacore::Double> pix;
           dcTangent.toPixel(pix,centre);
           ASKAPDEBUGASSERT(pix.nelements() == 2);
@@ -360,7 +357,7 @@ namespace askap
       ASKAPCHECK(direction[2] == "J2000", "Only J2000 is implemented at the moment, you have requested "<<direction[2]);
       ASKAPCHECK(stokes.nelements()>=1, "At least one polarisation plane should be defined, you have defined none");
 
-      MDirection radec = asMDirection(direction);
+      const MDirection radec = asMDirection(direction);
       const double ra = radec.getValue().getLong();
       const double dec = radec.getValue().getLat();
 

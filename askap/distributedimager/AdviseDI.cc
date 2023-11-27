@@ -827,7 +827,6 @@ void AdviseDI::addMissingParameters(bool extra)
        if (itsParset.isDefined("Images.direction") ) {
          const std::vector<std::string> direction = itsParset.getStringVector("Images.direction");
          const MDirection mdir = asMDirection(direction);
-         const casacore::MVDirection itsDirection = mdir.getValue();
 
          // Only J2000 is implemented at the moment.
          string pstr = "["+printLon(mdir)+","+printLat(mdir)+", J2000]";
