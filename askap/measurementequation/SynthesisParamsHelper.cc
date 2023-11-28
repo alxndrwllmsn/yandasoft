@@ -410,7 +410,7 @@ namespace askap
                 iph.makeFacet(ix,iy);
                 ip.add(iph.paramName(), pixels, axes);
 
-                // for debigging
+                // for debugging
                 //if (ix!=0 || iy!=0) ip.fix(iph.paramName());
            }
       }
