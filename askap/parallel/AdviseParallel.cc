@@ -107,10 +107,7 @@ void AdviseParallel::init(const LOFAR::ParameterSet& parset)
        const std::vector<std::string> direction = parset.getStringVector("tangent");
        ASKAPCHECK(direction.size() == 3, "Direction should have exactly 3 parameters, you have "<<direction.size());
        ASKAPCHECK(direction[2] == "J2000", "Only J2000 is implemented at the moment, you have requested "<<direction[2]);
-
-       const double ra = SynthesisParamsHelper::convertQuantity(direction[0],"rad");
-       const double dec = SynthesisParamsHelper::convertQuantity(direction[1],"rad");
-       itsTangent = casacore::MVDirection(ra,dec);
+       itsTangent = asMDirection(direction).getValue();
        itsTangentDefined = true;
    }
    // keep the historical default for now, taking the flags into account can be a lot slower

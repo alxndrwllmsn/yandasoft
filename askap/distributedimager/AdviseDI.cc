@@ -826,12 +826,10 @@ void AdviseDI::addMissingParameters(bool extra)
 
        if (itsParset.isDefined("Images.direction") ) {
          const std::vector<std::string> direction = itsParset.getStringVector("Images.direction");
-         const double ra = SynthesisParamsHelper::convertQuantity(direction[0],"rad");
-         const double dec = SynthesisParamsHelper::convertQuantity(direction[1],"rad");
-         const casacore::MVDirection itsDirection = casacore::MVDirection(ra,dec);
+         const MDirection mdir = asMDirection(direction);
 
          // Only J2000 is implemented at the moment.
-         string pstr = "["+printLon(itsDirection)+","+printLat(itsDirection)+", J2000]";
+         string pstr = "["+printLon(mdir)+","+printLat(mdir)+", J2000]";
          ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param << " (obtained from Images.direction) : " << pstr);
          itsParset.add(param, pstr);
        } else {

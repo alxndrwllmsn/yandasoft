@@ -543,8 +543,9 @@ CubeBuilder<T>::createCoordinateSystem(const LOFAR::ParameterSet& parset,
         Matrix<Double> xform(2, 2);
         xform = 0.0;
         xform.diagonal() = 1.0;
-        const Quantum<Double> ra = asQuantity(dirVector.at(0), "deg");
-        const Quantum<Double> dec = asQuantity(dirVector.at(1), "deg");
+        const MDirection dir = asMDirection(dirVector);
+        const Quantum<Double> ra = dir.getValue().getLong("deg");
+        const Quantum<Double> dec = dir.getValue().getLat("deg");
         ASKAPLOG_DEBUG_STR(CubeBuilderLogger, "Direction: " << ra.getValue() << " degrees, "
                            << dec.getValue() << " degrees");
 
