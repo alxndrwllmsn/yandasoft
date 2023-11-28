@@ -1022,21 +1022,14 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
                    const int iuOffset = iu + cfOffset.first;
                    const int ivOffset = iv + cfOffset.second;
 
-                   if (iuOffset < 0 || ivOffset < 0 || iuOffset >= grid.nrow() || ivOffset >= grid.ncolumn()) {
-                       static bool once = true;
-                       if (once) {
-                           ASKAPLOG_WARN_STR(logger,"grid coordinates out of range in setWeight:"<< iuOffset <<", "<<ivOffset <<" grid.shape="<<grid.shape());
-                           once = false;
-                       }
-                   } else {
+                   ASKAPCHECK(iuOffset >= 0 && ivOffset >= 0 && iuOffset < grid.nrow() && ivOffset < grid.ncolumn(),
+                    "grid coordinates out of range in setWeight");
 
-                       if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
-                           casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
-                           const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
-                           thisChanNoise *= rootInvWgt;
-                       }
+                   if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
+                       casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
+                       const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
+                       thisChanNoise *= rootInvWgt;
                    }
-
                }
 
            }
@@ -1090,8 +1083,8 @@ void TableVisGridder::setRobustness(const float robustness) {
 
     casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer));
     casa::Matrix<casa::Complex> grid(aGrid.nonDegenerate());
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
 
     ASKAPLOG_DEBUG_STR(logger, "DAM estimating the average wgt sum");
     casa::Array<double> wgts(aGrid.nonDegenerate().shape());
