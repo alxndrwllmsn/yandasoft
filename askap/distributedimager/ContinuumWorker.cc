@@ -657,7 +657,7 @@ void ContinuumWorker::processChannels()
               itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, visgrid_name, true));
               itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name, true));
               itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name, true));
-          } else if (itsGridType == "adios") {
+          } else if ((itsGridType == "adios") && (itsParset.getString("imageaccess", "individual") == "collective")) {
               size_t comm_index = itsComms.theWorkers();
               itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
               itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
