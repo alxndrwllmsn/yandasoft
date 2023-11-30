@@ -116,6 +116,12 @@ class CubeBuilder {
 
     private:
 
+        void setupCube(const LOFAR::ParameterSet& parset,
+                       const casacore::uInt nchan,
+                       const casacore::Quantity& f0,
+                       const casacore::Quantity& inc,
+                       const bool uvcoord);
+
 
         boost::shared_ptr<accessors::IImageAccess<T> > itsCube;
 
