@@ -869,11 +869,17 @@ void ContinuumWorker::processChannels()
 
       bool stopping = false;
 
-      // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
-      rootImager.createUVWeightCalculator();
+      if (!updateDir) {
+          // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
+          // for updateDir option we have to do weighting in the working imager, root imager just handles the linmos
+          // (although this is probably a bit of the technical debt)
+          rootImager.createUVWeightCalculator();
+      }
       if (!localSolver) {
         // for central solver weight grid computation happens here, if it is required
         if (rootImager.isSampleDensityGridNeeded()) {
+            // the code below is expected to be called in normal continuum case, incompatible with updatedir
+            ASKAPASSERT(!updateDir);
             // MV: a bit of the technical debt here, we don't need the whole model for weights, but we need coordinate systems, shapes and names distributed the right way
             ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model (just for uv-weight calculation)");
             rootImager.receiveModel();
@@ -904,7 +910,9 @@ void ContinuumWorker::processChannels()
         setupImage(rootImager.params(), frequency, false);
 
         // for local solver build weights locally too without interrank communication
-        if (rootImager.isSampleDensityGridNeeded()) {
+        // Note, the check for !updateDir is technically redundant here as traditional weighting will only
+        // be setup for rootImager if updateDir is false. But add it here for clarify.
+        if (rootImager.isSampleDensityGridNeeded() && !updateDir) {
             ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
             rootImager.setupUVWeightBuilder();
             rootImager.accumulateUVWeights();
@@ -1012,6 +1020,13 @@ void ContinuumWorker::processChannels()
 
               boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,localChannel,globalFrequency));
               workingImagerPtr = tempIm;
+              
+              // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
+              // (it is used as a flag indicating whether to do traditional weighting)
+              // MV: for now set this up only for updateDir=true and follow the old logic for all other cases,
+              // however it may be worth while to be able to regenerate weight in workingImager instead of reusing what has
+              // been done in rootImager in the case of updateDir=false. There is a bit of untidy design / technical debt here.
+              workingImagerPtr->createUVWeightCalculator();
             }
             else {
 
@@ -1030,6 +1045,20 @@ void ContinuumWorker::processChannels()
 
               useSubSizedImages = true;
               setupImage(workingImager.params(), frequency, useSubSizedImages);
+
+              // if traditional weighting is enabled compute the weight. The code below assumes local 
+              // computation without interrank communication
+              if (workingImager.isSampleDensityGridNeeded()) {
+                  ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
+                  ASKAPASSERT(localSolver);
+                  workingImager.setupUVWeightBuilder();
+                  workingImager.accumulateUVWeights();
+                  // this will compute weights and add them to the model
+                  workingImager.computeUVWeights();
+                  ASKAPLOG_DEBUG_STR(logger, "uv-weight has been added to the model");
+                  // revert normal equations back to the type suitable for imaging
+                  workingImager.recreateNormalEquations();
+              }
 
               if (majorCycleNumber > 0) {
                 copyModel(rootImager.params(),workingImager.params());
