@@ -143,7 +143,7 @@ TableVisGridder::TableVisGridder(const TableVisGridder &other) :
      itsDopcf(other.itsDopcf),
      // MV: it looks like there is some technical debt / untidy design here. There is clearly an intention to do a real copy for data fields
      // held by reference. However, we usually clone empty gridders (essentially, clone not to copy objects but to create from a template), so
-     // there is no duplication of data. With this usage in mind, it makes sense to have reference semantics for the weight accessor and builder 
+     // there is no duplication of data. With this usage in mind, it makes sense to have reference semantics for the weight accessor and builder
      // fields (i.e. only shared pointers are copied)
      itsUVWeightAccessor(other.itsUVWeightAccessor),
      itsUVWeightBuilder(other.itsUVWeightBuilder),
@@ -1027,13 +1027,15 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
                    const int iuOffset = iu + cfOffset.first;
                    const int ivOffset = iv + cfOffset.second;
 
+                   ASKAPCHECK(iuOffset >= 0 && ivOffset >= 0 && iuOffset < grid.nrow() && ivOffset < grid.ncolumn(),
+                    "grid coordinates out of range in setWeight");
+
                    if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
                        //casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
                        casa::Vector<casa::Complex> thisChanNoise = acc.noise().xyPlane(i).column(chan);
                        const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
                        thisChanNoise *= rootInvWgt;
                    }
-
                }
 
            }
@@ -1087,8 +1089,8 @@ void TableVisGridder::setRobustness(const float robustness) {
 
     casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer));
     casa::Matrix<casa::Complex> grid(aGrid.nonDegenerate());
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
 
     ASKAPLOG_DEBUG_STR(logger, "DAM estimating the average wgt sum");
     casa::Array<double> wgts(aGrid.nonDegenerate().shape());

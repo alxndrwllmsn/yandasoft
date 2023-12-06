@@ -180,7 +180,6 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
             if (itsFlagAllowed) {
                 if (casacore::abs(det)<detThreshold || !validSolution || needFlag) {
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
-                    //noiseAndFlagDA->rwFlag().yzPlane(row).row(chan).set(true);
                     noiseAndFlagDA->rwFlag().xyPlane(row).column(chan).set(true);
                     thisChan.set(0.);
                     continue;
@@ -370,11 +369,10 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                 if (det <= detThreshold || !validSolution || needFlag) {
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
                     for (casa::uInt pol = 0; pol < nPol; ++pol) {
-                        //rwFlag(row,chan,pol)=true;
                         rwFlag(pol,chan,row)=true;
-                        //rwVis(row,chan,pol)=0.;
                         rwVis(pol,chan,visRow)=0.;
                     }
+                    // go to next channel
                     continue;
                 }
             } else {
@@ -385,7 +383,7 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                        <<" dir="<<askap::printDirection(chunk.pointingDir1()[row]));
             }
 
-            // do the actual calibration
+            // do the actual calibration - we have a valid invertable solution
             vis*=mueller;
             // write back to chunk
             for (casacore::uInt pol = 0; pol < nPol; ++pol) {

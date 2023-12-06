@@ -11,6 +11,7 @@
 
 #     Identifier                   tag/branch       cache  type      description                        force it
 set ( ASKAP_CMAKE_TAG              tags/1.5.0       CACHE  STRING    "askap.cmake tools"                FORCE )
+set ( ASKAP_DEV_TAG                tags/2.12.0      CACHE  STRING    "askap dev tools"                  FORCE )
 set ( LOFAR_COMMON_TAG             tags/1.2.0       CACHE  STRING    "lofar-common version"             FORCE )
 set ( LOFAR_BLOB_TAG               tags/1.3.0       CACHE  STRING    "lofar-blob version"               FORCE )
 set ( BASE_ASKAP_TAG               tags/1.6.0       CACHE  STRING    "base-askap version"               FORCE )
@@ -20,4 +21,7 @@ set ( BASE_ASKAPPARALLEL_TAG       tags/1.7.0       CACHE  STRING    "base-askap
 set ( BASE_SCIMATH_TAG             tags/1.12.0      CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.9.0       CACHE  STRING    "base-components version"          FORCE )
 #set ( BASE_ACCESSORS_TAG           c8aec2695a6a0ce32081dce9badedfcbb35ec74b      CACHE  STRING    "base-accessors version"           FORCE )
-set ( BASE_ACCESSORS_TAG feature/AXA-2580-modify-dataaccess-code-for-axa-2558 CACHE STRING "base-accessors version" FORCE)
+set ( BASE_ACCESSORS_TAG           develop          CACHE STRING "base-accessors version" FORCE)
+set ( BASE_COMPONENTS_TAG          tags/1.10.0       CACHE  STRING    "base-components version"          FORCE )
+ 
+# TOS related repos are not versioned yet, so pinned this build with commit hash values.
