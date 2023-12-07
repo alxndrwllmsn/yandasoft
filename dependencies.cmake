@@ -21,7 +21,7 @@ set ( BASE_ASKAPPARALLEL_TAG       tags/1.7.0       CACHE  STRING    "base-askap
 set ( BASE_SCIMATH_TAG             tags/1.12.0      CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.9.0       CACHE  STRING    "base-components version"          FORCE )
 #set ( BASE_ACCESSORS_TAG           c8aec2695a6a0ce32081dce9badedfcbb35ec74b      CACHE  STRING    "base-accessors version"           FORCE )
-set ( BASE_ACCESSORS_TAG           develop          CACHE STRING "base-accessors version" FORCE)
-set ( BASE_COMPONENTS_TAG          tags/1.10.0       CACHE  STRING    "base-components version"          FORCE )
+set ( BASE_ACCESSORS_TAG           tags/1.14.0      CACHE STRING "base-accessors version" FORCE)
+set ( BASE_COMPONENTS_TAG          tags/1.10.0      CACHE  STRING    "base-components version"          FORCE )
  
 # TOS related repos are not versioned yet, so pinned this build with commit hash values.
