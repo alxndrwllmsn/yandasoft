@@ -62,7 +62,8 @@ PreAvgDDCalBuffer::PreAvgDDCalBuffer() : itsPolXProducts(0), // set nPol = 0 for
 /// assuming that measurement equation is frequency-independent
 PreAvgDDCalBuffer::PreAvgDDCalBuffer(casacore::uInt nAnt, casacore::uInt nDir, casacore::uInt nChan) :
       itsAntenna1(nDir*nAnt*(nAnt-1)/2), itsAntenna2(nDir*nAnt*(nAnt-1)/2), itsBeam(nDir*nAnt*(nAnt-1)/2),
-      itsFlag(nDir*nAnt*(nAnt-1)/2,casacore::Int(nChan),4), itsStokes(4), itsNDir(1),
+      //itsFlag(nDir*nAnt*(nAnt-1)/2,casacore::Int(nChan),4), itsStokes(4), itsNDir(1),
+      itsFlag(4,casacore::Int(nChan),nDir*nAnt*(nAnt-1)/2), itsStokes(4), itsNDir(1),
       itsPolXProducts(4,casacore::IPosition(2,int(nDir*nAnt*(nAnt-1)/2),casacore::Int(nChan))),
       itsVisTypeIgnored(0), itsNoMatchIgnored(0), itsFlagIgnored(0), itsBeamIndependent(false)
 {
@@ -89,12 +90,12 @@ void PreAvgDDCalBuffer::initialise(const IConstDataAccessor &acc, const bool fdp
   const casacore::uInt numberOfRows = acc.nRow();
   const casacore::uInt numberOfPol = acc.nPol();
   const casacore::uInt numberOfChan = fdp ? acc.nChannel() : 1;
-  if (itsFlag.shape() != casacore::IPosition(3,numberOfRows, numberOfChan, numberOfPol)) {
+  if (itsFlag.shape() != casacore::IPosition(3,numberOfPol,numberOfChan,numberOfRows)) {
       // resizing buffers
       itsAntenna1.resize(numberOfRows);
       itsAntenna2.resize(numberOfRows);
       itsBeam.resize(numberOfRows);
-      itsFlag.resize(numberOfRows, numberOfChan, numberOfPol);
+      itsFlag.resize(numberOfPol, numberOfChan, numberOfRows);
       itsPolXProducts.resize(numberOfPol,
           casacore::IPosition(2,casacore::Int(numberOfRows),casacore::uInt(numberOfChan)),false);
       itsStokes.resize(numberOfPol);      
@@ -139,13 +140,15 @@ void PreAvgDDCalBuffer::initialise(casacore::uInt nAnt, casacore::uInt nDir, cas
   ASKAPASSERT(nAnt > 0);
   const casacore::uInt numberOfRows = nDir*nAnt*(nAnt-1)/2;
   itsNDir = nDir;
-  if (itsFlag.shape() != casacore::IPosition(3,int(numberOfRows),int(nChan),4)) {
+  //if (itsFlag.shape() != casacore::IPosition(3,int(numberOfRows),int(nChan),4)) {
+  if (itsFlag.shape() != casacore::IPosition(3,4,int(nChan),int(numberOfRows))) {
      // resizing buffers
      itsAntenna1.resize(numberOfRows);
      itsAntenna2.resize(numberOfRows);
      itsBeam.resize(numberOfRows);
      // npol=4
-     itsFlag.resize(numberOfRows,casacore::Int(nChan),4);
+     //itsFlag.resize(numberOfRows,casacore::Int(nChan),4);
+     itsFlag.resize(4,casacore::Int(nChan),numberOfRows);
      itsPolXProducts.resize(4,casacore::Int(nDir),
          casacore::IPosition(2,casacore::Int(numberOfRows), casacore::Int(nChan)), false);
      itsStokes.resize(4);
@@ -197,7 +200,8 @@ casacore::uInt PreAvgDDCalBuffer::nChannel() const throw()
 /// @return the number of polarization products (can be 1,2 or 4)
 casacore::uInt PreAvgDDCalBuffer::nPol() const throw()
 {
-  return itsFlag.nplane();
+  //return itsFlag.nplane();
+  return itsFlag.nrow();
 }
 
 /// First antenna IDs for all rows
@@ -233,7 +237,7 @@ const casacore::Vector<casacore::uInt>& PreAvgDDCalBuffer::feed2() const
 }
 
 /// Cube of flags corresponding to the output of visibility() 
-/// @return a reference to nRow x nChannel x nPol cube with flag 
+/// @return a reference to nPol x nChannel x nRow cube with flag 
 ///         information. If True, the corresponding element is flagged bad.
 const casacore::Cube<casacore::Bool>& PreAvgDDCalBuffer::flag() const
 {
@@ -290,7 +294,7 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
       return;
   }
   ASKAPCHECK(me, "Uninitialised shared pointer to the measurement equation has been encountered");
-  if (itsFlag.nrow() == 0) {
+  if (itsFlag.nplane() == 0) {
       // initialise using the given accessor as a template
       initialise(acc,fdp);
   } else {
@@ -336,16 +340,20 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
   const casacore::Cube<casacore::Complex> &measuredVis = acc.visibility();
   const casacore::Cube<casacore::Complex> &measuredNoise = acc.noise();
   const casacore::Cube<casacore::Bool> &measuredFlag = acc.flag();
-  ASKAPDEBUGASSERT(measuredFlag.nrow() == acc.nRow());
+  //ASKAPDEBUGASSERT(measuredFlag.nrow() == acc.nRow());
+  ASKAPDEBUGASSERT(measuredFlag.nplane() == acc.nRow());
   ASKAPDEBUGASSERT(measuredFlag.ncolumn() == acc.nChannel());
-  ASKAPDEBUGASSERT(measuredFlag.nplane() == acc.nPol());
+  //ASKAPDEBUGASSERT(measuredFlag.nplane() == acc.nPol());
+  ASKAPDEBUGASSERT(measuredFlag.nrow() == acc.nPol());
   ASKAPDEBUGASSERT(measuredVis.shape() == measuredNoise.shape());
   ASKAPDEBUGASSERT(measuredVis.shape() == measuredFlag.shape());
   const casacore::uInt bufferNPol = nPol();
   ASKAPDEBUGASSERT(bufferNPol == itsPolXProducts.nPol());
-  ASKAPASSERT(modelVis.nrow() == itsNDir*acc.nRow());
+  //ASKAPASSERT(modelVis.nrow() == itsNDir*acc.nRow());
+  ASKAPASSERT(modelVis.nplane() == itsNDir*acc.nRow());
   ASKAPASSERT(modelVis.ncolumn() == acc.nChannel());
-  ASKAPASSERT(modelVis.nplane() == acc.nPol());
+  //ASKAPASSERT(modelVis.nplane() == acc.nPol());
+  ASKAPASSERT(modelVis.nrow() == acc.nPol());
   
   // references to metadata
   const casacore::Vector<casacore::uInt> &beam1 = acc.feed1();
@@ -377,7 +385,8 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
            continue;
        }
        const casacore::uInt bufRow = casacore::uInt(matchRow);
-       ASKAPDEBUGASSERT(bufRow < itsFlag.nrow());
+       //ASKAPDEBUGASSERT(bufRow < itsFlag.nrow());
+       ASKAPDEBUGASSERT(bufRow < itsFlag.nplane());
 
        // the code below works updates itsPolxProds for a row/channel at a time
        for (casacore::uInt chan = 0; chan<acc.nChannel(); ++chan) {
@@ -387,7 +396,8 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
             // if any polarisations are flagged, ignore this visibility
             casacore::Bool JonesFlag = casacore::False;
             for (casacore::uInt pol = 0; pol<acc.nPol(); ++pol) {
-                if (measuredFlag(row,chan,pol)) {
+                //if (measuredFlag(row,chan,pol)) {
+                if (measuredFlag(pol,chan,row)) {
                     JonesFlag = casacore::True;
                     break;
                 }
@@ -399,8 +409,8 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
 
             for (casacore::uInt pol = 0; pol<acc.nPol(); ++pol) {
                  if (pol < bufferNPol) {
-                     const float visNoise =
-                         casacore::square(casacore::real(measuredNoise(row,chan,pol)));
+                     //const float visNoise = casacore::square(casacore::real(measuredNoise(row,chan,pol)));
+                     const float visNoise = casacore::square(casacore::real(measuredNoise(pol,chan,row)));
                      const float weight = (visNoise > 0.) ? 1./visNoise : 0.;
                      for (casacore::uInt pol2 = 0; pol2<acc.nPol(); ++pol2) {
                           // different polarisations can have different weight?
@@ -409,33 +419,31 @@ void PreAvgDDCalBuffer::accumulate(const IConstDataAccessor &acc,
                           // DDCALTAG -- loop over dir may be more efficient on the outside
                           for (casacore::uInt dir = 0; dir<itsNDir; ++dir) {
                               itsPolXProducts.addModelMeasProduct(bufRow+dir*bufLenPerDir, bufChan, pol, pol2,
-                                  weight * std::conj(modelVis(row+dir*acc.nRow(),chan,pol)) *
-                                                     measuredVis(row,chan,pol2));
+                                  weight * std::conj(modelVis(pol,chan,row+dir*acc.nRow())) *
+                                                     measuredVis(pol2,chan,row));
                           }
     
                           if (pol2<=pol) {
                               for (casacore::uInt dir = 0; dir<itsNDir; ++dir) {
                                   itsPolXProducts.addModelProduct(bufRow+dir*bufLenPerDir, bufChan, pol, pol2,
-                                      weight * std::conj(modelVis(row+dir*acc.nRow(),chan,pol)) *
-                                                         modelVis(row+dir*acc.nRow(),chan,pol2));
+                                      weight * std::conj(modelVis(pol,chan,row+dir*acc.nRow())) *
+                                                         modelVis(pol2,chan,row+dir*acc.nRow()));
+                                  
                               }
                               // generate any model cross products and put after the main buffers
                               casacore::uInt rowOffset = itsNDir*bufLenPerDir;
                               for (casacore::uInt dir = 0; dir<itsNDir-1; ++dir) {
                                    for (casacore::uInt dir2 = dir+1; dir2<itsNDir; ++dir2) {
                                        itsPolXProducts.addModelProduct(bufRow+rowOffset, bufChan, pol, pol2,
-                                           weight * std::conj(modelVis(row+dir*acc.nRow(),chan,pol)) *
-                                                              modelVis(row+dir2*acc.nRow(),chan,pol2));
+                                           weight * std::conj(modelVis(pol,chan,row+dir*acc.nRow())) *
+                                                              modelVis(pol2,chan,row+dir2*acc.nRow()));
                                        rowOffset += bufLenPerDir;
                                    }
                               }
                           }
 
                      }
-                     //std::cout<<"accumulated ("<<bufRow<<","<<pol<<"): "<<model<<
-                     //    " "<<measuredVis(row,chan,pol)<<std::endl;
-                     // unflag this row because it now has some data
-                     itsFlag(bufRow,bufChan,pol) = false;
+                     itsFlag(pol,bufChan,bufRow) = false;
                  } else {
                      ++itsFlagIgnored;
                  }

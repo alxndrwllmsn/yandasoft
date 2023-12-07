@@ -451,6 +451,7 @@ std::map<std::string, std::string> CalibratorParallel::getLSQRSolverParameters(c
 
 void CalibratorParallel::calcOne(const std::string& ms, bool discard)
 {
+try {
   ASKAPLOG_INFO_STR(logger, "Calculating normal equations for " << ms );
   // First time around we need to generate the equation
   if ((!itsEquation) || discard) {
@@ -523,6 +524,10 @@ void CalibratorParallel::calcOne(const std::string& ms, bool discard)
   itsEquation->calcEquations(*itsNe);
   ASKAPLOG_INFO_STR(logger, "Calculated normal equations for "<< ms << " in "<< timer.real()
                      << " seconds ");
+} catch (casacore::AipsError& aipsError) {
+  ASKAPLOG_INFO_STR(logger,"CalibratorParallel::calcOne(...) caught casacore::AipsError - " << aipsError.what());
+  std::cerr << "CalibratorParallel::calcOne(...) caught casacore::AipsError - " << aipsError.what() << std::endl;
+}
 }
 
 bool CalibratorParallel::useLinearSolver() const {

@@ -117,13 +117,16 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
   const casacore::Cube<casacore::Bool> &flag = noiseAndFlagDA ? noiseAndFlagDA->rwFlag() : chunk.flag();
 
   for (casacore::uInt row = 0; row < chunk.nRow(); ++row) {
-       casacore::Matrix<casacore::Complex> thisRow = rwVis.yzPlane(row);
-       casacore::Matrix<casacore::Bool> thisRowFlag = flag.yzPlane(row);
+       //casacore::Matrix<casacore::Complex> thisRow = rwVis.yzPlane(row);
+       casacore::Matrix<casacore::Complex> thisRow = rwVis.xyPlane(row);
+       //casacore::Matrix<casacore::Bool> thisRowFlag = flag.yzPlane(row);
+       casacore::Matrix<casacore::Bool> thisRowFlag = flag.xyPlane(row);
        for (casacore::uInt chan = 0; chan < chunk.nChannel(); ++chan) {
             bool allFlagged = true;
             // we don't really support partial polarisation flagging, but to avoid nasty surprises it is better to flag such samples completely.
             bool needFlag = false;
-            ASKAPDEBUGASSERT(thisRowFlag.ncolumn() == nPol);
+            //ASKAPDEBUGASSERT(thisRowFlag.ncolumn() == nPol);
+            ASKAPDEBUGASSERT(thisRowFlag.nrow() == nPol);
             for (casacore::uInt pol = 0; pol < nPol; ++pol) {
                  if (thisRowFlag(chan,pol)) {
                      needFlag = true;
@@ -170,13 +173,15 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
             }
 
             // mv: this is actually known to be slow (casacore slice from slice), need to change this to access given channel as matrix
-            casacore::Vector<casacore::Complex> thisChan = thisRow.row(chan);
+            //casacore::Vector<casacore::Complex> thisChan = thisRow.row(chan);
+            casacore::Vector<casacore::Complex> thisChan = thisRow.column(chan);
 
             const float detThreshold = 1e-25;
             if (itsFlagAllowed) {
                 if (casacore::abs(det)<detThreshold || !validSolution || needFlag) {
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
-                    noiseAndFlagDA->rwFlag().yzPlane(row).row(chan).set(true);
+                    noiseAndFlagDA->rwFlag().xyPlane(row).column(chan).set(true);
+                    thisChan.set(0.);
                     continue;
                 }
             } else {
@@ -198,7 +203,8 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
             }
             if (itsScaleNoise) {
                 ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of the noise estimate");
-                casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+                //casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+                casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().xyPlane(row).column(chan);
                 const casacore::Vector<casacore::Complex> origNoise = thisChanNoise.copy();
                 ASKAPDEBUGASSERT(thisChanNoise.nelements() == nPol);
                 // propagating noise estimate through the matrix multiplication
@@ -250,7 +256,8 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
   const casa::uInt nChan = chunk.nChannel();
   const casa::uInt nRow = chunk.nRow();
   casa::RigidVector<casa::Complex,4> vis;
-  const casa::uInt nVisRow = rwVis.nrow();
+  //const casa::uInt nVisRow = rwVis.nrow();
+  const casa::uInt nVisRow = rwVis.nplane();
   ASKAPDEBUGASSERT(nRow > 0);
   ASKAPCHECK(nVisRow % nRow == 0,"#visibility rows should be multiple of # rows in chunk");
 
@@ -267,7 +274,7 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
             bool needFlag = false;
             //ASKAPDEBUGASSERT(thisRowFlag.ncolumn() == nPol);
             for (casa::uInt pol = 0; pol < nPol; ++pol) {
-                 if (flag(row,chan,pol)) {
+                 if (flag(pol,chan,row)) {
                      needFlag = true;
                  } else {
                      allFlagged = false;
@@ -353,7 +360,8 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
             }
             if (validSolution) {
                 for (casa::uInt pol = 0; pol < nPol; ++pol) {
-                    vis(pol) = rwVis(visRow, chan, pol);
+                    //vis(pol) = rwVis(row,chan,pol);
+                    vis(pol) = rwVis(pol,chan,visRow);
                 }
             }
 
@@ -361,7 +369,8 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                 if (det <= detThreshold || !validSolution || needFlag) {
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
                     for (casa::uInt pol = 0; pol < nPol; ++pol) {
-                        rwFlag(row,chan,pol)=true;
+                        rwFlag(pol,chan,row)=true;
+                        rwVis(pol,chan,visRow)=0.;
                     }
                     // go to next channel
                     continue;
@@ -376,15 +385,16 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
 
             // do the actual calibration - we have a valid invertable solution
             vis*=mueller;
-
             // write back to chunk
             for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                rwVis(visRow, chan, pol) = vis(pol);
+                //rwVis(row,chan,pol) = vis(pol);
+                rwVis(pol,chan,visRow) = vis(pol);
             }
 
             if (itsScaleNoise) {
                 ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of the noise estimate");
-                casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+                //casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().yzPlane(row).row(chan);
+                casacore::Vector<casacore::Complex> thisChanNoise = noiseAndFlagDA->rwNoise().xyPlane(row).column(chan);
                 ASKAPDEBUGASSERT(thisChanNoise.nelements() == nPol);
                 // propagating noise estimate through the matrix multiplication
                 casa::RigidVector<casa::Complex,4> noise = thisChanNoise;
@@ -396,16 +406,16 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                     float tempRe = 0., tempIm = 0.;
                     for (casa::uInt k = 0; k < nPol; ++k) {
                         tempRe += casa::square(casa::real(cmueller(pol,k)) * casa::real(noise(k))) +
-                                  casa::square(casa::imag(cmueller(pol,k)) * casa::imag(noise(k)));
+                                casa::square(casa::imag(cmueller(pol,k)) * casa::imag(noise(k)));
                         tempIm += casa::square(casa::real(cmueller(pol,k)) * casa::imag(noise(k))) +
-                                  casa::square(casa::imag(cmueller(pol,k)) * casa::real(noise(k)));
+                               casa::square(casa::imag(cmueller(pol,k)) * casa::real(noise(k)));
                     }
                     thisChanNoise(pol) = casacore::Complex(sqrt(tempRe),sqrt(tempIm));
                 }
             }
+          }
         }
-      }
-  }
+    }
 }
 /// @brief determines whether to scale the noise estimate
 /// @details This is one of the configuration methods, it controlls

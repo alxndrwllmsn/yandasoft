@@ -689,7 +689,8 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
 
            bool allPolGood=true;
            for (uint pol=0; pol<nPol; ++pol) {
-               if (flagCube(i, chan, pol)) {
+               //if (flagCube(i, chan, pol)) {
+               if (flagCube(pol, chan, i)) {
                    allPolGood=false;
                    break;
                }
@@ -720,13 +721,15 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                if (!forward) {
                    if (!isPSFGridder() && !isPCFGridder()) {
                        ASKAPDEBUGASSERT(roVisCube!=0);
-                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(i,chan,pol);
+                       //for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(i,chan,pol);
+                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(pol,chan,i);
                        itsPolConv.convert(itsImagePolFrameVis,itsPolVector);
                    }
                    // we just don't need this quantity for the forward gridder, although there would be no
                    // harm to always compute it
                    ASKAPDEBUGASSERT(roVisNoise!=0);
-                   for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(i,chan,pol);
+                   //for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(i,chan,pol);
+                   for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(pol,chan,i);
                    itsPolConv.noise(itsImagePolFrameNoise,itsPolVector);
                }
                // Now loop over all image polarizations
@@ -909,7 +912,8 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                    if (forward) {
                        ASKAPDEBUGASSERT(visCube!=0)
                        itsPolConv.convert(itsPolVector,itsImagePolFrameVis);
-                       for (uint pol=0; pol<nPol; pol++) (*visCube)(iDDOffset+i,chan,pol) += itsPolVector(pol);
+                       //for (uint pol=0; pol<nPol; pol++) (*visCube)(iDDOffset+i,chan,pol) += itsPolVector(pol);
+                       for (uint pol=0; pol<nPol; pol++) (*visCube)(pol,chan,iDDOffset+i) += itsPolVector(pol);
                        // visibilities with w out of range are left unchanged during prediction
                        // as long as subsequent imaging uses the same wmax this should work ok
                        // we may want to flag these data to be sure
@@ -987,7 +991,8 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
 
            bool allPolGood=true;
            for (uint pol=0; pol<nPol; ++pol) {
-               if (acc.flag()(i, chan, pol))
+               //if (acc.flag()(i, chan, pol))
+               if (acc.flag()(pol, chan, i))
                    allPolGood=false;
            }
 
@@ -1022,21 +1027,15 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
                    const int iuOffset = iu + cfOffset.first;
                    const int ivOffset = iv + cfOffset.second;
 
-                   if (iuOffset < 0 || ivOffset < 0 || iuOffset >= grid.nrow() || ivOffset >= grid.ncolumn()) {
-                       static bool once = true;
-                       if (once) {
-                           ASKAPLOG_WARN_STR(logger,"grid coordinates out of range in setWeight:"<< iuOffset <<", "<<ivOffset <<" grid.shape="<<grid.shape());
-                           once = false;
-                       }
-                   } else {
+                   ASKAPCHECK(iuOffset >= 0 && ivOffset >= 0 && iuOffset < grid.nrow() && ivOffset < grid.ncolumn(),
+                    "grid coordinates out of range in setWeight");
 
-                       if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
-                           casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
-                           const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
-                           thisChanNoise *= rootInvWgt;
-                       }
+                   if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
+                       //casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
+                       casa::Vector<casa::Complex> thisChanNoise = acc.noise().xyPlane(i).column(chan);
+                       const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
+                       thisChanNoise *= rootInvWgt;
                    }
-
                }
 
            }
@@ -1090,8 +1089,8 @@ void TableVisGridder::setRobustness(const float robustness) {
 
     casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer));
     casa::Matrix<casa::Complex> grid(aGrid.nonDegenerate());
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
 
     ASKAPLOG_DEBUG_STR(logger, "DAM estimating the average wgt sum");
     casa::Array<double> wgts(aGrid.nonDegenerate().shape());

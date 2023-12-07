@@ -140,15 +140,20 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
         for (size_t chan = 0; chan < nChan; ++chan) {
             bool anyFlagged = false;
             for (casacore::uInt pol=0; pol < nPol; pol++) {
-                if (flags(row, chan, pol)) anyFlagged = true;
+                //if (flags(row, chan, pol)) anyFlagged = true;
+                if (flags(pol, chan, row)) anyFlagged = true;
             }
             if (!anyFlagged) {
                 //do the conversion using PolConverter
                 if (pass == 0) {
-                    in(0) = data(row,chan,0);
-                    in(1) = data(row,chan,1);
-                    in(2) = data(row,chan,2);
-                    in(3) = data(row,chan,3);
+                    //in(0) = data(row,chan,0);
+                    in(0) = data(0,chan,row);
+                    //in(1) = data(row,chan,1);
+                    in(1) = data(1,chan,row);
+                    //in(2) = data(row,chan,2);
+                    in(2) = data(2,chan,row);
+                    //in(3) = data(row,chan,3);
+                    in(3) = data(3,chan,row);
                     polConv.convert(out,in);
                     vdata(row, chan) = out(0);
                     tmpamps.push_back(abs(out(0)));
@@ -226,7 +231,8 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                 // Apply threshold based flagging
                 if (amp > (avg + (sigma * itsThreshold))) {
                     for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                        if (flags(row, chan, pol)) {
+                        //if (flags(row, chan, pol)) {
+                        if (flags(pol, chan, row)) {
                             itsStats.visAlreadyFlagged++;
                             continue;
                         }
@@ -275,8 +281,10 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                     itsStats.rowsFlagged++;
                     for (size_t chan = 0; chan < nChan; ++chan) {
                         for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                            if (!flags(row, chan, pol)) {
-                                flags(row, chan, pol) = true;
+                            // if (!flags(row, chan, pol)) {
+                            if (!flags(pol, chan, row)) {
+                                //flags(row, chan, pol) = true;
+                                flags(pol, chan, row) = true;
                                 wasUpdatedRow = true;
                                 itsStats.visFlagged++;
                             }
@@ -289,8 +297,10 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                 for (size_t chan = 0; chan < nChan; ++chan) {
                     if ( !itsMaskSpectra[key][chan] ) {
                         for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                            if (!flags(row, chan, pol)) {
-                                flags(row, chan, pol) = true;
+                            //if (!flags(row, chan, pol)) {
+                            if (!flags(pol, chan, row)) {
+                                //flags(row, chan, pol) = true;
+                                flags(pol, chan, row) = true;
                                 wasUpdatedRow = true;
                                 itsStats.visFlagged++;
                             }
