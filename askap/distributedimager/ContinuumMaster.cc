@@ -42,6 +42,7 @@
 #include <Common/ParameterSet.h>
 #include <askap/scimath/fitting/Params.h>
 #include <askap/scimath/fitting/Axes.h>
+/*
 #include <askap/dataaccess/IConstDataSource.h>
 #include <askap/dataaccess/TableConstDataSource.h>
 #include <askap/dataaccess/IConstDataIterator.h>
@@ -50,6 +51,7 @@
 #include <askap/dataaccess/IDataIterator.h>
 #include <askap/dataaccess/SharedIter.h>
 #include <askap/dataaccess/TableInfoAccessor.h>
+*/
 #include <casacore/casa/Quanta.h>
 #include <askap/imageaccess/BeamLogger.h>
 #include <askap/parallel/ImagerParallel.h>

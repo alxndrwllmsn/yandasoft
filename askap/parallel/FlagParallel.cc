@@ -108,16 +108,15 @@ void FlagParallel::flagOne(const std::string &ms, bool distributeByTile)
     while (passRequired) {
         for (dataIt.init(); dataIt.hasMore(); dataIt.next()) {
             const Cube<Bool>& flag = dataIt->flag();
-            rownr_t nRow = flag.nrow();
+            //rownr_t nRow = flag.nrow();
+            rownr_t nRow = flag.nplane();
 
             // Count flagged rows and keep a list
             // (accessor reads "FLAG_ROW" column and applies it to flag)
             uInt flagged = 0;
             Vector<Bool> rowFlag(nRow, False);
             for (rownr_t j = 0; j < nRow ; j++) {
-                // Slice is faster
-                //rowFlag(j) = allEQ(flag.yzPlane(j),True);
-                rowFlag(j) = allEQ(flag(Slice(j),Slice(),Slice()),True);
+                rowFlag(j) = allEQ(flag.xyPlane(j),True);
                 if (rowFlag(j)) {
                     flagged++;
                 }

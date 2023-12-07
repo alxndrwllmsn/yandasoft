@@ -216,7 +216,8 @@ void UVWeightGridder::accumulate(const accessors::IConstDataAccessor& acc) const
              // mimic the behaviour of the orginary gridder w.r.t. partial polarisation, i.e. ignore the whole sample
              bool allPolGood=true;
              for (casacore::uInt pol=0; pol<nPol; ++pol) {
-                  if (flagCube(i, chan, pol)) {
+                  //if (flagCube(i, chan, pol)) {
+                  if (flagCube(pol, chan, i)) {
                       allPolGood=false;
                       break;
                   }
@@ -233,7 +234,8 @@ void UVWeightGridder::accumulate(const accessors::IConstDataAccessor& acc) const
                  // the check for more than one polarisation could in principle be optimised (e.g. scaling factor could be defined outside the loop) or even removed
                  // completely as absolute scaling is not important for uv-weights (but it is handy to get the matching behaviour to the case when the weights are 
                  // generated during the gridding)
-                 const float visNoise = casacore::square(casacore::real(noiseCube(i, chan, 0))) + (nPol > 1u ? casacore::square(casacore::real(noiseCube(i, chan, nPol-1))) : 0.f);
+                 //const float visNoise = casacore::square(casacore::real(noiseCube(i, chan, 0))) + (nPol > 1u ? casacore::square(casacore::real(noiseCube(i, chan, nPol-1))) : 0.f);
+                 const float visNoise = casacore::square(casacore::real(noiseCube(0, chan, i))) + (nPol > 1u ? casacore::square(casacore::real(noiseCube(nPol-1, chan, i))) : 0.f);
                  const float visNoiseWt = (visNoise > 0.) ? 1./visNoise : 0.;
                  ASKAPCHECK(visNoiseWt>0., "Weight is supposed to be a positive number; visNoiseWt="<<
                             visNoiseWt<<" visNoise="<<visNoise);
