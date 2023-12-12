@@ -21,6 +21,7 @@ csimulator
 cubemerge
 cubeslice
 cubetest
+fftw-generate-wisdom
 gridderExperiments
 illumextractor
 imager
