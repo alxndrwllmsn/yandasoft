@@ -101,6 +101,13 @@ class CdeconvolverApp : public askap::Application
                        float oversampling,
                        casacore::Vector<casacore::Double>& fov,
                        casacore::Vector<casacore::Quantum<double>> & beam);
+        void CdeconvolverApp::writeWorkersCube(unsigned long arSize, 
+                                               int proc, 
+                                               askapparallel::AskapParallel& comms, 
+                                               string cubeName);
+        void CdeconvolverApp::sendWorkersCube(casacore::Array<casacore::Float> arOut, 
+                                              int channel, 
+                                              askapparallel::AskapParallel& comms);
 
         void initialiseBeamList(const unsigned int numChannels);
         void writeBeamInfo(askap::askapparallel::AskapParallel &comms);
@@ -531,42 +538,99 @@ class CdeconvolverApp : public askap::Application
                     doTheWork(subset, dirtyIn, psfIn, pcfIn, psfOut, dirty, model, restored, writeRestored, oversampling, fov, beam);
                     itsBeamList[channel] = beam;
 
-                    if (serialWrite) {
-                        if (comms.isMaster() && firstPassForMaster) {
-                          ASKAPLOG_INFO_STR(logger, "Ensuring serial access to cubes");
-                          firstPassForMaster = false;
+                    //This is a quick fix, the process that creates the adios image table has to keep it open until we're finished writing,
+                    // meaning that the non-master processes can't access the table until we're done.
+                    // The master process has to be the one to write to the file for now, so were setting it up to send all data to master 
+                    // for each channel, this will be fixed once mpi-enabled adios and casa are set up.
+                    if (imagetype != 'adios') {
+                        if (serialWrite) {
+                            if (comms.isMaster() && firstPassForMaster) {
+                            ASKAPLOG_INFO_STR(logger, "Ensuring serial access to cubes");
+                            firstPassForMaster = false;
+                            }
+                            else { // this is essentially a serializer - it is required for CASA image types
+                            // but not FITS
+                            int buf;
+                            int from = (comms.rank() > 0 ? comms.rank() - 1 : comms.nProcs()-1);
+                            ASKAPLOG_INFO_STR(logger, "Waiting for trigger from rank " << from);
+                            comms.receive((void *) &buf,sizeof(int),from);
+                            }
                         }
-                        else { // this is essentially a serializer - it is required for CASA image types
-                        // but not FITS
-                          int buf;
-                          int from = (comms.rank() > 0 ? comms.rank() - 1 : comms.nProcs()-1);
-                          ASKAPLOG_INFO_STR(logger, "Waiting for trigger from rank " << from);
-                          comms.receive((void *) &buf,sizeof(int),from);
-                        }
-                    }
-                    // write out the slice
-                    // FIXME: THis is the issue with npol I need to use some position
+                        // write out the slice
+                        // FIXME: THis is the issue with npol I need to use some position
 
-                    // Image based cleaning means oversampling already done - no need to use flexible here
-                    if (writePsf) {
-                        itsPsfCube->writeRigidSlice(psfOut, channel);
-                    }
-                    if (writeResidual) {
-                        itsResidualCube->writeRigidSlice(dirty, channel);
-                    }
-                    if (writeModel) {
-                        itsModelCube->writeRigidSlice(model, channel);
-                    }
-                    if (writeRestored) {
-                        itsRestoredCube->writeRigidSlice(restored, channel);
-                    }
-                    if (serialWrite) {
-                      int buf = 0;
-                      const int to = (comms.rank() == comms.nProcs()-1 ? 0 : comms.rank()+1);
-                      comms.send((void *) &buf,sizeof(int),to);
+                        // Image based cleaning means oversampling already done - no need to use flexible here
+                        if (writePsf) {
+                            itsPsfCube->writeRigidSlice(psfOut, channel);
+                        }
+                        if (writeResidual) {
+                            itsResidualCube->writeRigidSlice(dirty, channel);
+                        }
+                        if (writeModel) {
+                            itsModelCube->writeRigidSlice(model, channel);
+                        }
+                        if (writeRestored) {
+                            itsRestoredCube->writeRigidSlice(restored, channel);
+                        }
+                        if (serialWrite) {
+                        int buf = 0;
+                        const int to = (comms.rank() == comms.nProcs()-1 ? 0 : comms.rank()+1);
+                        comms.send((void *) &buf,sizeof(int),to);
+                        }
+
+                    } else {
+                        if (comms.isMaster()) {
+                            //write master channel
+                            if (writePsf) {
+                                itsPsfCube->writeRigidSlice(psfOut, channel);
+                            }
+                            if (writeResidual) {
+                                itsResidualCube->writeRigidSlice(dirty, channel);
+                            }
+                            if (writeModel) {
+                                itsModelCube->writeRigidSlice(model, channel);
+                            }
+                            if (writeRestored) {
+                                itsRestoredCube->writeRigidSlice(restored, channel);
+                            }
+                            //get channels from other process
+                            for (int proc = 1; proc < comms.nProcs(); proc++) {
+                                //receive size
+                                unsigned char* sizeBuffer[sizeof(unsigned long)];
+                                comms.receive(sizeBuffer, sizeof(unsigned long), proc);
+                                unsigned long arSize;
+                                std::memcpy(reinterpret_cast<void *>(&arSize),sizeBuffer,sizeof(unsigned long));
+                                //receive array
+                                if (writePsf) {
+                                    writeWorkersCube(arSize, proc, comms, 'psf');
+                                }
+                                if (writeResidual) {
+                                    writeWorkersCube(arSize, proc, comms, 'residual');
+                                }
+                                if (writeModel) {
+                                    writeWorkersCube(arSize, proc, comms, 'model');
+                                }
+                                if (writeRestored) {
+                                    writeWorkersCube(arSize, proc, comms, 'restored');
+                                } 
+                            }
+                        } else {
+                                if (writePsf) {
+                                    sendWorkersCube(psfOut, channel, comms);
+                                }
+                                if (writeResidual) {
+                                    sendWorkersCube(dirty, channel, comms);
+                                }
+                                if (writeModel) {
+                                    sendWorkersCube(model, channel, comms);
+                                }
+                                if (writeRestored) {
+                                    sendWorkersCube(restored, channel, comms);
+                                } 
+                        }
                     }
                     if ( calcstats && writeRestored) {
-                      statsAndMask.calculate("",channel,restored);
+                        statsAndMask.calculate("",channel,restored);
                     }
                 }
             }
@@ -607,6 +671,46 @@ class CdeconvolverApp : public askap::Application
             return pkgVersion;
         }
 };
+
+void CdeconvolverApp::writeWorkersCube(unsigned long arSize, int proc, askapparallel::AskapParallel& comms, string cubeName) {
+    boost::shared_array<unsigned char> buffer(new unsigned char[arSize]);
+    comms.receive(buffer.get(),arSize,proc);
+    casacore::Array<casacore::Float> outAr;
+    unsigned char* ptr = buffer.get();
+    std::memcpy(reinterpret_cast<void *>(&outAr),ptr,arSize);
+    //receive channel
+    unsigned char* chanBuf[sizeof(int)];
+    comms.receive(chanBuf, sizeof(int), proc);
+    int chan_proc;
+    std::memcpy(reinterpret_cast<void *>(&chan_proc), chanBuf, sizeof(int));
+    //write to cube
+    if (cubeName == 'psf') {
+        itsPsfCube->writeRigidSlice(outAr, chan_proc);
+    } else if (cubeName == 'residual') {
+        itsResidualCube->writeRigidSlice(outAr, chan_proc);
+    } else if (cubeName == 'model') {
+        itsModelCube->writeRigidSlice(outAr, chan_proc);
+    } else {
+        itsRestoredCube->writeRigidSlice(outAr, chan_proc);
+    }
+}
+
+void CdeconvolverApp::sendWorkersCube(casacore::Array<casacore::Float> arOut, int channel, askapparallel::AskapParallel& comms) {
+    auto arSize = static_cast<unsigned long>casacore::ArrayVolume(arOut.ndim(), arOut.shape());
+    unsigned char* sizeBuffer[sizeof(unsigned long)];
+    std::memcpy(sizeBuffer,reinterpret_cast<void *>(&arSize),sizeof(unsigned long));
+    comms.send(sizeBuffer, sizeof(unsigned long), 0);
+    // send array
+    boost::shared_array<unsigned char> buffer(new unsigned char[arSize]);
+    unsigned char* ptr = buffer.get();
+    auto &arOutp = arOut;
+    std::memcpy(ptr,reinterpret_cast<void *> (&arOutp), arSize);
+    comms.send(buffer.get(),arSize,0);
+    // send channel
+    unsigned char* chanBuf[sizeof(int)];
+    std::memcpy(chanBuf, reinterpret_cast<void *> (&channel), sizeof(int));
+    comms.send(&chanBuf, sizeof(int), 0);
+}
 
 /// get the real part of the FFT of the input
 void CdeconvolverApp::getRealFFT(casacore::Array<casacore::Float> &fArray,
