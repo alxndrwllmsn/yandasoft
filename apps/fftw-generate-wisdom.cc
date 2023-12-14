@@ -26,6 +26,7 @@
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapLogging.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/utils/CommandLineParser.h>
 #include <Common/OpenMP.h>
 #include <Common/ParameterSet.h>
@@ -42,23 +43,25 @@ ASKAP_LOGGER(logger, "synthesis.fftwWisdom");
 /// @brief generate FFTW3 wisdom for range of sizes of 2D Complex transform
 /// @param[in] int minSize : smallest size FFT to plan
 /// @param[in] int maxSize : largest size FFT to plan
-/// @param[in] int maxThreads : max number of threads to plan for
+/// @param[in] int numThreads : number of threads to plan for
 /// @param[in] uint planOption : FFTW plan option (FFTW_MEASURE, FFTW_PATIENT, or FFTW_EXHAUSTIVE)
-void generateFloatWisdom(int minSize, int maxSize, int maxThreads, uint planOption)
+void generateFloatWisdom(int minSize, int maxSize, int numThreads, uint planOption)
 {
     casacore::Matrix<casacore::Complex> data(maxSize,maxSize);
     fftwf_complex* buf = reinterpret_cast<fftwf_complex*>(data.data());
     #ifdef HAVE_FFTW_OPENMP
-    ASKAPCHECK(fftw_init_threads(),"Failure initialising fftw threads");
-    fftwf_plan_with_nthreads(maxThreads); // plans for 1 to maxthreads
+    ASKAPCHECK(fftwf_init_threads(),"Failure initialising fftw threads");
+    fftwf_plan_with_nthreads(numThreads);
     #endif
     int n = minSize;
-    ASKAPLOG_INFO_STR(logger,"Planning 2D Complex FFT sizes: "<<n <<" to "<<maxSize<<" with up to "<<maxThreads<<" threads");
-    const char* env = std::getenv("FFTWF_WISDOM");
-    ASKAPCHECK(env,"Environment variable FFTWF_WISDOM pointing to wisdom file needs to be defined");
-    int status = fftwf_import_wisdom_from_filename(env);
+    ASKAPLOG_INFO_STR(logger,"Planning 2D Complex FFT sizes: "<<n <<" to "<<maxSize<<" with "<<numThreads<<" threads");
+    const char* env = std::getenv("FFTW_WISDOM");
+    ASKAPCHECK(env,"Environment variable FFTW_WISDOM pointing to wisdom directory needs to be defined");
+    string file(env);
+    file += "/fftwf-threads-"+utility::toString(numThreads)+".wisdom";
+    int status = fftwf_import_wisdom_from_filename(file.c_str());
     if (status == 0) {
-        ASKAPLOG_WARN_STR(logger,"Error reading FFTWF wisdom file from FFTWF_WISDOM env. variable: " <<env);
+        ASKAPLOG_WARN_STR(logger,"Error reading FFTW wisdom file: " << file);
     }
     while (n <= maxSize) {
         fftwf_plan plan1 = fftwf_plan_dft_2d(n, n, buf, buf, FFTW_FORWARD, planOption);
@@ -66,34 +69,36 @@ void generateFloatWisdom(int minSize, int maxSize, int maxThreads, uint planOpti
         n = askap::synthesis::SynthesisParamsHelper::nextFactor2357(n + 1);
         // save results regularly
         if (n % 1024 == 0) {
-            ASKAPCHECK(fftwf_export_wisdom_to_filename(env),"Error writing wisdom to file "<<env);
+            ASKAPCHECK(fftwf_export_wisdom_to_filename(file.c_str()),"Error writing wisdom to file "<< file);
             ASKAPLOG_INFO_STR(logger, "Planning complete up to "<< n);
         }
     }
-    ASKAPCHECK(fftwf_export_wisdom_to_filename(env),"Error writing wisdom to file "<<env);
-    ASKAPLOG_INFO_STR(logger,"Done - wisdom exported");
+    ASKAPCHECK(fftwf_export_wisdom_to_filename(file.c_str()),"Error writing wisdom to file "<< file);
+    ASKAPLOG_INFO_STR(logger,"Done - wisdom exported to "<< file);
 }
 
 /// @brief generate FFTW3 wisdom for range of sizes of 2D Double Complex transform
 /// @param[in] int minSize : smallest size FFT to plan
 /// @param[in] int maxSize : largest size FFT to plan
-/// @param[in] int maxThreads : max number of threads to plan for
+/// @param[in] int numThreads : number of threads to plan for
 /// @param[in] uint planOption : FFTW plan option (FFTW_MEASURE, FFTW_PATIENT, or FFTW_EXHAUSTIVE)
-void generateDoubleWisdom(int minSize, int maxSize, int maxThreads, uint planOption)
+void generateDoubleWisdom(int minSize, int maxSize, int numThreads, uint planOption)
 {
     casacore::Matrix<casacore::DComplex> data(maxSize,maxSize);
     fftw_complex* buf = reinterpret_cast<fftw_complex*>(data.data());
     #ifdef HAVE_FFTW_OPENMP
     ASKAPCHECK(fftw_init_threads(),"Failure initialising fftw threads");
-    fftw_plan_with_nthreads(maxThreads); // plans for 1 to maxthreads
+    fftw_plan_with_nthreads(numThreads);
     #endif
     int n = minSize;
-    ASKAPLOG_INFO_STR(logger,"Planning 2D DComplex FFT sizes: "<<n <<" to "<<maxSize<<" with up to "<<maxThreads<<" threads");
+    ASKAPLOG_INFO_STR(logger,"Planning 2D DComplex FFT sizes: "<<n <<" to "<<maxSize<<" with "<<numThreads<<" threads");
     const char* env = std::getenv("FFTW_WISDOM");
-    ASKAPCHECK(env,"Environment variable FFTW_WISDOM pointing to wisdom file needs to be defined");
-    int status = fftw_import_wisdom_from_filename(env);
+    ASKAPCHECK(env,"Environment variable FFTW_WISDOM pointing to wisdom diectory needs to be defined");
+    string file(env);
+    file += "/fftw-double-"+utility::toString(numThreads)+"threads.wisdom";
+    const int status = fftw_import_wisdom_from_filename(file.c_str());
     if (status == 0) {
-        ASKAPLOG_WARN_STR(logger,"Error reading FFTWF wisdom file from FFTW_WISDOM env. variable: " <<env);
+        ASKAPLOG_WARN_STR(logger,"Error reading FFTW wisdom file: " << file);
     }
     while (n <= maxSize) {
         fftw_plan plan1 = fftw_plan_dft_2d(n, n, buf, buf, FFTW_FORWARD, planOption);
@@ -101,12 +106,12 @@ void generateDoubleWisdom(int minSize, int maxSize, int maxThreads, uint planOpt
         n = askap::synthesis::SynthesisParamsHelper::nextFactor2357(n + 1);
         // save results regularly
         if (n % 1024 == 0) {
-            ASKAPCHECK(fftw_export_wisdom_to_filename(env),"Error writing wisdom to file "<<env);
+            ASKAPCHECK(fftw_export_wisdom_to_filename(file.c_str()),"Error writing wisdom to file "<< file);
             ASKAPLOG_INFO_STR(logger, "Planning complete up to "<< n);
         }
     }
-    ASKAPCHECK(fftw_export_wisdom_to_filename(env),"Error writing wisdom to file "<<env);
-    ASKAPLOG_INFO_STR(logger,"Done - wisdom exported");
+    ASKAPCHECK(fftw_export_wisdom_to_filename(file.c_str()),"Error writing wisdom to file "<< file);
+    ASKAPLOG_INFO_STR(logger,"Done - wisdom exported to "<< file);
 }
 
 
@@ -138,7 +143,7 @@ int main(int argc, const char** argv) {
 
     const int minSize = parset.getInt("minsize",1024);
     const int maxSize = parset.getInt("maxsize",6144);
-    const int maxThreads = parset.getInt("maxthreads",16);
+    const int numThreads = parset.getInt("numthreads",1);
     const bool doDouble = parset.getBool("double",false);
     // plan options are FFTW_ESTIMATE, FFTW_MEASURE, FFTW_PATIENT, or FFTW_EXHAUSTIVE
     // ESTIMATE is the default without wisdom
@@ -152,11 +157,13 @@ int main(int argc, const char** argv) {
     } else if (plan != "measure") {
         ASKAPTHROW(AskapError, "Unknown plan type (use measure, patient or exhaustive) :"<< plan);
     }
-    ASKAPCHECK(maxThreads <= LOFAR::OpenMP::maxThreads(),"not enough threads available");
+    ASKAPCHECK(numThreads <= LOFAR::OpenMP::maxThreads(),"not enough threads available");
 
     if (doDouble) {
-        generateDoubleWisdom(minSize, maxSize, maxThreads, planOption);
+        scimath::FFT2DWrapper<casacore::DComplex> fft2d;
+        fft2d.generateWisdom(minSize, maxSize, numThreads, planOption);
     } else {
-        generateFloatWisdom(minSize, maxSize, maxThreads, planOption);
+        scimath::FFT2DWrapper<casacore::Complex> fft2d;
+        fft2d.generateWisdom(minSize, maxSize, numThreads, planOption);
     }
 }
