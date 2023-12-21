@@ -159,7 +159,7 @@ accessors::IDataSharedIter CalcCore::makeDataIterator() const
 
 /// @brief iterate over data and accumulate samples for uv weights
 /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
-/// and weight builder class. It expects the builder already setup and accessible via the normal equations 
+/// and weight builder class. It expects the builder already setup and accessible via the normal equations
 /// shared pointer. Unlike the variant from the base class which works with the iterator supplied as a parameter,
 /// this version uses the iterator returned by makeDataIterator (wrapped into the calibration adapter, if needed)
 void CalcCore::accumulateUVWeights() const
@@ -167,14 +167,14 @@ void CalcCore::accumulateUVWeights() const
    // technically, calibration application can alter the flags, so we have to apply calibration
    // but it is a valid short-cut to skip calibration application (and have less than ideal weights) and may be even to ignore flags completely
    // (and we can have an accessor adapter which ignores flags, it would also speed up the first iteration)
-   // 
+   //
    // In principle, we can build different iterators here depending on the parset and make this behaviour configurable
    boost::shared_ptr<accessors::IDataIterator> it = makeCalibratedDataIteratorIfNeeded(makeDataIterator());
    // call version of the base class
    accumulateUVWeights(it);
 }
 
-/// @brief create measurement equation 
+/// @brief create measurement equation
 /// @details This method creates measurement equation as appropriate (with calibration application or without) using
 /// internal state of this class and the parset
 void CalcCore::createMeasurementEquation()
@@ -233,7 +233,7 @@ void CalcCore::doCalc()
 }
 
 /// @brief first image name in the model
-/// @details This is a helper method to obtain the name of the first encountered image parameter in the model. 
+/// @details This is a helper method to obtain the name of the first encountered image parameter in the model.
 /// @note It is written as part of the refactoring of various getGrid methods. However, in principle we could have multiple
 /// image parameters simultaneously. The original approach getting the first one won't work in this case.
 /// @return name of the first encountered image parameter in the model
@@ -246,7 +246,7 @@ std::string CalcCore::getFirstImageName() const
    return "image"+(*it);
 }
 
-casacore::Array<casacore::Complex> CalcCore::getGrid() const 
+casacore::Array<casacore::Complex> CalcCore::getGrid() const
 {
    ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
@@ -257,7 +257,7 @@ casacore::Array<casacore::Complex> CalcCore::getGrid() const
    return tvg->getGrid();
 }
 
-casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const 
+casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
 {
    ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
@@ -277,7 +277,7 @@ casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
    return casacore::Array<casacore::Complex>();
 }
 
-casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const 
+casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 {
    ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
@@ -366,7 +366,7 @@ void CalcCore::solveNE()
 
     ASKAPDEBUGASSERT(itsModel);
     itsSolver->solveNormalEquations(*itsModel, q);
-    ASKAPLOG_DEBUG_STR(logger, "Solved normal equations in " << timer.real()
+    ASKAPLOG_INFO_STR(logger, "Solved normal equations in " << timer.real()
                        << " seconds ");
 
     // Extract the largest residual

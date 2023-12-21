@@ -47,7 +47,6 @@ ASKAP_LOGGER(logger, ".measurementequation.synthesisparamshelper");
 
 #include <casacore/images/Images/PagedImage.h>
 #include <casacore/images/Images/TempImage.h>
-//#include <casacore/images/Images/ImageRegrid.h>
 #include <casacore/scimath/Mathematics/Interpolate2D.h>
 #include <casacore/lattices/Lattices/ArrayLattice.h>
 #include <casacore/coordinates/Coordinates/CoordinateSystem.h>
@@ -56,7 +55,7 @@ ASKAP_LOGGER(logger, ".measurementequation.synthesisparamshelper");
 #include <casacore/coordinates/Coordinates/SpectralCoordinate.h>
 #include <casacore/coordinates/Coordinates/DirectionCoordinate.h>
 
-#include <casacore/lattices/LatticeMath/LatticeFFT.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 
 #include <Common/ParameterSet.h>
 #include <Common/Exceptions.h>
@@ -912,7 +911,6 @@ namespace askap
       }
     }
 
-
     /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
     /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
     /// @param[in] image the array to oversample
@@ -923,46 +921,40 @@ namespace askap
     /// @todo use scimath::PaddingUtils::fftPad? Works with imtype rather than float so template there or here?
     void SynthesisParamsHelper::oversample(casacore::Array<float> &image, const float osfactor, const bool norm)
     {
-
         ASKAPCHECK(osfactor >= 1.0,
             "Oversampling factor in the solver is supposed to be greater than or equal to 1.0, you have "<<osfactor);
         if (osfactor == 1.) return;
+        const uint ndim = image.ndim();
+        ASKAPASSERT(ndim>1);
+        const IPosition matShape = image.shape().nonDegenerate();
+        const IPosition osShape = scimath::PaddingUtils::paddedShape(matShape,osfactor);
+        scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
 
-        casacore::Array<casacore::Complex> AgridOS(scimath::PaddingUtils::paddedShape(image.shape(),osfactor),casacore::Complex(0.));
-
-        // this is how it's done in SynthesisParamsHelper::saveImageParameter():
-        //imagePixels.resize(scimath::PaddingUtils::paddedShape(ip.shape(name),osfactor));
-        //scimath::PaddingUtils::fftPad(ip.valueF(name),imagePixels);
-
-        // destroy Agrid before resizing image. Small memory saving.
-        {
-            // Set up scratch arrays and lattices for changing resolution
-            casacore::Array<casacore::Complex> Agrid(image.shape());
-            casacore::ArrayLattice<casacore::Complex> Lgrid(Agrid);
-
-            // renormalise based on the imminent padding
-            if (norm) {
-                image *= static_cast<float>(osfactor*osfactor);
-            }
-
-            // copy image into a complex scratch space
-            casacore::convertArray<casacore::Complex,float>(Agrid, image);
-
-            // fft to uv
-            casacore::LatticeFFT::cfft2d(Lgrid, casacore::True);
-
-            // "extract" original Fourier grid into the central portion of the new Fourier grid
-            casacore::Array<casacore::Complex> subGrid = scimath::PaddingUtils::extract(AgridOS,osfactor);
-            subGrid = Agrid;
-
-            // ifft back to image and return the real part
-            casacore::ArrayLattice<casacore::Complex> LgridOS(AgridOS);
-            casacore::LatticeFFT::cfft2d(LgridOS, casacore::False);
+        // renormalise based on the imminent padding
+        if (norm) {
+            image *= static_cast<float>(osfactor*osfactor);
         }
 
-        image.resize(AgridOS.shape());
-        image = real(AgridOS);
+        // Set up scratch array for changing resolution
+        casacore::Matrix<casacore::Complex> Agrid(matShape,casacore::Complex(0.f));
 
+        // copy image into complex scratch space & free memory
+        casacore::setReal(Agrid, image.nonDegenerate());
+        image.resize();
+
+        // fft to uv
+        fft2d(Agrid, true);
+
+        // "extract" original Fourier grid into the central portion of the new Fourier grid
+        casacore::Matrix<casacore::Complex> AgridOS(osShape,casacore::Complex(0.f));
+        casacore::Array<casacore::Complex> subGrid = scimath::PaddingUtils::extract(AgridOS,osfactor);
+        subGrid = Agrid;
+        Agrid.resize();
+
+        // ifft back to image and return the real part
+        fft2d(AgridOS,false);
+
+        image.reference(real(AgridOS).addDegenerate(ndim-2));
     }
 
     /// @brief remove Fourier zero-padding region to re-establish original resolution after cleaning
@@ -975,41 +967,39 @@ namespace askap
     /// @todo use scimath::PaddingUtils::fftPad? Downsampling may not be supported at this stage
     void SynthesisParamsHelper::downsample(casacore::Array<float> &image, const float osfactor, const bool norm)
     {
-
         ASKAPCHECK(osfactor >= 1.0,
             "Oversampling factor in the solver is supposed to be greater than or equal to 1.0, you have "<<osfactor);
         if (osfactor == 1.) return;
 
-        casacore::Array<casacore::Complex> Agrid;
+        scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
+        const uint ndim = image.ndim();
+        ASKAPASSERT(ndim>1);
 
-        // destroy AgridOS before resizing image. Small memory saving.
-        {
-            // Set up scratch arrays and lattices for changing resolution
-            casacore::Array<casacore::Complex> AgridOS(image.shape());
-            casacore::ArrayLattice<casacore::Complex> LgridOS(AgridOS);
+        // Set up scratch arrays for changing resolution
+        casacore::Matrix<casacore::Complex> AgridOS(image.shape().nonDegenerate(),casacore::Complex(0.f));
 
-            // copy image into a complex scratch space
-            casacore::convertArray<casacore::Complex,float>(AgridOS, image);
+        // copy image into a complex scratch space & free memory
+        casacore::setReal(AgridOS, image.nonDegenerate());
+        image.resize();
 
-            // fft to uv. This is what we need to degrid from, so no need to renormalise
-            casacore::LatticeFFT::cfft2d(LgridOS, casacore::True);
+        // fft to uv. This is what we need to degrid from, so no need to renormalise
+        fft2d(AgridOS, true);
 
-            // extract the central portion of the Fourier grid
-            Agrid = scimath::PaddingUtils::extract(AgridOS,osfactor);
+        // extract the central portion of the Fourier grid
+        // We want Agrid to be contiguous, so force a copy by using separate assignment
+        casacore::Matrix<casacore::Complex> Agrid;
+        Agrid = scimath::PaddingUtils::extract(AgridOS,osfactor);
+        // free memory
+        AgridOS.resize();
 
-            if (norm) {
-                // renormalise based on unpadding
-                Agrid /= static_cast<float>(osfactor*osfactor);
-            }
-
-            // ifft back to image and return the real part
-            casacore::ArrayLattice<casacore::Complex> Lgrid(Agrid);
-            casacore::LatticeFFT::cfft2d(Lgrid, casacore::False);
+        if (norm) {
+            // renormalise based on unpadding
+            Agrid /= static_cast<float>(osfactor*osfactor);
         }
 
-        image.resize(Agrid.shape());
-        image = real(Agrid);
-
+        // ifft back to image and return the real part
+        fft2d(Agrid, false);
+        image.reference(real(Agrid).addDegenerate(ndim-2));
     }
 
     /// @brief Find number no smaller than given one, with only factors of 2,3,5,7

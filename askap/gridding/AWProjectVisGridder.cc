@@ -30,7 +30,7 @@
 #include <askap/askap/AskapLogging.h>
 ASKAP_LOGGER(logger, ".gridding.awprojectvisgridder");
 #include <askap/gridding/AWProjectVisGridder.h>
-#include <askap/scimath/fft/FFTWrapper.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/scimath/utils/PaddingUtils.h>
 #include <casacore/casa/Arrays/ArrayIter.h>
 #include <casacore/casa/BasicSL/Complex.h>
@@ -362,7 +362,7 @@ void AWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAcc
     const casacore::Vector<casacore::Double> & chanFreq = acc.frequency();
 
     int nDone = 0;
-
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
     for (int row = 0; row < nSamples; ++row) {
         const int feed = acc.feed1()(row);
 
@@ -380,7 +380,7 @@ void AWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAcc
                                             feed);
                 // If the pattern is in the Fourier domain, FFT to the image domain
                 if( !imageBasedPattern ) {
-                    scimath::fft2d(pattern.pattern(), false);
+                    fft2d(pattern.pattern(), false);
                 }
                 /// Calculate the total convolution function including
                 /// the w term and the antenna convolution function
@@ -425,7 +425,7 @@ void AWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAcc
 
                     // Now we have to calculate the Fourier transform to get the
                     // convolution function in uv space
-                    scimath::fft2d(thisPlane, true);
+                    fft2d(thisPlane, true);
 
                     // Now correct for normalization of FFT
                     thisPlane *= imtypeComplex(1.0 / (double(nx) * double(ny)));
@@ -667,6 +667,7 @@ void AWProjectVisGridder::finaliseWeights(casacore::Array<imtype>& out)
     /// This is the output array before sinc padding
     casacore::Array<imtype> cOut(casacore::IPosition(4, cnx, cny, nPol, nChan));
     cOut.set(0.0);
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
 
     // for debugging
     double totSumWt = 0.;
@@ -720,8 +721,7 @@ void AWProjectVisGridder::finaliseWeights(casacore::Array<imtype>& out)
                     thisPlane(xPos, yPos) = itsConvFunc[plane](ix + support, iy + support);
                 }
             }
-
-            scimath::fft2d(thisPlane, false);
+            fft2d(thisPlane, false);
             thisPlane *= imtypeComplex(cnx * cny);
 
             // Now we need to cut out only the part inside the field of view
@@ -818,14 +818,14 @@ void AWProjectVisGridder::correctConvolution(casacore::Array<imtype>& image)
               buffer(ix,iy) = ccfx(ix)*ccfy(iy);
          }
     }
-    scimath::fft2d(buffer, true);
+    //scimath::fft2d(buffer, true);
     buffer *= imtypeComplex(1./(double(nx)*double(ny)));
     for (casacore::Int x = 0; x < nx; ++x) {
          for (casacore::Int y = 0; y < ny; ++y) {
               buffer(x,y) *= conj(buffer(x,y));
          }
     }
-    scimath::fft2d(buffer, false);
+    //scimath::fft2d(buffer, false);
     buffer *= imtypeComplex(double(nx)*double(ny));
 
 
