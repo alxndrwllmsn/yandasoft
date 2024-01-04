@@ -1128,7 +1128,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
         iacc.write(outImgName,outPix,outMask,loc);
         // calculate the statistics for the array slice
         if ( calcstats ) {
-          statsAndMask->calculate(outImgName,channel,outPix);
+          statsAndMask->calculate(channel,outPix);
         }
         if (accumulator.outWgtDuplicates()[outImgName]) {
           ASKAPLOG_INFO_STR(logger, "Accumulated weight image " << outWgtName << " already written");

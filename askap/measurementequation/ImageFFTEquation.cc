@@ -26,7 +26,6 @@
 ASKAP_LOGGER(logger, ".measurementequation.imagefftequation");
 
 #include <askap/askap/AskapError.h>
-//#include <fft/FFTWrapper.h>
 
 #include <askap/dataaccess/SharedIter.h>
 #include <askap/dataaccess/MemBufferDataAccessor.h>

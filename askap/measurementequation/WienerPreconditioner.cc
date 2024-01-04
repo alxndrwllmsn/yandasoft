@@ -38,11 +38,7 @@ ASKAP_LOGGER(logger, ".measurementequation.wienerpreconditioner");
 #include <casacore/casa/Arrays/Matrix.h>
 #include <casacore/casa/Arrays/MatrixMath.h>
 #include <casacore/casa/Arrays/Vector.h>
-#include <casacore/lattices/Lattices/SubLattice.h>
-//#include <casacore/lattices/Lattices/ArrayLattice.h>
-//#include <casacore/lattices/LatticeMath/LatticeFFT.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
-#include <casacore/lattices/LEL/LatticeExpr.h>
 
 // for debugging - to export intermediate images
 #include <askap/scimath/utils/ImageUtils.h>
@@ -388,15 +384,11 @@ namespace askap
           }
           ASKAPLOG_INFO_STR(logger, "Applying Gaussian taper to the preconditioner function in the image domain");
 
-          // the original wrapper is a method in scimath namespace, the new wrapper is a local variable with the same name
-          //scimath::fft2d(scratch, false);
           fft2d(scratch, false);
 
           casacore::Matrix<float> taperArray(itsTaperCache->taper(shape));
           scratch *= taperArray;
 
-          // the original wrapper is a method in scimath namespace, the new wrapper is a local variable with the same name
-          //scimath::fft2d(scratch, true);
           fft2d(scratch, true);
 
           // Redo thresholding
@@ -447,8 +439,6 @@ namespace askap
       // Apply the Wiener filter to the xfr and transform to the filtered PSF
       convertArray(scratch, psf2D);
 
-      // the original wrapper is a method in scimath namespace, the new wrapper is a local variable with the same name
-      //scimath::fft2d(scratch, true);
       fft2d(scratch, true);
 
       // Estimate the normalised point source sensitivity (AKA the normalised thermal RMS)
@@ -466,8 +456,6 @@ namespace askap
 
       scratch *= itsWienerfilter;
 
-      // the original wrapper is a method in scimath namespace, the new wrapper is a local variable with the same name
-      //scimath::fft2d(scratch, false);
       fft2d(scratch, false);
 
       psf2D = real(scratch);
@@ -481,14 +469,10 @@ namespace askap
       // Apply the filter to the dirty image
       convertArray<casacore::Complex,casacore::Float>(scratch, dirty2D);
 
-      // the original wrapper is a method in scimath namespace, the new wrapper is a local variable with the same name
-      //scimath::fft2d(scratch, true);
       fft2d(scratch, true);
 
       scratch *= itsWienerfilter;
 
-      // the original wrapper is a method in scimath namespace, the new wrapper is a local variable with the same name
-      //scimath::fft2d(scratch, false);
       fft2d(scratch, false);
 
       dirty2D = real(scratch);
