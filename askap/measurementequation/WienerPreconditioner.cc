@@ -271,7 +271,9 @@ namespace askap
           // set pcf to to contain the new weights, so they don't have to be regenerated.
           // note that it is going from the image domain to the uv domain.
           itsPcf = 0.0;
+#ifdef HAVE_MPI
           double timerStart = MPI_Wtime();
+#endif
           #pragma omp parallel
           {
           #pragma omp master
@@ -345,8 +347,12 @@ namespace askap
               } // x
           } // y
           } // parallel
+#ifdef HAVE_MPI
           double timerStop = MPI_Wtime();
           ASKAPLOG_INFO_STR(logger,"Wiener filter calculation took "<< timerStop-timerStart<<"s");
+#else
+          ASKAPLOG_INFO_STR(logger,"Cant compute how long Wiener filter took because MPI library is not installed (i.e cant use MPI_Wtime())");
+#endif
 
           // Calc ave SNR weight-sum *over visibilities* (not pixels).
           // const casacore::Array<float> wgts(real(scratch.asArray()));

@@ -83,6 +83,16 @@ namespace askap
                         const bool masterDoesWork = false,
                         const bool mpipresetup = false);
 
+                /// @brief dont allow default constructor
+                MPIWProjectVisGridder() = delete;
+                /// @brief assignment operator
+                /// @details Defined as private, so it can't be called (to enforce usage of the
+                /// copy constructor
+                /// @param[in] other input object
+                /// @return reference to itself
+                MPIWProjectVisGridder& operator=(const MPIWProjectVisGridder &other) = delete;
+
+                /// @brief destructor
                 virtual ~MPIWProjectVisGridder();
 
                 /// @brief copy constructor
@@ -129,13 +139,7 @@ namespace askap
                 void copyFromSharedMemory(const std::vector<std::pair<int,int> >& itsConvFuncMatSize);
                 void copyConvFuncOffset();
 
-                /// @brief assignment operator
-                /// @details Defined as private, so it can't be called (to enforce usage of the
-                /// copy constructor
-                /// @param[in] other input object
-                /// @return reference to itself
-                MPIWProjectVisGridder& operator=(const MPIWProjectVisGridder &other);
-
+#ifdef HAVE_MPI
                 /// @brief MPI variables used to setup MPI shared memory
 		        /// @details - MPI_Win_get_attr(itsWindowTable,MPI_WIN_SIZE,&val,&flag)
 		        ///            should return a val which is the size of the shared memory segment.
@@ -152,6 +156,7 @@ namespace askap
 		        static MPI_Group itsGridderGroup;
 		        /// @brief - communicator for a given node
 		        static MPI_Comm itsNodeComms;
+#endif
 
                 /// @brief number of ranks within a node
                 static int     itsNodeSize;
