@@ -455,7 +455,8 @@ void WProjectVisGridder::generate(int startPlane, int endPlane)
     casacore::Matrix<imtypeComplex> thisPlane(getCFBuffer());
     ASKAPDEBUGASSERT(thisPlane.nrow() == casacore::uInt(nx));
     ASKAPDEBUGASSERT(thisPlane.ncolumn() == casacore::uInt(ny));
-    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
 
     for (int iw = startPlane; iw < endPlane; ++iw) {
         thisPlane.set(0.0);

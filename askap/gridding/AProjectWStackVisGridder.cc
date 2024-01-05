@@ -282,7 +282,8 @@ void AProjectWStackVisGridder::initConvolutionFunction(const accessors::IConstDa
 
 
     casacore::Matrix<imtypeComplex> cplane(pattern.pattern().shape());
-    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     int nDone=0;
     for (int row=0; row<nSamples; ++row) {
         const int feed=acc.feed1()(row);
@@ -454,7 +455,8 @@ void AProjectWStackVisGridder::finaliseWeights(casacore::Array<imtype>& out) {
     /// This is the output array before sinc padding
     casacore::Array<imtype> cOut(casacore::IPosition(4, cnx, cny, nPol, nChan));
     cOut.set(0.0);
-    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
 
     // for debugging
     double totSumWt = 0.;

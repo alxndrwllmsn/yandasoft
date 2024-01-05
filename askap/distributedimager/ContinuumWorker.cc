@@ -1587,7 +1587,8 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
 
   // Write the grids - we write all or none, so only need to set gridShape once
   IPosition gridShape;
-  scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
+  // Limit number of fft threads to 8 (more is slower for our fft sizes)
+  scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
 
   if (params->has("grid.slice") && (itsVisGridCube||itsVisGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("grid.slice"));

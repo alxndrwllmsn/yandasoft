@@ -423,13 +423,13 @@ namespace askap {
             const time_t start_time = time(0);
             // Do harmonic reorder as with the original wrapper (hence, pass true to the wrapper), it may be possible to
             // skip it here as we use FFT to do convolutions and don't care about particular harmonic placement in the Fourier space
-            scimath::FFT2DWrapper<FT> fft2d(true);
+            // Limit number of fft threads to 8 (more is slower for our fft sizes)
+            scimath::FFT2DWrapper<FT> fft2d(true,8);
             for (uInt base = 0; base < nBases; base++) {
                  // Calculate transform of basis function [nx,ny,nbases]
                  const Matrix<T> bfRef(this->itsBasisFunction->basisFunction(base));
                  Matrix<FT> basisFunctionFFT(bfRef.shape().nonDegenerate(2), 0.);
                  casacore::setReal(basisFunctionFFT, bfRef);
-                 //scimath::fft2d(basisFunctionFFT, true);
                  fft2d(basisFunctionFFT, true);
 
                  for (uInt term = 0; term < this->nTerms(); term++) {
@@ -437,7 +437,6 @@ namespace askap {
                     // Calculate transform of residual image
                     Matrix<FT> residualFFT(this->dirty(term).shape().nonDegenerate(), 0.);
                     casacore::setReal(residualFFT, this->dirty(term).nonDegenerate());
-                    //scimath::fft2d(residualFFT, true);
                     fft2d(residualFFT, true);
 
                     // Calculate product and transform back
@@ -447,7 +446,6 @@ namespace askap {
                     //residualFFT *= conj(basisFunctionFFT);
                     utility::multiplyByConjugate(residualFFT, basisFunctionFFT);
 
-                    //scimath::fft2d(residualFFT, false);
                     fft2d(residualFFT, false);
 
                     // temporary object is ok here because we do an assignment to uninitialised array later on
@@ -564,7 +562,8 @@ namespace askap {
 
             // Do harmonic reorder as with the original wrapper (hence, pass true to the wrapper), it may be possible to
             // skip it here as we use FFT to do convolutions and don't care about particular harmonic placement in the Fourier space
-            scimath::FFT2DWrapper<FT> fft2d(true);
+            // Limit number of fft threads to 8 (more is slower for our fft sizes)
+            scimath::FFT2DWrapper<FT> fft2d(true,8);
 
             // do explicit loop over basis functions here (the original code relied on iterator in
             // fft2d and, therefore, low level representation of the basis function stack). This way
@@ -573,7 +572,6 @@ namespace askap {
                  // casacore arrays have reference semantics, no copying occurs in the following
                  casacore::Matrix<FT> fftBuffer = basisFunctionFFT.xyPlane(base);
                  casacore::setReal(fftBuffer, this->itsBasisFunction->basisFunction(base));
-                 //scimath::fft2d(fftBuffer, true);
                  fft2d(fftBuffer, true);
             }
 
@@ -587,10 +585,6 @@ namespace askap {
             const uInt ny(this->psf(0).shape()(1));
 
             const IPosition subPsfStart(2, (nx - subPsfShape(0)) / 2, (ny - subPsfShape(1)) / 2);
-            //const IPosition subPsfEnd(2,(nx+subPsfShape(0))/2-1,(ny+subPsfShape(1))/2-1);
-            //const IPosition subPsfStride(2,1,1);
-
-            //Slicer subPsfSlicer(subPsfStart, subPsfEnd, subPsfStride, Slicer::endIsLast);
             Slicer subPsfSlicer(subPsfStart, subPsfShape);
             // check just in case
             ASKAPCHECK(subPsfSlicer.length() == subPsfShape, "Slicer selected length of " <<
@@ -616,7 +610,6 @@ namespace askap {
                 Matrix<FT> subXFRTerm1(subXFRVec(term1));
                 subXFRTerm1.set(0.0);
                 casacore::setReal(subXFRTerm1, this->itsPsfLongVec(term1).nonDegenerate()(subPsfSlicer));
-                //scimath::fft2d(subXFRVec(term1), true);
                 fft2d(subXFRTerm1, true);
                 // we only need conjugated FT of subXFRVec (or real part of it, which doesn't change with conjugation),
                 // it is better to compute conjugation in situ now and don't do it on the fly later
@@ -651,7 +644,6 @@ namespace askap {
                             //       conj(subXFRVec(term1 + term2)) / normPSF;
                             utility::calculateNormalisedProduct(work, basisFunctionFFT.xyPlane(base1), basisFunctionFFT.xyPlane(base2), subXFRVec(term1 + term2), normPSF);
 
-                            //scimath::fft2d(work, false);
                             //use reference semantics to get the right interface, we can probably change the interface to matrix to reduce technical debt
                             Matrix<FT> workMtr(work);
                             fft2d(workMtr, false);

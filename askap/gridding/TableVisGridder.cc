@@ -33,7 +33,6 @@ ASKAP_LOGGER(logger, ".gridding.tablevisgridder");
 #include <askap/scimath/fft/FFT2DWrapper.h>
 
 #include <casacore/casa/BasicSL/Constants.h>
-#include <casacore/casa/Arrays/ArrayIter.h>
 #include <casacore/casa/Arrays/ArrayMath.h>
 #include <casacore/casa/Arrays/Slicer.h>
 #include <casacore/casa/Arrays/Slice.h>
@@ -1065,7 +1064,8 @@ void TableVisGridder::addConjugates() {
 // DAM -- it would be faster to do this all in uv, but testing and don't want to deal with off-by-one issues...
 
 ASKAPLOG_INFO_STR(logger, "DAMDAM before conjugates. sum of grid = " << sum(real(aGrid)) );
-    scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
+// Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
     fft2d(aGrid, false);
     aGrid += conj(aGrid);
     fft2d(aGrid, true);
@@ -1363,7 +1363,8 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
     casacore::Array<imtype> dBuffer(itsGrid[0].shape());
     ASKAPDEBUGASSERT(dBuffer.shape().nelements()>=2);
     ASKAPDEBUGASSERT(itsShape == scimath::PaddingUtils::paddedShape(out.shape(),paddingFactor()));
-    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     /// Loop over all grids Fourier transforming and accumulating
     for (unsigned int i=0; i<itsGrid.size(); i++) {
         #ifdef ASKAP_FLOAT_IMAGE_PARAMS
@@ -1461,10 +1462,7 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
         }
         // end of debugging code
         */
-        for (casacore::ArrayIterator<imtypeComplex> it(scratch, 2); !it.pastEnd(); it.next()) {
-            casacore::Matrix<imtypeComplex> mat(it.array());
-            fft2d(mat, false);
-        }
+        fft2d.transformAllHyperPlanes(scratch, false);
 
         if (i==0) {
             toDouble(dBuffer, scratch);
@@ -1554,7 +1552,8 @@ void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
 
     // Make sure we reinitalise the pol converter
     itsVisPols.resize(0);
-    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     if (casacore::max(casacore::abs(in))>0.0) {
         itsModelIsEmpty=false;
         casacore::Array<imtype> scratch(itsShape,static_cast<imtype>(0.));
@@ -1562,17 +1561,11 @@ void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
         correctConvolution(scratch);
         #ifdef ASKAP_FLOAT_IMAGE_PARAMS
         toComplex(itsGrid[0], scratch);
-        for (casacore::ArrayIterator<imtypeComplex> it(itsGrid[0], 2); !it.pastEnd(); it.next()) {
-            casacore::Matrix<imtypeComplex> mat(it.array());
-            fft2d(mat, true);
-        }
+        fft2d.transformAllHyperPlanes(itsGrid[0], true);
         #else
         casacore::Array<imtypeComplex> scratch2(itsGrid[0].shape());
         toComplex(scratch2, scratch);
-        for (casacore::ArrayIterator<imtypeComplex> it(scratch2, 2); !it.pastEnd(); it.next()) {
-            casacore::Matrix<imtypeComplex> mat(it.array();
-            fft2d(mat), true);
-        }
+        fft2d.transformAllHyperPlanes(scratch2), true);
         casacore::convertArray<casacore::Complex,imtypeComplex>(itsGrid[0],scratch2);
         #endif
     } else {
