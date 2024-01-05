@@ -192,14 +192,13 @@ namespace askap
       // skip it here as don't care about particular harmonic placement in the Fourier space in most cases. However, tapering and filtering
       // would need to be altered to support different harmonic placement - this would add to code complexity although may provide some performance benefits
       // MV: also note we only work with single-precision complex here for some reason (set by the interface of the method, the class is not a template)
-      scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
+      // Limit number of fft threads to 8 (more is slower for our fft sizes)
+      scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
 
       if (!itsUseCachedPcf) {
 
         // the filter has been accumulated in the image domain, so transform to uv
 
-        // the original wrapper is a method in scimath namespace, the new wrapper is a local variable with the same name
-        //scimath::fft2d(scratch, true);
         fft2d(scratch, true);
 
         // The filter is rescaling Fourier components of dirty and psf based on

@@ -170,7 +170,8 @@ void GaussianTaperPreconditioner::applyTaper(casacore::Array<float> &image) cons
 {
   // This will throw exception if there are !=2 non degenerate axes
   casacore::Matrix<float> matImage(image.nonDegenerate());
-  scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
+  // Limit number of fft threads to 8 (more is slower for our fft sizes)
+  scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
   casacore::Matrix<casacore::Complex> grid(matImage.shape(),casacore::Complex(0.f));
 
   // copy image into a complex scratch space

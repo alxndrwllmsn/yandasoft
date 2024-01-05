@@ -928,7 +928,8 @@ namespace askap
         ASKAPASSERT(ndim>1);
         const IPosition matShape = image.shape().nonDegenerate();
         const IPosition osShape = scimath::PaddingUtils::paddedShape(matShape,osfactor);
-        scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
+        // Limit number of fft threads to 8 (more is slower for our fft sizes)
+        scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
 
         // renormalise based on the imminent padding
         if (norm) {
@@ -971,7 +972,8 @@ namespace askap
             "Oversampling factor in the solver is supposed to be greater than or equal to 1.0, you have "<<osfactor);
         if (osfactor == 1.) return;
 
-        scimath::FFT2DWrapper<casacore::Complex> fft2d(true);
+        // Limit number of fft threads to 8 (more is slower for our fft sizes)
+        scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
         const uint ndim = image.ndim();
         ASKAPASSERT(ndim>1);
 

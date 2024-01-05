@@ -568,7 +568,8 @@ void CdeconvolverApp::getRealFFT(casacore::Matrix<casacore::Float> &fArray,
                                 casacore::Matrix<casacore::Complex> &cArray) {
 
     fArray.resize(cArray.shape());
-    scimath::FFT2DWrapper<imtypeComplex> fft2d(true);
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     #ifdef ASKAP_FLOAT_IMAGE_PARAMS
     fft2d(cArray,false);
     casacore::real(fArray,cArray);
