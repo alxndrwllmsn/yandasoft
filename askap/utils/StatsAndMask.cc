@@ -74,15 +74,14 @@ void StatsAndMask::setUnits(const std::string& unit)
 }
 
 /// @brief calculates the per plane statistics of the image cube
-/// @param[in] name - name of image cube
-/// @param[in] channel - chanel of the image where the statistics are to be calculated
+/// @param[in] channel - channel of the image where the statistics are to be calculated
 /// @param[in] blc - bottom left corner of the image plane
 /// @param[in] trc - top right corner of the image plane
-void StatsAndMask::calculate(const std::string& name, Channel channel,const casacore::IPosition& blc, const casacore::IPosition& trc)
+void StatsAndMask::calculate(Channel channel,const casacore::IPosition& blc, const casacore::IPosition& trc)
 {
 #ifdef HAVE_MPI
     if ( boost::shared_ptr<IImageAccess<>> imageCube = itsImageCube.lock() ) {
-        casacore::Array<float> imgPerPlane = imageCube->read(name,blc,trc);
+        casacore::Array<float> imgPerPlane = imageCube->read(itsImageName,blc,trc);
         // remove all the NaN from the imgPerPlane because it messes it the calculation
         // of the statistics
         casacore::Vector<float> nonMaskArray(imgPerPlane.size());
@@ -114,10 +113,9 @@ void StatsAndMask::calculate(const std::string& name, Channel channel,const casa
 }
 
 /// @brief calculates the per plane statistics
-/// @param[in] name - name of image cube
 /// @param[in] channel - chanel of the image where the statistics are to be calculated
 /// @param[in] arr - the channel image where the statistics are calculated
-void StatsAndMask::calculate(const std::string& name, Channel channel, const casacore::Array<float>& arr)
+void StatsAndMask::calculate(Channel channel, const casacore::Array<float>& arr)
 {
 #ifdef HAVE_MPI
     // remove all the NaN from the input arr because it messes it the calculation
@@ -200,7 +198,7 @@ Stats StatsAndMask::calculateImpl(Channel channel, const casacore::Array<float>&
         ASKAPLOG_INFO_STR(logger,"channel: " << stats.channel << ", rms: " << stats.rms << ", std: " << stats.std
                             << ", mean: " << stats.mean << ", median: " << stats.median << ", madfm: " << stats.madfm
                             << ", maxval: " << stats.maxval << ", stats.minval: " << stats.minval
-                            << ", onepc: " << stats.onepc);
+                            << ", onepc: " << stats.onepc << ", #points: "<<imgPerPlane.size());
     }
     return stats;
 #else
@@ -637,7 +635,7 @@ void StatsAndMask::writeStatsToImageTable(askapparallel::AskapParallel &comms,
             casacore::IPosition trc = cubeShape - 1;
             trc(3) = chan;
             casacore::Array<float> imagePerPlane = iaccPtr->read(imgName,blc,trc);
-            stats.calculate(imgName,chan,imagePerPlane);
+            stats.calculate(chan,imagePerPlane);
         }
         stats.writeStatsToImageTable(imgName);
         if ( statsFile != "" ) {

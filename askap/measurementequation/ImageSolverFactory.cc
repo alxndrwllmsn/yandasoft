@@ -185,7 +185,7 @@ namespace askap
                      "preconditioner.GaussianTaper can have either single element or "
                      " a vector of 3 elements. You supplied a vector of "<<taper.size()<<" elements");
           ASKAPCHECK(parset.isDefined("Images.shape") && parset.isDefined("Images.cellsize"),
-                     "Imager.shape and Imager.cellsize should be defined to convert the taper fwhm specified in "
+                     "Images.shape and Images.cellsize should be defined to convert the taper fwhm specified in "
                      "angular units in the image plane into uv cells");
           const std::vector<double> cellsize =
               SynthesisParamsHelper::convertQuantity(parset.getStringVector("Images.cellsize"),"rad");
@@ -250,7 +250,7 @@ namespace askap
         string algorithm=parset.getString("solver.Clean.algorithm","MultiScale");
         // MV: a bit of technical debt highlighted by casacore's interface change. In principle, we could've
         // had scales as std::vector in the interface to avoid the explicit construction (in this particular case,
-        // there is no benefit of using casacore::Vector) + we have a similar code in a number of places, could've achieved a better reuse 
+        // there is no benefit of using casacore::Vector) + we have a similar code in a number of places, could've achieved a better reuse
         const casacore::Vector<float> scales = casacore::Vector<float>(parset.getFloatVector("solver.Clean.scales", defaultScales));
 
         if (algorithm=="MultiScale") {

@@ -51,7 +51,7 @@
 #include <askap/scimath/fitting/INormalEquations.h>
 #include <askap/scimath/fitting/ImagingNormalEquations.h>
 #include <askap/scimath/fitting/Params.h>
-#include <askap/scimath/fft/FFTWrapper.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/gridding/IVisGridder.h>
 #include <askap/gridding/VisGridderFactory.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
@@ -331,7 +331,7 @@ void ContinuumWorker::run(void)
 
   itsComms.barrier(itsComms.theWorkers());
   const bool singleoutputfile = itsParset.getBool("singleoutputfile", false);
-  const bool calcstats = itsParset.getBool("calcstats", false);
+  const bool calcstats = itsParset.getBool("calcstats", true);
   if ( singleoutputfile && calcstats ) {
     writeCubeStatistics();
     itsComms.barrier(itsComms.theWorkers());
@@ -681,7 +681,7 @@ void ContinuumWorker::processChannels()
           itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, this->nchanCube, f0, freqinc, restored_image_name));
           // we are only interested to collect statistics for the restored image cube
           itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
-          ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object");
+          ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for restored cube");
       }
 
     } else {
@@ -730,7 +730,6 @@ void ContinuumWorker::processChannels()
           itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, restored_image_name));
           // we are only interested to collect statistics for the restored image cube
           itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
-          ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object");
       }
     }
   }
@@ -1022,7 +1021,7 @@ void ContinuumWorker::processChannels()
 
               boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,localChannel,globalFrequency));
               workingImagerPtr = tempIm;
-              
+
               // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
               // (it is used as a flag indicating whether to do traditional weighting)
               // MV: for now set this up only for updateDir=true and follow the old logic for all other cases,
@@ -1048,7 +1047,7 @@ void ContinuumWorker::processChannels()
               useSubSizedImages = true;
               setupImage(workingImager.params(), frequency, useSubSizedImages);
 
-              // if traditional weighting is enabled compute the weight. The code below assumes local 
+              // if traditional weighting is enabled compute the weight. The code below assumes local
               // computation without interrank communication
               if (workingImager.isSampleDensityGridNeeded()) {
                   ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
@@ -1560,8 +1559,9 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
       }
       else {
           ASKAPLOG_INFO_STR(logger, "Writing Residual");
-          itsResidualCube->writeFlexibleSlice(params->valueF("residual.slice"), chan);
-          itsResidualStatsAndMask->calculate(itsResidualCube->filename(),chan,params->valueF("residual.slice"));
+          const casacore::Array<float> arr = itsResidualCube->writeFlexibleSlice(params->valueF("residual.slice"), chan);
+          ASKAPLOG_INFO_STR(logger, "Calculating residual stats");
+          itsResidualStatsAndMask->calculate(chan,arr);
       }
   }
 
@@ -1587,21 +1587,24 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
 
   // Write the grids - we write all or none, so only need to set gridShape once
   IPosition gridShape;
+  // Limit number of fft threads to 8 (more is slower for our fft sizes)
+  scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
+
   if (params->has("grid.slice") && (itsVisGridCube||itsVisGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("grid.slice"));
     ASKAPLOG_INFO_STR(logger,"grid.slice shape= "<<params->shape("grid.slice"));
     // turns out we don't always have psf.slice, so need some alternative way to get shape
     if (params->has("psf.slice")) {
-        gridShape = params->shape("psf.slice");
+        gridShape = params->shape("psf.slice").getFirst(2);
     } else if (itsVisGridCubeReal) {
         gridShape = itsVisGridCubeReal->imageHandler()->shape(itsVisGridCubeReal->filename()).getFirst(2);
     } else {
         gridShape = itsVisGridCube->imageHandler()->shape(itsVisGridCube->filename()).getFirst(2);
     }
-    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
+    casacore::Matrix<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing Vis Grid and writing it as a real image");
-      askap::scimath::fft2d(grid,false);
+      fft2d(grid,false);
       grid *= static_cast<casacore::Float>(grid.nelements());
       itsVisGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
     } else {
@@ -1617,13 +1620,12 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
   if (params->has("pcf.slice") && (itsPCFGridCube||itsPCFGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("pcf.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
+    casacore::Matrix<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing PCF Grid and writing it as a real image");
-      askap::scimath::fft2d(grid,false);
+      fft2d(grid,false);
       grid *= static_cast<casacore::Float>(grid.nelements());
       itsPCFGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
-
     } else {
       if (itsGridType == "casa") {
         ASKAPLOG_INFO_STR(logger, "Writing PCF Grid");
@@ -1637,10 +1639,10 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
   if (params->has("psfgrid.slice") && (itsPSFGridCube||itsPSFGridCubeReal)) {
     const casacore::Vector<casacore::Complex> gr(params->complexVectorValue("psfgrid.slice"));
-    casacore::Array<casacore::Complex> grid(gr.reform(gridShape));
+    casacore::Matrix<casacore::Complex> grid(gr.reform(gridShape));
     if (itsGridFFT) {
       ASKAPLOG_INFO_STR(logger, "FFTing PSF Grid and writing it as a real image");
-      askap::scimath::fft2d(grid,false);
+      fft2d(grid,false);
       grid *= static_cast<casacore::Float>(grid.nelements());
       itsPSFGridCubeReal->writeRigidSlice(casacore::real(grid),chan);
     } else {
@@ -1683,13 +1685,15 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
           // Restored image has been generated at full resolution, so avoid further oversampling
           ASKAPLOG_INFO_STR(logger, "Writing fullres.slice");
           itsRestoredCube->writeRigidSlice(params->valueF("fullres.slice"), chan);
-          calculateImageStats(itsRestoredStatsAndMask,itsRestoredCube,chan,params->valueF("fullres.slice"));
+          ASKAPLOG_INFO_STR(logger, "Calculating restored stats");
+          itsRestoredStatsAndMask->calculate(chan,params->valueF("fullres.slice"));
         }
         else {
           ASKAPCHECK(params->has("image.slice"), "Params are missing image parameter");
           ASKAPLOG_INFO_STR(logger, "Writing image.slice");
-          itsRestoredCube->writeFlexibleSlice(params->valueF("image.slice"), chan);
-          itsRestoredStatsAndMask->calculate(itsRestoredCube->filename(),chan,params->valueF("image.slice"));
+          const casacore::Array<float> arr = itsRestoredCube->writeFlexibleSlice(params->valueF("image.slice"), chan);
+          ASKAPLOG_INFO_STR(logger, "Calculating restored stats");
+          itsRestoredStatsAndMask->calculate(chan,arr);
         }
     }
 
@@ -1699,7 +1703,6 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
 
 void ContinuumWorker::initialiseBeamLog(const unsigned int numChannels)
 {
-
     casa::Vector<casa::Quantum<double> > beamVec(3);
     beamVec[0] = casa::Quantum<double>(0., "rad");
     beamVec[1] = casa::Quantum<double>(0., "rad");
@@ -1708,7 +1711,6 @@ void ContinuumWorker::initialiseBeamLog(const unsigned int numChannels)
     for(unsigned int i=0;i<numChannels;i++) {
         itsBeamList[i] = beamVec;
     }
-
 }
 
 void ContinuumWorker::initialiseWeightsLog(const unsigned int numChannels)
@@ -1926,21 +1928,6 @@ void ContinuumWorker::setupImage(const askap::scimath::Params::ShPtr& params,
   } catch (const LOFAR::APSException &ex) {
     throw AskapError(ex.what());
   }
-}
-
-void ContinuumWorker::calculateImageStats(boost::shared_ptr<askap::utils::StatsAndMask> statsAndMask,
-                                          boost::shared_ptr<CubeBuilder<casacore::Float> > imgCube,
-                                          int channel, const casacore::Array<float>& arr)
-{
-    boost::optional<float> oversamplingFactor = imgCube->oversamplingFactor();
-    if ( oversamplingFactor ) {
-        // Image param is stored at a lower resolution, so increase to desired resolution before writing
-        casacore::Array<float> fullresarr(scimath::PaddingUtils::paddedShape(arr.shape(),*oversamplingFactor));
-        scimath::PaddingUtils::fftPad(arr,fullresarr);
-        statsAndMask->calculate(imgCube->filename(),channel,fullresarr);
-    } else {
-        statsAndMask->calculate(imgCube->filename(),channel,arr);
-    }
 }
 
 void ContinuumWorker::writeCubeStatistics()
