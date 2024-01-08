@@ -1007,6 +1007,7 @@ void ContinuumWorker::processChannels()
 
           globalFrequency = workUnits[tempWorkUnitCount].get_channelFrequency();
           const string myMs = workUnits[tempWorkUnitCount].get_dataset();
+          ASKAPLOG_DEBUG_STR(logger, "About to create data source for "<<myMs<<" and column = "<<colName<<" major cycle = "<<majorCycleNumber<<" work unit number = "<<tempWorkUnitCount);
           TableDataSource myDs(myMs, TableDataSource::MEMORY_BUFFERS, colName);
           myDs.configureUVWMachineCache(uvwMachineCacheSize, uvwMachineCacheTolerance);
           try {
@@ -1039,12 +1040,20 @@ void ContinuumWorker::processChannels()
             ///this loop does the calcNE and the merge of the residual images
 
 
-            bool useSubSizedImages = false;
-
             if (updateDir) {
+              ASKAPLOG_DEBUG_STR(logger, "model start of updateDir section workingImager = "<<*workingImager.params()<<" rootImager = "<<*rootImager.params());
 
-              useSubSizedImages = true;
+              const bool useSubSizedImages = true;
               setupImage(workingImager.params(), frequency, useSubSizedImages);
+
+              // for later major cycles we copy the appropriate part of the model
+              // the uv-weight even if present in rootImager would not be copied in copyModel. 
+              // It is regenerated later on (technically this may be unnecessary, but the workingImager is rebuilt 
+              // every major cycle at the moment), perhaps this can be further improved later.
+              
+              if (majorCycleNumber > 0) {
+                copyModel(rootImager.params(),workingImager.params());
+              }
 
               // if traditional weighting is enabled compute the weight. The code below assumes local 
               // computation without interrank communication
@@ -1059,11 +1068,7 @@ void ContinuumWorker::processChannels()
                   // revert normal equations back to the type suitable for imaging
                   workingImager.recreateNormalEquations();
               }
-
-              if (majorCycleNumber > 0) {
-                copyModel(rootImager.params(),workingImager.params());
-              }
-
+              ASKAPLOG_DEBUG_STR(logger, "model after uv-weight generation workingImager = "<<*workingImager.params()<<" rootImager = "<<*rootImager.params());
             }
             else {
               workingImager.replaceModel(rootImager.params());
@@ -1509,10 +1514,13 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   // before the restore the image is the model ....
   SynthesisParamsHelper::copyImageParameter(src, dest,"image.slice");
 
-  // uv-weight related parameters are stored as part of the model, need to copy them as well, if present
-  // (the paramter name would be without leading "image.")
-  UVWeightParamsHelper hlp(src);
-  hlp.copyTo(dest, "slice");
+  // uv-weight related parameters are stored as part of the model. If present, the corresponding parameter name 
+  // as accepted by UVWeightParamsHelper would be without the leading "image". However, we don't need to copy 
+  // the uv-weights here - in the joint deconvolution case, where this method is used, the uv-weight doesn't leave
+  // the actual working imager (in the future, there may be more complicated use cases where we may want to change this, but
+  // also some aggregation logic would be necessary as each part done in parallel technically has its own weight).
+  //UVWeightParamsHelper hlp(src);
+  //hlp.copyTo(dest, "slice");
 }
 
 void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan)

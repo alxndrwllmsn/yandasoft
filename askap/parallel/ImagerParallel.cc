@@ -970,8 +970,8 @@ namespace askap
     /// state similar to that before the first major cycle if no traditional weighting is done.
     void ImagerParallel::recreateNormalEquations()
     {
-       ASKAPLOG_DEBUG_STR(logger,"Recreating NE from model");
        ASKAPDEBUGASSERT(itsModel);
+       ASKAPLOG_DEBUG_STR(logger,"Recreating NE from model "<<*itsModel);
        ImagingNormalEquations::ShPtr newNE(new ImagingNormalEquations(*itsModel));
        setNE(newNE);
     }
