@@ -917,10 +917,15 @@ namespace askap
 
        // technical debt!
        // this is hopefully a temporary hack - due to the current way to place oversampling planes, the weight gridder needs to know
-       // the oversampling factor used by the actual data gridder. The following code gets it from the parset and sets to the weight gridder
+       // the oversampling factor used by the actual data gridder. The following code gets it from the parset and sets to the weight gridder.
+       // And unfortunately, the defaults are different for different gridders which adds to technical debt.
        // Note, the weight gridder doesn't oversample its grid, it just needs to sample the same way for the first oversampling plane
        const std::string dataGridderName = parset().getString("gridder");
-       const int oversample = parset().getInt32("gridder."+dataGridderName+".oversample", 1);
+       int defaultOversample = dataGridderName == "Box" ? 1 : 8;
+       if (dataGridderName == "SphFunc" || dataGridderName == "WStack") {
+           defaultOversample = 128;
+       } 
+       const int oversample = parset().getInt32("gridder."+dataGridderName+".oversample", defaultOversample);
        ASKAPCHECK(oversample > 0, "Oversampling factor is supposed to be positive, you have "<<oversample);
        ASKAPLOG_INFO_STR(logger, "The weight gridder will assume that the data gridder ("<<dataGridderName<<") is using the oversampling factor of "<<oversample);
        ASKAPLOG_DEBUG_STR(logger, "data gridder parameters: "<<parset().makeSubset("gridder."+dataGridderName));
