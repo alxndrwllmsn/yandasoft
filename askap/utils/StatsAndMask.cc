@@ -71,10 +71,9 @@ void StatsAndMask::setUnits(const std::string& unit)
 }
 
 /// @brief calculates the per plane statistics of the image cube
-/// @param[in] channel - channel of the image where the statistics are to be calculated
 /// @param[in] blc - bottom left corner of the image plane
 /// @param[in] trc - top right corner of the image plane
-void StatsAndMask::calculate(Channel channel,const casacore::IPosition& blc, const casacore::IPosition& trc)
+void StatsAndMask::calculate(const casacore::IPosition& blc, const casacore::IPosition& trc)
 {
     if ( boost::shared_ptr<IImageAccess<>> imageCube = itsImageCube.lock() ) {
         casacore::Array<float> imgPerPlane = imageCube->read(itsImageName,blc,trc);
@@ -89,19 +88,20 @@ void StatsAndMask::calculate(Channel channel,const casacore::IPosition& blc, con
             }
         }
         nonMaskArray.resize(index,true);
-        ASKAPLOG_INFO_STR(logger,"Channel: " << channel << ", imgPerPlane size: " << imgPerPlane.size() << ", nonMaskArray size: "
-                              << nonMaskArray.size() << ", index: " << index);
-
-        //Stats stats = calculateImpl(channel,imgPerPlane);
-        Stats stats;
-        if ( nonMaskArray.size() > 0 ) {
-          stats = calculateImpl(channel,nonMaskArray);
-        } else {
-            // nonMaskArray.size() == 0 if the image plane is masked or contains NaN pixels
-            // in this case, dont use nonMaskArray
-            stats = calculateImpl(channel,imgPerPlane);
+        // startChan and endChan should be the same in this case
+        auto startChan = trc(3);
+        auto endChan = blc(3);
+        for(auto channel = startChan; channel <= endChan; channel++) {
+            Stats stats;
+            if ( nonMaskArray.size() > 0 ) {
+                stats = calculateImpl(channel,nonMaskArray);
+            } else {
+                // nonMaskArray.size() == 0 if the image plane is masked or contains NaN pixels
+                // in this case, dont use nonMaskArray
+                stats = calculateImpl(channel,imgPerPlane);
+            }
+            itsStatsPerChannelMap.insert(std::make_pair(channel,stats));
         }
-        itsStatsPerChannelMap.insert(std::make_pair(channel,stats));
     }
 }
 

@@ -111,7 +111,7 @@ public:
                     casacore::IPosition blc(4,0,0,0,chan);
                     casacore::IPosition trc = shape - 1;
                     trc(3) = chan;
-                    statisticsAndMask.calculate(chan,blc,trc);
+                    statisticsAndMask.calculate(blc,trc);
                 }
             }
             // waits for all ranks to get here

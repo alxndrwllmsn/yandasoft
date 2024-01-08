@@ -97,10 +97,9 @@ class StatsAndMask {
         void setUnits(const std::string& unit);
 
         /// @brief calculates the per plane statistics of the image cube
-        /// @param[in] channel - channel of the image where the statistics are to be calculated
         /// @param[in] blc - bottom left corner of the image plane
         /// @param[in] trc - top right corner of the image plane
-        void calculate(Channel channel,const casacore::IPosition& blc, const casacore::IPosition& trc);
+        void calculate(const casacore::IPosition& blc, const casacore::IPosition& trc);
         /// @brief calculates the per plane statistics
         /// @param[in] channel - channel of the image where the statistics are to be calculated
         /// @param[in] arr - the channel image where the statistics are calculated
