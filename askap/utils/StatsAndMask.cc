@@ -88,7 +88,9 @@ void StatsAndMask::calculate(const casacore::IPosition& blc, const casacore::IPo
             }
         }
         nonMaskArray.resize(index,true);
-        // startChan and endChan should be the same in this case
+        // The client code that uses this method normally wants to collect the 
+        // statistics of one particular channel. However, the code here is generic
+        // enough that it is able to collect statistics for a range of channels.
         auto startChan = trc(3);
         auto endChan = blc(3);
         for(auto channel = startChan; channel <= endChan; channel++) {
