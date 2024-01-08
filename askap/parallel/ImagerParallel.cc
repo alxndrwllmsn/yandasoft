@@ -887,6 +887,41 @@ namespace askap
     /// all available data)
     void ImagerParallel::accumulateUVWeights(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const
     {
+       // first, figure out the image parameter to work with as we need the cell size and image shape to setup the weight grid
+       // Again similar code to that in ImageFFTEquation but we can't easily reuse it (although, perhaps, some refactoring is possible). 
+       // There is a complication that we can have more than one free image parameter (even after removing Taylor terms). For now, only 
+       // support a single image, which would break faceting. It is straightforward to extend the code to support multiple facets if we 
+       // build just one weight for all facets, otherwise more thoughts are needed (but, perhaps, using the 3rd index we could have facets 
+       // factored in and even build separate weight for each facet).
+
+       // again some code duplication with what we have above, but here we want to retain the full parameter name
+       // it would be nice to think about some refactoring
+       ASKAPDEBUGASSERT(itsModel);
+       const std::vector<std::string> completions = itsModel->completions("image");
+       std::set<std::string> currentParamNames;
+       for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
+            ImageParamsHelper iph("image"+*ci);
+            if (iph.isTaylorTerm()) {
+                // in the case of multiple Taylor terms work with order 0, also it may be absent in distributed Taylor terms case - see below
+                iph.makeTaylorTerm(0);
+            }
+            // MV: we could've selected the required facet here too, but don't bother with it at this stage
+            // passing all facets as they are, if present
+            currentParamNames.insert(iph.paramName());
+       }
+       ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any free image parameter in the current model, there is nothing to build the uv-weight for!");
+       // the next check can be commented out, if we always want to use the parameters extracted from the first image (or some logic is necessary to choose the
+       // one we want). Leave the check in place for now, as it can alert us to some unexpected use cases
+       ASKAPCHECK(currentParamNames.size() == 1, "Only one image parameter is currently supported for traditional weighting");
+       const std::string imageParamName = *currentParamNames.begin();
+       // for distributed Taylor terms, term 0 may actually be on a different rank. But we can skip weight calculation for other Taylor terms
+       // (the merge logic would merge the empty builder with whatever it will try to merge in; more thoughts would be needed if there are multiple images)
+       if (!itsModel->has(imageParamName)) {
+           ASKAPLOG_DEBUG_STR(logger, "Distributed Taylor terms case, skip weight accumulation for non zero Taylor terms");
+           return;
+       }
+
+       // now get the builder (should already be setup by the time this method is called) and setup the weight gridder
        const boost::shared_ptr<GenericUVWeightBuilder> builder = getUVWeightBuilder();
        UVWeightGridder gridder(builder);
 
@@ -932,33 +967,9 @@ namespace askap
        gridder.setOversampleFactor(oversample);
        //
 
-       // now figure out the cell size and image shape, again similar code to that in ImageFFTEquation but we can't easily reuse it
-       // (although, perhaps, some refactoring is possible). But first, we need to choose the appropriate image parameter and there is a
-       // complication that we can have more than one (even after removing Taylor terms). For now, only support a single image, which would
-       // break faceting. It is straightforward to extend the code to support multiple facets if we build just one weight for all facets, otherwise
-       // more thoughts are needed (but, perhaps, using the 3rd index we could have facets factored in and even build separate weight for each facet).
-
-       // again some code duplication with what we have above, but here we want to retain the full parameter name
-       // it would be nice to think about some refactoring
-       ASKAPDEBUGASSERT(itsModel);
-       const std::vector<std::string> completions = itsModel->completions("image");
-       std::set<std::string> currentParamNames;
-       for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
-            ImageParamsHelper iph("image"+*ci);
-            if (iph.isTaylorTerm()) {
-                // in the case of multiple Taylor terms work with order 0
-                iph.makeTaylorTerm(0);
-            }
-            // MV: we could've selected the required facet here too, but don't bother with it at this stage
-            // passing all facets as they are, if present
-            currentParamNames.insert(iph.paramName());
-       }
-       ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any free image parameter in the current model, there is nothing to build the uv-weight for!");
-       // the next check can be commented out, if we always want to use the parameters extracted from the first image (or some logic is necessary to choose the
-       // one we want). Leave the check in place for now, as it can alert us to some unexpected use cases
-       ASKAPCHECK(currentParamNames.size() == 1, "Only one image parameter is currently supported for traditional weighting");
-       const scimath::Axes axes(itsModel->axes(*currentParamNames.begin()));
-       const casacore::IPosition imageShape = itsModel->shape(*currentParamNames.begin());
+       // now figure out the cell size and image shape for the image parameter selected above and pass them to the gridder
+       const scimath::Axes axes(itsModel->axes(imageParamName));
+       const casacore::IPosition imageShape = itsModel->shape(imageParamName);
        gridder.initialise(axes, imageShape);
 
        // now the setup is done, so we can iterate over data and accumulate
