@@ -81,7 +81,6 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const double wmax,
         itsMpiMemPreSetup(mpipresetup), itsCFRank(cfRank), itsSerial(false), itsMasterDoesWork(masterDoesWork)
 {
 #ifdef HAVE_MPI
-    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::constructor");
     ASKAPCHECK(overSample > 0, "Oversampling must be greater than 0");
     ASKAPCHECK(maxSupport > 0, "Maximum support must be greater than 0")
 
@@ -94,7 +93,6 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const double wmax,
 
 MPIWProjectVisGridder::~MPIWProjectVisGridder()
 {
-    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor");
 #ifdef HAVE_MPI
     std::lock_guard<std::mutex> lk(ObjCountMutex);
     ObjCount -= 1;
@@ -135,7 +133,6 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const MPIWProjectVisGridder &other)
 // the ifdef here is just for completeness and is not needed because the MPIWProjectVisGridder
 // object cant be created without having MPI in the first place
 #ifdef HAVE_MPI
-    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::copy");
 	std::lock_guard<std::mutex> lk(ObjCountMutex);
 	ObjCount += 1;
 #else
@@ -147,10 +144,7 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const MPIWProjectVisGridder &other)
 /// Clone a copy of this Gridder
 IVisGridder::ShPtr MPIWProjectVisGridder::clone()
 {
-// the ifdef here is just for completeness and is not needed because the MPIWProjectVisGridder
-// object cant be created without having MPI in the first place
 #ifdef HAVE_MPI
-    ASKAPLOG_INFO_STR(logger,"MPIWProjectVisGridder::clone");
     return IVisGridder::ShPtr(new MPIWProjectVisGridder(*this));
 #else
     ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library");
@@ -442,7 +436,7 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
     }
 #else
     ASKAPTHROW(AskapError, "Cant use MPI WProject gridder without MPI library");
-#endif    
+#endif
 }
 
 

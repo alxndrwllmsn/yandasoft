@@ -1472,18 +1472,11 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
             dBuffer+=work;
         }
     }
+    clearGrid();
     // Now we can do the convolution correction
     correctConvolution(dBuffer);
     dBuffer*=imtype(double(dBuffer.shape()(0))*double(dBuffer.shape()(1)));
     out = scimath::PaddingUtils::extract(dBuffer,paddingFactor());
-
-    // Free up the grid memory?
-    if (itsClearGrid) {
-        ASKAPLOG_INFO_STR(logger,"Clearing the grid");
-        itsGrid.resize(0);
-        its2dGrid.resize(0,0);
-        itsGridIndex=-1;
-    }
 }
 
 /// @brief store given grid
@@ -1620,8 +1613,13 @@ void TableVisGridder::logUnusedSpectralPlanes() const
 /// This is the default implementation
 void TableVisGridder::finaliseDegrid() {
     /// Nothing to do
+    clearGrid();
+}
+
+void TableVisGridder::clearGrid() {
     // Free up the grid memory?
     if (itsClearGrid) {
+        ASKAPLOG_INFO_STR(logger,"Clearing the grid - free "<<its2dGrid.size()/1024/1024*sizeof(casacore::Complex)<<" MB/plane, #gridplanes "<<itsGrid.size());
         itsGrid.resize(0);
         its2dGrid.resize(0,0);
         itsGridIndex=-1;
