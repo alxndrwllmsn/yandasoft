@@ -68,7 +68,7 @@ namespace askap
         IDataSharedIter& idi) : scimath::Equation(ip),
       askap::scimath::ImagingEquation(ip), itsIdi(idi),
       itsSphFuncPSFGridder(false), itsBoxPSFGridder(false),
-      itsUsePreconGridder(false), itsNDir(1)
+      itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
       itsGridder = IVisGridder::ShPtr(new SphFuncVisGridder());
       init();
@@ -77,7 +77,7 @@ namespace askap
 
     ImageFFTEquation::ImageFFTEquation(IDataSharedIter& idi) :
       itsIdi(idi), itsSphFuncPSFGridder(false), itsBoxPSFGridder(false),
-      itsUsePreconGridder(false), itsNDir(1)
+      itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
       itsGridder = IVisGridder::ShPtr(new SphFuncVisGridder());
       reference(defaultParameters().clone());
@@ -88,7 +88,8 @@ namespace askap
         IDataSharedIter& idi, IVisGridder::ShPtr gridder) :
       scimath::Equation(ip), askap::scimath::ImagingEquation(ip),
       itsGridder(gridder), itsIdi(idi), itsSphFuncPSFGridder(false),
-      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1)
+      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1),
+      itsReuseGrids(false)
     {
       init();
     }
@@ -99,16 +100,16 @@ namespace askap
         const LOFAR::ParameterSet& parset) : scimath::Equation(ip),
       askap::scimath::ImagingEquation(ip), itsGridder(gridder), itsIdi(idi),
       itsSphFuncPSFGridder(false), itsBoxPSFGridder(false),
-      itsUsePreconGridder(false), itsNDir(1)
+      itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
-      useAlternativePSF(parset);
+      configure(parset);
       init();
     }
 
     ImageFFTEquation::ImageFFTEquation(IDataSharedIter& idi,
         IVisGridder::ShPtr gridder) :
       itsGridder(gridder), itsIdi(idi), itsSphFuncPSFGridder(false),
-      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1)
+      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
       reference(defaultParameters().clone());
       init();
@@ -116,6 +117,24 @@ namespace askap
 
     ImageFFTEquation::~ImageFFTEquation()
     {
+    }
+
+    void ImageFFTEquation::configure(const LOFAR::ParameterSet& parset)
+    {
+    // DAM TRADITIONAL
+       if (parset.isDefined("gridder.robustness")) {
+           const float robustness = parset.getFloat("gridder.robustness");
+           ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+           // also check that it is spectral line? Or do that earlier
+           //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
+           //  - won't work with Taylor terms
+           setRobustness(robustness);
+       }
+       useAlternativePSF(parset);
+       itsReuseGrids = parset.getBool("reusegrids",false);
+       if (itsReuseGrids) {
+           ASKAPLOG_INFO_STR(logger, "Will reuse the PSF/PCF grids each major cycle");
+       }
     }
 
     /// @brief define whether to use an alternative gridder for the PSF
@@ -421,6 +440,7 @@ namespace askap
           itsResidualGridders[imageName]=itsGridder->clone();
           assignUVWeightAccessorIfNecessary(itsResidualGridders[imageName], wtAcc);
         }
+
         if(itsPSFGridders.count(imageName)==0) {
           if (itsBoxPSFGridder) {
              boost::shared_ptr<BoxVisGridder> psfGridder(new BoxVisGridder);
@@ -432,7 +452,21 @@ namespace askap
              itsPSFGridders[imageName] = itsGridder->clone();
           }
           assignUVWeightAccessorIfNecessary(itsPSFGridders[imageName], wtAcc);
+          itsReuseGrid[imageName] = false;
+          boost::shared_ptr<TableVisGridder> tvgPSF = boost::dynamic_pointer_cast<TableVisGridder>(itsPSFGridders[imageName]);
+          if (tvgPSF && itsReuseGrids) {
+              tvgPSF->doClearGrid(false);
+              ASKAPLOG_DEBUG_STR(logger, "Setting clear grid to false, reuse PSF grid for "<<imageName);
+          }
+        } else {
+          // reuse the grid if gridder has been configured to allow this
+          if (itsReuseGrids) {
+              itsReuseGrid[imageName] = true;
+              ASKAPLOG_DEBUG_STR(logger, "Will reuse PSF grid for "<<imageName);
+          }
+
         }
+
         if(itsUsePreconGridder && itsPreconGridders.count(imageName)==0) {
            // preconditioning of higher order terms is set from term 0
            bool isMFS = (imageName.find(".taylor.") != std::string::npos);
@@ -442,8 +476,19 @@ namespace askap
              //itsPreconGridders[imageName] = itsGridder->clone();
              itsPreconGridders[imageName] = itsPSFGridders[imageName]->clone();
              // technically, cloning of the PSF gridder should copy the weight accessor (by reference) if set
+             boost::shared_ptr<TableVisGridder> tvgPrecon = boost::dynamic_pointer_cast<TableVisGridder>(itsPreconGridders[imageName]);
+             if (tvgPrecon && itsReuseGrids) {
+                 tvgPrecon->doClearGrid(false);
+                 ASKAPLOG_DEBUG_STR(logger, "Setting clear grid to false, reuse PCF grid for "<<imageName);
+             }
            }
+        } else {
+            // reuse the grid if gridder has been configured to allow this
+            if (itsReuseGrids) {
+                ASKAPLOG_DEBUG_STR(logger, "Will reuse PCF grid for "<<imageName);
+            }
         }
+
         if (itsCoordSystems.count(imageName) == 0) {
           itsCoordSystems[imageName] = SynthesisParamsHelper::coordinateSystem(parameters(),imageName);
         }
@@ -477,12 +522,14 @@ namespace askap
         itsResidualGridders[imageName]->customiseForContext(*it);
         itsResidualGridders[imageName]->initialiseGrid(axes, imageShape, false);
         // and PSF gridders, dopsf=true, dopcf=false
-        itsPSFGridders[imageName]->customiseForContext(*it);
-        itsPSFGridders[imageName]->initialiseGrid(axes, imageShape, true);
-        // and PCF gridders, dopsf=false, dopcf=true
-        if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
-            itsPreconGridders[imageName]->customiseForContext(*it);
-            itsPreconGridders[imageName]->initialiseGrid(axes, imageShape, false, true);
+        if (!itsReuseGrid[imageName]) {
+            itsPSFGridders[imageName]->customiseForContext(*it);
+            itsPSFGridders[imageName]->initialiseGrid(axes, imageShape, true);
+            // and PCF gridders, dopsf=false, dopcf=true
+            if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
+                itsPreconGridders[imageName]->customiseForContext(*it);
+                itsPreconGridders[imageName]->initialiseGrid(axes, imageShape, false, true);
+            }
         }
       }
       // synchronise emtpy flag across multiple ranks if necessary
@@ -540,6 +587,7 @@ namespace askap
       // Now we loop through all the data
       ASKAPLOG_DEBUG_STR(logger, "Starting degridding model and gridding residuals" );
       size_t counterGrid = 0, counterDegrid = 0;
+      bool once = true;
       for (itsIdi.init();itsIdi.hasMore();itsIdi.next())
       {
         // buffer-accessor, used as a replacement for proper buffers held in the subtable
@@ -584,9 +632,14 @@ namespace askap
             const string imageName("image"+completions[i]);
             if (parameters().isFree(imageName)) {
                 itsResidualGridders[imageName]->grid(accBuffer);
-                itsPSFGridders[imageName]->grid(accBuffer);
-                if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
-                    itsPreconGridders[imageName]->grid(accBuffer);
+                if (!itsReuseGrid[imageName]) {
+                    itsPSFGridders[imageName]->grid(accBuffer);
+                    if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
+                        itsPreconGridders[imageName]->grid(accBuffer);
+                    }
+                } else if (once) {
+                    ASKAPLOG_DEBUG_STR(logger, "Skipped gridding for PSF/PCF: reuse grid for "<<imageName);
+                    once = false;
                 }
                 tempCounter += accBuffer.nRow();
             }
@@ -627,7 +680,6 @@ namespace askap
         itsPSFGridders[imageName]->finaliseGrid(imagePSF);
         itsResidualGridders[imageName]->finaliseWeights(imageWeight);
 
-        // just to deallocate the grid memory
         itsModelGridders[imageName]->finaliseDegrid();
 
         /*{
