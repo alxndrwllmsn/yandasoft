@@ -125,19 +125,22 @@ class ContinuumWorker
         static const int itsMaster = 0;
 
         // List of measurement sets to work on
-        vector<std::string> datasets;
+        //vector<std::string> itsDatasets;
 
         // the basechannel number assigned to this worker
-        unsigned int baseChannel;
+        unsigned int itsBaseChannel;
 
         // the baseFrequency associated with this channel
-        double baseFrequency;
+        double itsBaseFrequency;
+
         // the baseFrequency associated with the cube if being built
-        double baseCubeFrequency;
+        double itsBaseCubeFrequency;
+
         // the global channel associated with this part of the cube
-        int baseCubeGlobalChannel;
+        int itsBaseCubeGlobalChannel;
+
         // the number of channels in this cube (if writer)
-        int nchanCube;
+        int itsNChanCube;
 
         boost::shared_ptr<CubeBuilder<casacore::Float> > itsImageCube;
         boost::shared_ptr<CubeBuilder<casacore::Float> > itsPSFCube;
