@@ -99,7 +99,9 @@ ASKAP_LOGGER(logger, ".ContinuumWorker");
 
 ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
   CubeComms& comms, StatReporter& stats)
-  : itsParset(parset), itsComms(comms), itsStats(stats), itsBeamList(),itsWeightsList()
+  : itsParset(parset), itsComms(comms), itsStats(stats), 
+    // setup whether we solve locally (spectral line mode) or on the master (continuum mode)
+    itsLocalSolver(parset.getBool("solverpercore", false))
 {
     ASKAPTRACE("ContinuumWorker::constructor");
 
@@ -109,7 +111,6 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
 
     // lets properly size the storage
     const int nchanpercore = itsParset.getInt32("nchanpercore", 1);
-    workUnits.resize(0);
 
     // lets calculate a base
     unsigned int nWorkers = itsComms.nProcs() - 1;
@@ -124,11 +125,11 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     }
     posInGroup = posInGroup - 1;
 
-    this->baseChannel = posInGroup * nchanpercore;
+    itsBaseChannel = posInGroup * nchanpercore;
 
     ASKAPLOG_INFO_STR(logger, "Distribution: Id " << id << " nWorkers " << nWorkers << " nGroups " << itsComms.nGroups());
 
-    ASKAPLOG_INFO_STR(logger, "Distribution: Base channel " << this->baseChannel << " PosInGrp " << posInGroup);
+    ASKAPLOG_INFO_STR(logger, "Distribution: Base channel " << itsBaseChannel << " PosInGrp " << posInGroup);
 
     itsDoingPreconditioning = false;
     const vector<string> preconditioners = itsParset.getStringVector("preconditioner.Names", std::vector<std::string>());
@@ -238,82 +239,14 @@ void ContinuumWorker::run(void)
     wrequest.sendRequest(itsMaster, itsComms);
 
   } // while (1) // break when "DONE"
-  ASKAPCHECK(workUnits.size() > 0, "No work at to do - something has broken in the setup");
+  ASKAPCHECK(itsWorkUnits.size() > 0, "No work at to do - something has broken in the setup");
 
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " received data from master - waiting at barrier");
   itsComms.barrier(itsComms.theWorkers());
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
 
-  const bool localSolver = itsParset.getBool("solverpercore", false);
+  configureChannelAllocation();
 
-  int nchanpercore = itsParset.getInt("nchanpercore", 1);
-
-  int nWorkers = itsComms.nProcs() - 1;
-  int nGroups = itsComms.nGroups();
-  int nchanTotal = nWorkers * nchanpercore / nGroups;
-
-
-  if (localSolver) {
-    ASKAPLOG_INFO_STR(logger, "In local solver mode - reprocessing allocations)");
-    itsAdvisor->updateComms();
-    int myMinClient = itsComms.rank();
-    int myMaxClient = itsComms.rank();
-
-    if (itsComms.isWriter()) {
-      ASKAPLOG_DEBUG_STR(logger, "Getting client list for cube generation");
-      std::list<int> myClients = itsComms.getClients();
-      myClients.push_back(itsComms.rank());
-      myClients.sort();
-      myClients.unique();
-
-      ASKAPLOG_DEBUG_STR(logger, "Client list " << myClients);
-      if (myClients.size() > 0) {
-        std::list<int>::iterator iter = std::min_element(myClients.begin(), myClients.end());
-
-        myMinClient = *iter;
-        iter = std::max_element(myClients.begin(), myClients.end());
-        myMaxClient = *iter;
-
-      }
-      // these are in ranks
-      // If a client is missing entirely from the list - the cube will be missing
-      // channels - but they will be correctly labelled
-
-      // e.g
-      // bottom client rank is 4 - top client is 7
-      // we have 4 chanpercore
-      // 6*4 - 3*4
-      // 3*4 = 12
-      // (6 - 3 + 1) * 4
-      if (!itsComms.isSingleSink()) {
-        ASKAPLOG_INFO_STR(logger, "MultiCube with multiple writers");
-        this->nchanCube = (myMaxClient - myMinClient + 1) * nchanpercore;
-        this->baseCubeGlobalChannel = (myMinClient - 1) * nchanpercore;
-        this->baseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((myMinClient - 1));
-      } else {
-        ASKAPLOG_INFO_STR(logger, "SingleCube with multiple writers");
-        this->nchanCube = nchanTotal;
-        this->baseCubeGlobalChannel = 0;
-        this->baseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((0));
-      }
-      initialiseBeamLog(this->nchanCube);
-      initialiseWeightsLog(this->nchanCube);
-
-      ASKAPLOG_INFO_STR(logger, "Number of channels in cube is: " << this->nchanCube);
-      ASKAPLOG_INFO_STR(logger, "Base global channel of cube is " << this->baseCubeGlobalChannel);
-    }
-    this->baseFrequency = itsAdvisor->getBaseFrequencyAllocation(itsComms.rank() - 1);
-  }
-  else {
-      bool combineChannels = itsParset.getBool("combinechannels", false);
-      if (combineChannels) {
-          ASKAPLOG_INFO_STR(logger, "Not in localsolver (spectral line) mode - and combine channels is set so compressing channel allocations)");
-          compressWorkUnits();
-      }
-      initialiseBeamLog(nchanTotal);
-      initialiseWeightsLog(nchanTotal);
-
-  }
   ASKAPLOG_INFO_STR(logger, "Adding all missing parameters");
 
   itsAdvisor->addMissingParameters(true);
@@ -324,7 +257,6 @@ void ContinuumWorker::run(void)
     ASKAPLOG_WARN_STR(logger, "Failure processing the channel allocation");
     ASKAPLOG_WARN_STR(logger, "Exception detail: " << e.what());
     throw;
-
   }
 
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " finished");
@@ -337,6 +269,80 @@ void ContinuumWorker::run(void)
     itsComms.barrier(itsComms.theWorkers());
   }
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed final barrier");
+}
+
+/// @brief configure allocation in channels
+/// @details This method sets up channel allocation for cube writing (in local solver mode)
+/// or combines channels in the global solver mode if configured in the parset.
+void ContinuumWorker::configureChannelAllocation()
+{
+   const int nchanpercore = itsParset.getInt("nchanpercore", 1);
+
+   const int nWorkers = itsComms.nProcs() - 1;
+   const int nGroups = itsComms.nGroups();
+   const int nchanTotal = nWorkers * nchanpercore / nGroups;
+   ASKAPDEBUGASSERT(itsAdvisor);
+
+
+   if (itsLocalSolver) {
+       ASKAPLOG_INFO_STR(logger, "In local solver mode - reprocessing allocations)");
+       itsAdvisor->updateComms();
+       int myMinClient = itsComms.rank();
+       int myMaxClient = itsComms.rank();
+
+       if (itsComms.isWriter()) {
+           ASKAPLOG_DEBUG_STR(logger, "Getting client list for cube generation");
+           // MV - probably should've used std::set here (no need to sort + unique by default)
+           std::list<int> myClients = itsComms.getClients();
+           myClients.push_back(itsComms.rank());
+           myClients.sort();
+           myClients.unique();
+
+           ASKAPLOG_DEBUG_STR(logger, "Client list " << myClients);
+           if (myClients.size() > 0) {
+               typedef std::list<int>::const_iterator IterType;
+               const std::pair<IterType, IterType> extrema = std::minmax_element(myClients.begin(), myClients.end());
+
+               myMinClient = *(extrema.first);
+               myMaxClient = *(extrema.second);
+           }
+           // these are in ranks
+           // If a client is missing entirely from the list - the cube will be missing
+           // channels - but they will be correctly labelled
+
+           // e.g
+           // bottom client rank is 4 - top client is 7
+           // we have 4 chanpercore
+           // 6*4 - 3*4
+           // 3*4 = 12
+           // (6 - 3 + 1) * 4
+           if (!itsComms.isSingleSink()) {
+               ASKAPLOG_INFO_STR(logger, "MultiCube with multiple writers");
+               itsNChanCube = (myMaxClient - myMinClient + 1) * nchanpercore;
+               itsBaseCubeGlobalChannel = (myMinClient - 1) * nchanpercore;
+               itsBaseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((myMinClient - 1));
+           } else {
+               ASKAPLOG_INFO_STR(logger, "SingleCube with multiple writers");
+               itsNChanCube = nchanTotal;
+               itsBaseCubeGlobalChannel = 0;
+               itsBaseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((0));
+           }
+           initialiseBeamLog(itsNChanCube);
+           initialiseWeightsLog(itsNChanCube);
+
+           ASKAPLOG_INFO_STR(logger, "Number of channels in cube is: " << itsNChanCube);
+           ASKAPLOG_INFO_STR(logger, "Base global channel of cube is " << itsBaseCubeGlobalChannel);
+       }
+       itsBaseFrequency = itsAdvisor->getBaseFrequencyAllocation(itsComms.rank() - 1);
+   } else {
+       const bool combineChannels = itsParset.getBool("combinechannels", false);
+       if (combineChannels) {
+           ASKAPLOG_INFO_STR(logger, "Not in localsolver (spectral line) mode - and combine channels is set so compressing channel allocations)");
+           compressWorkUnits();
+       }
+       initialiseBeamLog(nchanTotal);
+       initialiseWeightsLog(nchanTotal);
+   }
 }
 
 // unused
@@ -358,8 +364,8 @@ void ContinuumWorker::deleteWorkUnitFromCache(ContinuumWorkUnit& wu)
 void ContinuumWorker::clearWorkUnitCache()
 {
 
-  for (int cf = 0; cf < cached_files.size(); cf++) {
-    const string ms = cached_files[cf];
+  for (int cf = 0; cf < itsCachedFiles.size(); cf++) {
+    const string ms = itsCachedFiles[cf];
     struct stat buffer;
 
     if (stat(ms.c_str(), &buffer) == 0) {
@@ -412,7 +418,7 @@ void ContinuumWorker::cacheWorkUnit(ContinuumWorkUnit& wu)
 
       mySplitter.split(wu.get_dataset(), outms, wu.get_localChannel() + 1, wu.get_localChannel() + 1, 1, itsParset);
       unlink(outms_flag.c_str());
-      this->cached_files.push_back(outms);
+      itsCachedFiles.push_back(outms);
 
     }
     ///wait for all groups this rank to get here
@@ -453,19 +459,20 @@ void ContinuumWorker::compressWorkUnits() {
 
     vector<ContinuumWorkUnit> compressedList; // probably easier to generate a new list
 
-    ContinuumWorkUnit startUnit = workUnits[0];
+    ASKAPDEBUGASSERT(itsWorkUnits.size() > 0u);
+    ContinuumWorkUnit startUnit = itsWorkUnits[0];
 
     unsigned int contiguousCount = 1;
     int sign = 1;
-    if (workUnits.size() == 1) {
+    if (itsWorkUnits.size() == 1) {
         ASKAPLOG_WARN_STR(logger,"Asked to compress channels but workunit count 1");
     }
     ContinuumWorkUnit compressedWorkUnit = startUnit;
 
 
-    for ( int count = 1; count < workUnits.size(); count++) {
+    for ( int count = 1; count < itsWorkUnits.size(); count++) {
 
-        ContinuumWorkUnit nextUnit = workUnits[count];
+        ContinuumWorkUnit nextUnit = itsWorkUnits[count];
 
         std::string startDataset = startUnit.get_dataset();
         int startChannel = startUnit.get_localChannel();
@@ -499,7 +506,7 @@ void ContinuumWorker::compressWorkUnits() {
             ASKAPLOG_DEBUG_STR(logger, "Datasets differ resetting count");
             contiguousCount = 0;
         }
-        if (count == (workUnits.size()-1) || contiguousCount == 0) { // last unit
+        if (count == (itsWorkUnits.size()-1) || contiguousCount == 0) { // last unit
             ASKAPLOG_DEBUG_STR(logger, "Adding unit to compressed list");
             compressedList.insert(compressedList.end(),compressedWorkUnit);
             startUnit = nextUnit;
@@ -508,9 +515,9 @@ void ContinuumWorker::compressWorkUnits() {
 
     }
     if (compressedList.size() > 0) {
-        ASKAPLOG_INFO_STR(logger, "Replacing workUnit list of size " << workUnits.size() << " with compressed list of size " << compressedList.size());
+        ASKAPLOG_INFO_STR(logger, "Replacing workUnit list of size " << itsWorkUnits.size() << " with compressed list of size " << compressedList.size());
         ASKAPLOG_INFO_STR(logger,"A corresponding change has been made to the parset");
-        workUnits = compressedList;
+        itsWorkUnits = compressedList;
     }
     else {
         ASKAPLOG_WARN_STR(logger,"No compression performed");
@@ -536,15 +543,200 @@ void ContinuumWorker::preProcessWorkUnit(ContinuumWorkUnit& wu)
   itsAdvisor->addMissingParameters();
 
   ASKAPLOG_DEBUG_STR(logger, "Storing workUnit");
-  workUnits.insert(workUnits.begin(),wu); //
-  //workUnits.push_back(wu);
+  itsWorkUnits.insert(itsWorkUnits.begin(),wu); //
+  //itsWorkUnits.push_back(wu);
   ASKAPLOG_DEBUG_STR(logger, "Finished preProcessWorkUnit");
   ASKAPLOG_DEBUG_STR(logger, "Parset Reports (leaving preProcessWorkUnit): " << (itsParset.getStringVector("dataset", true)));
 }
 
-void ContinuumWorker::processSnapshot()
+/// @brief configure reference channel used for the restoring beam
+/// @details This method populates itsBeamReferenceChannel based on the parset and
+/// the number of channels allocated to the cube handled by this rank
+void ContinuumWorker::configureReferenceChannel()
 {
+   // Define reference channel for giving restoring beam
+   std::string reference = itsParset.getString("restore.beamReference", "mid");
+   if (reference == "mid") {
+       itsBeamReferenceChannel = itsNChanCube / 2;
+   } else if (reference == "first") {
+        itsBeamReferenceChannel = 0;
+   } else if (reference == "last") {
+         itsBeamReferenceChannel = itsNChanCube - 1;
+   } else { // interpret reference as a 0-based channel nuumber
+         const unsigned int num = utility::fromString<unsigned int>(reference);
+         if (num < itsNChanCube) {
+             itsBeamReferenceChannel = num;
+         } else {
+             itsBeamReferenceChannel = itsNChanCube / 2;
+             ASKAPLOG_WARN_STR(logger, "beamReference value (" << reference
+                   << ") not valid. Using middle value of " << itsBeamReferenceChannel);
+         }
+   }
 }
+
+/// @brief initialise cube writing if in local solver mode
+/// @details This method encapsulates the code which handles cube writing in the local solver mode
+/// (i.e. when it is done from the worker). Safe to call in continuum mode too (as itsComms.isWriter
+/// would return false in this case)
+void ContinuumWorker::initialiseCubeWritingIfNecessary()
+{
+   // MV: I factored out this code with little modification (largely constness and the like), mainly to avoid 
+   // having a giant processChannel method. I feel that more restructuring can be done to this code
+   if (itsComms.isWriter()) {
+
+       // This code is only used in the spectral line/local solver case -
+       //   continuum images are written from ImagerParallel::writeModel in ContinuumMaster
+       ASKAPDEBUGASSERT(itsLocalSolver);
+
+       const Quantity f0(itsBaseCubeFrequency, "Hz");
+       /// The width of a channel. THis does <NOT> take account of the variable width
+       /// of Barycentric channels
+       const Quantity freqinc(itsWorkUnits[0].get_channelWidth(), "Hz");
+
+       // add rank based postfix if we're writing to multiple cubes
+       const std::string postfix = (itsComms.isSingleSink() ? "" : std::string(".wr.") + utility::toString(itsComms.rank()));
+
+       const std::string img_name = "image" + postfix;
+       const std::string psf_name = "psf" + postfix;
+       const std::string residual_name = "residual" + postfix;
+       // may need this name for the weightslog
+       const std::string weights_name = "weights" + postfix;
+       const std::string visgrid_name = "visgrid" + postfix;
+       const std::string pcfgrid_name = "pcfgrid" + postfix;
+       const std::string psfgrid_name = "psfgrid" + postfix;
+       const std::string psf_image_name = "psf.image" + postfix;
+       const std::string restored_image_name = "image.restored" + postfix;
+
+       ASKAPLOG_DEBUG_STR(logger, "Configuring Spectral Cube");
+       ASKAPLOG_DEBUG_STR(logger, "nchan: " << itsNChanCube << " base f0: " << f0.getValue("MHz")
+            << " width: " << freqinc.getValue("MHz") << " (" << itsWorkUnits[0].get_channelWidth() << ")");
+
+       if (itsWriteWtLog) {
+           itsWeightsName = CubeBuilder<casacore::Float>::makeImageName(itsParset,weights_name);
+       }
+
+       LOFAR::ParameterSet gridParset = itsParset.makeSubset("");
+       gridParset.remove("Images.extraoversampling");
+
+       if ( itsComms.isCubeCreator() ) {
+
+            // Get keywords to write to the image header
+            if (!itsParset.isDefined("header.DATE-OBS")) {
+                // We want the start of observations stored in the image keywords
+                // The velocity calculations use the first MS for this, so we'll do that too
+                casacore::MVEpoch dateObs = itsAdvisor->getEpoch(0);
+                String date, timesys;
+                casacore::FITSDateUtil::toFITS(date, timesys, casacore::MVTime(dateObs));
+                // replace adds if non-existant
+                itsParset.replace("header.DATE-OBS","["+date+",Start of observation]");
+                itsParset.replace("header.TIMESYS","["+timesys+",Time System]");
+            }
+
+            if (itsWriteModelImage) {
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
+            }
+            if (itsWritePsfRaw) {
+                itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, psf_name));
+            }
+            if (itsWriteResidual) {
+                itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, residual_name));
+                itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
+                ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for residual cube");
+            }
+            if (itsWriteWtImage) {
+                itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, weights_name));
+            }
+            if (itsWriteGrids) {
+                if (itsGridFFT) {
+                    itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name));
+                    itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name));
+                    itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name));
+                } else {
+                    if (itsGridType == "casa") {
+                        itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, visgrid_name, true));
+                        itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name, true));
+                        itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name, true));
+                    } else {
+                        itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
+                        itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
+                        itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));
+                        itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name+".imag", itsGridCoordUV));
+                        itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name+".imag", itsGridCoordUV));
+                        itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name+".imag", itsGridCoordUV));
+                    }
+                }
+            }
+            if (itsRestore) {
+                // Only create these if we are restoring, as that is when they get made
+                if (itsDoingPreconditioning) {
+                    if (itsWritePsfImage) {
+                        itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, psf_image_name));
+                    }
+                }
+                itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, restored_image_name));
+                // we are only interested to collect statistics for the restored image cube
+                itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
+                ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for restored cube");
+            }
+
+       } else {
+            // this is a cube writer rather than creator
+
+            if (itsWriteModelImage) {
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
+            }
+            if (itsWritePsfRaw) {
+                itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_name));
+            }
+            if (itsWriteResidual) {
+                itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset,  residual_name));
+                itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
+            }
+            if (itsWriteWtImage) {
+                itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset,  weights_name));
+            }
+
+            if (itsWriteGrids) {
+                if (itsGridFFT) {
+                    itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name));
+                    itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name));
+                    itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name));
+                } else {
+                    if (itsGridType == "casa") {
+                        itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, visgrid_name));
+                        itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, pcfgrid_name));
+                        itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, psfgrid_name));
+                    } else {
+                        itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".real"));
+                        itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".real"));
+                        itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".real"));
+                        itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".imag"));
+                        itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".imag"));
+                        itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".imag"));
+                    }
+                }
+            }
+            if (itsRestore) {
+                // Only create these if we are restoring, as that is when they get made
+                if (itsDoingPreconditioning) {
+                    if (itsWritePsfImage) {
+                        itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_image_name));
+                    }
+                }
+                itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, restored_image_name));
+                // we are only interested to collect statistics for the restored image cube
+                itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
+            }
+       }
+   }
+
+   // MV - moved code pretty much as it was with only minor polishing during refactoring, but perhaps this barrier could be moved inside 
+   // the if-statement above as presumably it is not needed in the continuum case
+   ASKAPLOG_DEBUG_STR(logger, "You shall not pass. Waiting at a barrier for all ranks to have created the cubes ");
+   itsComms.barrier(itsComms.theWorkers());
+   ASKAPLOG_DEBUG_STR(logger, "Passed the barrier");
+}
+
 void ContinuumWorker::processChannels()
 {
   ASKAPTRACE("ContinuumWorker::processChannels");
@@ -555,9 +747,7 @@ void ContinuumWorker::processChannels()
     ASKAPLOG_INFO_STR(logger,"Will output gridded visibilities");
   }
 
-  const bool localSolver = itsParset.getBool("solverpercore", false);
-
-  if (localSolver) {
+  if (itsLocalSolver) {
     ASKAPLOG_INFO_STR(logger, "Processing multiple channels local solver mode");
   }
   else {
@@ -566,179 +756,13 @@ void ContinuumWorker::processChannels()
 
   const bool updateDir = itsParset.getBool("updatedirection",false);
 
-  ASKAPCHECK(!(updateDir && !localSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
+  ASKAPCHECK(!(updateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
 
+  configureReferenceChannel();
 
-  // Define reference channel for giving restoring beam
-  std::string reference = itsParset.getString("restore.beamReference", "mid");
-  if (reference == "mid") {
-    itsBeamReferenceChannel = nchanCube / 2;
-  } else if (reference == "first") {
-    itsBeamReferenceChannel = 0;
-  } else if (reference == "last") {
-    itsBeamReferenceChannel = nchanCube - 1;
-  } else { // interpret reference as a 0-based channel nuumber
-    unsigned int num = atoi(reference.c_str());
-    if (num < nchanCube) {
-      itsBeamReferenceChannel = num;
-    } else {
-      ASKAPLOG_WARN_STR(logger, "beamReference value (" << reference
-      << ") not valid. Using middle value of " << nchanCube / 2);
-      itsBeamReferenceChannel = nchanCube / 2;
-    }
-  }
+  initialiseCubeWritingIfNecessary();
 
-  if (itsComms.isWriter()) {
-
-    // This code is only used in the spectral line/local solver case -
-    //   continuum images are written from ImagerParallel::writeModel in ContinuumMaster
-
-    Quantity f0(this->baseCubeFrequency, "Hz");
-    /// The width of a channel. THis does <NOT> take account of the variable width
-    /// of Barycentric channels
-    Quantity freqinc(workUnits[0].get_channelWidth(), "Hz");
-
-    // add rank based postfix if we're writing to multiple cubes
-    std::string postfix = (itsComms.isSingleSink() ? "" : std::string(".wr.") + utility::toString(itsComms.rank()));
-
-    std::string img_name = "image" + postfix;
-    std::string psf_name = "psf" + postfix;
-    std::string residual_name = "residual" + postfix;
-    // may need this name for the weightslog
-    std::string weights_name = "weights" + postfix;
-    std::string visgrid_name = "visgrid" + postfix;
-    std::string pcfgrid_name = "pcfgrid" + postfix;
-    std::string psfgrid_name = "psfgrid" + postfix;
-    std::string psf_image_name = "psf.image" + postfix;
-    std::string restored_image_name = "image.restored" + postfix;
-
-    ASKAPLOG_DEBUG_STR(logger, "Configuring Spectral Cube");
-    ASKAPLOG_DEBUG_STR(logger, "nchan: " << this->nchanCube << " base f0: " << f0.getValue("MHz")
-    << " width: " << freqinc.getValue("MHz") << " (" << workUnits[0].get_channelWidth() << ")");
-
-    if (itsWriteWtLog) {
-        itsWeightsName = CubeBuilder<casacore::Float>::makeImageName(itsParset,weights_name);
-    }
-
-    LOFAR::ParameterSet gridParset = itsParset.makeSubset("");
-    gridParset.remove("Images.extraoversampling");
-
-    if ( itsComms.isCubeCreator() ) {
-
-      // Get keywords to write to the image header
-      if (!itsParset.isDefined("header.DATE-OBS")) {
-        // We want the start of observations stored in the image keywords
-        // The velocity calculations use the first MS for this, so we'll do that too
-        casacore::MVEpoch dateObs = itsAdvisor->getEpoch(0);
-        String date, timesys;
-        casacore::FITSDateUtil::toFITS(date, timesys, casacore::MVTime(dateObs));
-        // replace adds if non-existant
-        itsParset.replace("header.DATE-OBS","["+date+",Start of observation]");
-        itsParset.replace("header.TIMESYS","["+timesys+",Time System]");
-      }
-
-      if (itsWriteModelImage) {
-        itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, this->nchanCube, f0, freqinc, img_name));
-      }
-      if (itsWritePsfRaw) {
-        itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, this->nchanCube, f0, freqinc, psf_name));
-      }
-      if (itsWriteResidual) {
-        itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset, this->nchanCube, f0, freqinc, residual_name));
-        itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
-        ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for residual cube");
-      }
-      if (itsWriteWtImage) {
-        itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset, this->nchanCube, f0, freqinc, weights_name));
-      }
-      if (itsWriteGrids) {
-        if (itsGridFFT) {
-          itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, visgrid_name));
-          itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name));
-          itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name));
-        } else {
-          if (itsGridType == "casa") {
-              itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, visgrid_name, true));
-              itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name, true));
-              itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name, true));
-          } else {
-              itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
-              itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
-              itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));
-              itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, visgrid_name+".imag", itsGridCoordUV));
-              itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".imag", itsGridCoordUV));
-              itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name+".imag", itsGridCoordUV));
-          }
-        }
-      }
-      if (itsRestore) {
-        // Only create these if we are restoring, as that is when they get made
-          if (itsDoingPreconditioning) {
-            if (itsWritePsfImage) {
-              itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, this->nchanCube, f0, freqinc, psf_image_name));
-            }
-          }
-          itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, this->nchanCube, f0, freqinc, restored_image_name));
-          // we are only interested to collect statistics for the restored image cube
-          itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
-          ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for restored cube");
-      }
-
-    } else {
-
-      if (itsWriteModelImage) {
-        itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
-      }
-      if (itsWritePsfRaw) {
-        itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_name));
-      }
-      if (itsWriteResidual) {
-        itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset,  residual_name));
-        itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
-      }
-      if (itsWriteWtImage) {
-        itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset,  weights_name));
-      }
-
-      if (itsWriteGrids) {
-        if (itsGridFFT) {
-          itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name));
-          itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name));
-          itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name));
-        } else {
-          if (itsGridType == "casa") {
-              itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, visgrid_name));
-              itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, pcfgrid_name));
-              itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, psfgrid_name));
-          } else {
-              itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".real"));
-              itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".real"));
-              itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".real"));
-              itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".imag"));
-              itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".imag"));
-              itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".imag"));
-          }
-        }
-      }
-      if (itsRestore) {
-        // Only create these if we are restoring, as that is when they get made
-          if (itsDoingPreconditioning) {
-            if (itsWritePsfImage) {
-              itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_image_name));
-            }
-          }
-          itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, restored_image_name));
-          // we are only interested to collect statistics for the restored image cube
-          itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
-      }
-    }
-  }
-
-  ASKAPLOG_DEBUG_STR(logger, "You shall not pass. Waiting at a barrier for all ranks to have created the cubes ");
-  itsComms.barrier(itsComms.theWorkers());
-  ASKAPLOG_DEBUG_STR(logger, "Passed the barrier");
-
-  if (workUnits.size() == 0) {
+  if (itsWorkUnits.size() == 0) {
     ASKAPLOG_INFO_STR(logger,"No work todo");
 
     // write out the beam log
@@ -770,7 +794,7 @@ void ContinuumWorker::processChannels()
       << uvwMachineCacheTolerance / casacore::C::pi * 180. * 3600. << " arcsec");
 
 
-  // the workUnits may include different epochs (for the same channel)
+  // the itsWorkUnits may include different epochs (for the same channel)
   // the order is strictly by channel - with multiple work units per channel.
   // so you can increment the workUnit until the frequency changes - then you know you
   // have all the workunits for that channel
@@ -778,7 +802,7 @@ void ContinuumWorker::processChannels()
   boost::shared_ptr<CalcCore> rootImagerPtr;
   bool gridder_initialized = false;
 
-  for (int workUnitCount = 0; workUnitCount < workUnits.size();) {
+  for (int workUnitCount = 0; workUnitCount < itsWorkUnits.size();) {
 
     // NOTE:not all of these will have work
     // NOTE:this loop does not increment here.
@@ -786,11 +810,11 @@ void ContinuumWorker::processChannels()
     try {
 
       // spin for good workunit
-      while (workUnitCount <= workUnits.size()) {
-        if (workUnits[workUnitCount].get_payloadType() == ContinuumWorkUnit::DONE){
+      while (workUnitCount <= itsWorkUnits.size()) {
+        if (itsWorkUnits[workUnitCount].get_payloadType() == ContinuumWorkUnit::DONE){
           workUnitCount++;
         }
-        else if (workUnits[workUnitCount].get_payloadType() == ContinuumWorkUnit::NA) {
+        else if (itsWorkUnits[workUnitCount].get_payloadType() == ContinuumWorkUnit::NA) {
           if (itsComms.isWriter()) {
             // itsComms.removeChannelFromWriter(itsComms.rank());
             ASKAPLOG_WARN_STR(logger,"No longer removing whole channel from write as work allocation is bad. This may not work for multiple epochs");
@@ -802,12 +826,12 @@ void ContinuumWorker::processChannels()
           break;
         }
       }
-      if (workUnitCount >= workUnits.size()) {
+      if (workUnitCount >= itsWorkUnits.size()) {
         ASKAPLOG_INFO_STR(logger, "Out of work with workUnit " << workUnitCount);
         break;
       }
       itsStats.logSummary();
-      ASKAPLOG_INFO_STR(logger, "Starting to process workunit " << workUnitCount+1 << " of " << workUnits.size());
+      ASKAPLOG_INFO_STR(logger, "Starting to process workunit " << workUnitCount+1 << " of " << itsWorkUnits.size());
 
       int initialChannelWorkUnit = workUnitCount;
 
@@ -821,7 +845,7 @@ void ContinuumWorker::processChannels()
         initialChannelWorkUnit = workUnitCount+1;
       }
 
-      double frequency=workUnits[workUnitCount].get_channelFrequency();
+      double frequency=itsWorkUnits[workUnitCount].get_channelFrequency();
       const string colName = itsParset.getString("datacolumn", "DATA");
 
       int localChannel = 0;
@@ -830,24 +854,24 @@ void ContinuumWorker::processChannels()
       if (usetmpfs) {
         // probably in spectral line mode
         // copy the caching here ...
-        cacheWorkUnit(workUnits[workUnitCount]);
+        cacheWorkUnit(itsWorkUnits[workUnitCount]);
       } else {
-        localChannel = workUnits[workUnitCount].get_localChannel();
+        localChannel = itsWorkUnits[workUnitCount].get_localChannel();
         if (clearcache) {
-            cached_files.push_back(workUnits[workUnitCount].get_dataset());
+            itsCachedFiles.push_back(itsWorkUnits[workUnitCount].get_dataset());
         }
       }
 
-      double globalFrequency = workUnits[workUnitCount].get_channelFrequency();
-      const string ms = workUnits[workUnitCount].get_dataset();
-      int globalChannel = workUnits[workUnitCount].get_globalChannel();
+      double globalFrequency = itsWorkUnits[workUnitCount].get_channelFrequency();
+      const string ms = itsWorkUnits[workUnitCount].get_dataset();
+      int globalChannel = itsWorkUnits[workUnitCount].get_globalChannel();
 
       // MEMORY_BUFFERS mode opens the MS readonly
       TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, colName);
 
       /// Need to set up the rootImager here
       if (updateDir) {
-            itsAdvisor->updateDirectionFromWorkUnit(workUnits[workUnitCount]);
+            itsAdvisor->updateDirectionFromWorkUnit(itsWorkUnits[workUnitCount]);
             // change gridder for initial calcNE in updateDir mode
             LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
             tmpParset.replace("gridder","SphFunc");
@@ -876,7 +900,7 @@ void ContinuumWorker::processChannels()
           // (although this is probably a bit of the technical debt)
           rootImager.createUVWeightCalculator();
       }
-      if (!localSolver) {
+      if (!itsLocalSolver) {
         // for central solver weight grid computation happens here, if it is required
         if (rootImager.isSampleDensityGridNeeded()) {
             // the code below is expected to be called in normal continuum case, incompatible with updatedir
@@ -977,17 +1001,17 @@ void ContinuumWorker::processChannels()
 
 
         // now we are going to actually image this work unit
-        // This loops over work units that are the same baseFrequency
+        // This loops over work units that are the same itsBaseFrequency
         // but probably not the same epoch or beam ....
 
-        while (tempWorkUnitCount < workUnits.size())   {
+        while (tempWorkUnitCount < itsWorkUnits.size())   {
 
           /// need a working imager to allow a merge over epochs for this channel
           /// assuming subsequent workunits are the same channel but either different
           /// epochs or look directions.
 
-          if (frequency != workUnits[tempWorkUnitCount].get_channelFrequency()) {
-            if (localSolver) { // the frequencies should be the same.
+          if (frequency != itsWorkUnits[tempWorkUnitCount].get_channelFrequency()) {
+            if (itsLocalSolver) { // the frequencies should be the same.
               // THis is probably the normal spectral line or continuum cube mode.
               // each workunit is a different frequency
               ASKAPLOG_INFO_STR(logger,"Change of frequency for workunit");
@@ -997,17 +1021,17 @@ void ContinuumWorker::processChannels()
 
           if (usetmpfs) {
             // probably in spectral line mode
-            cacheWorkUnit(workUnits[tempWorkUnitCount]);
+            cacheWorkUnit(itsWorkUnits[tempWorkUnitCount]);
             localChannel = 0;
           } else {
-            localChannel = workUnits[tempWorkUnitCount].get_localChannel();
+            localChannel = itsWorkUnits[tempWorkUnitCount].get_localChannel();
             if (clearcache) {
-                cached_files.push_back(workUnits[tempWorkUnitCount].get_dataset());
+                itsCachedFiles.push_back(itsWorkUnits[tempWorkUnitCount].get_dataset());
             }
           }
 
-          globalFrequency = workUnits[tempWorkUnitCount].get_channelFrequency();
-          const string myMs = workUnits[tempWorkUnitCount].get_dataset();
+          globalFrequency = itsWorkUnits[tempWorkUnitCount].get_channelFrequency();
+          const string myMs = itsWorkUnits[tempWorkUnitCount].get_dataset();
           TableDataSource myDs(myMs, TableDataSource::MEMORY_BUFFERS, colName);
           myDs.configureUVWMachineCache(uvwMachineCacheSize, uvwMachineCacheTolerance);
           try {
@@ -1015,7 +1039,7 @@ void ContinuumWorker::processChannels()
             boost::shared_ptr<CalcCore> workingImagerPtr;
 
             if (updateDir) {
-              itsAdvisor->updateDirectionFromWorkUnit(workUnits[tempWorkUnitCount]);
+              itsAdvisor->updateDirectionFromWorkUnit(itsWorkUnits[tempWorkUnitCount]);
               // in updateDir mode I cannot cache the gridders as they have a tangent point.
               // FIXED: by just having 2 possible working imagers depending on the mode. ... easy really
 
@@ -1051,7 +1075,7 @@ void ContinuumWorker::processChannels()
               // computation without interrank communication
               if (workingImager.isSampleDensityGridNeeded()) {
                   ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
-                  ASKAPASSERT(localSolver);
+                  ASKAPASSERT(itsLocalSolver);
                   workingImager.setupUVWeightBuilder();
                   workingImager.accumulateUVWeights();
                   // this will compute weights and add them to the model
@@ -1105,7 +1129,7 @@ void ContinuumWorker::processChannels()
             std::cerr << "Askap error in: " << e.what() << std::endl;
           }
 
-          if (frequency == workUnits[tempWorkUnitCount].get_channelFrequency()) {
+          if (frequency == itsWorkUnits[tempWorkUnitCount].get_channelFrequency()) {
             tempWorkUnitCount++;
             // NOTE: here we increment the workunit count.
             // but the frequency is the same so this is just combining epochs or beams.
@@ -1115,12 +1139,12 @@ void ContinuumWorker::processChannels()
             // the frequency has changed - which means for spectral line we break.
             // but for continuum we continue ...
             // this first condition has already been checked earlier in the loop.
-            if (localSolver) {
+            if (itsLocalSolver) {
               break;
             }
             else {
               // update the frequency
-              frequency = workUnits[tempWorkUnitCount].get_channelFrequency();
+              frequency = itsWorkUnits[tempWorkUnitCount].get_channelFrequency();
               // we are now in the next channel
               // NOTE: we also need to increment the tempWorkUnitCount.
               tempWorkUnitCount++;
@@ -1138,14 +1162,14 @@ void ContinuumWorker::processChannels()
 
 
 
-        if (localSolver && (majorCycleNumber == nCycles)) { // done the last cycle
+        if (itsLocalSolver && (majorCycleNumber == nCycles)) { // done the last cycle
           stopping = true;
           break;
         }
 
 
 
-        else if (!localSolver){ // probably continuum mode ....
+        else if (!itsLocalSolver){ // probably continuum mode ....
           // If we are in continuum mode we have probaby ran through the whole allocation
           // lets send it to the master for processing.
           rootImager.sendNE();
@@ -1192,11 +1216,11 @@ void ContinuumWorker::processChannels()
 
         }
 
-        if (!localSolver && (majorCycleNumber == nCycles -1)) {
+        if (!itsLocalSolver && (majorCycleNumber == nCycles -1)) {
           stopping = true;
         }
 
-        if (!stopping && localSolver) {
+        if (!stopping && itsLocalSolver) {
           try {
             rootImager.solveNE();
             itsStats.logSummary();
@@ -1207,7 +1231,7 @@ void ContinuumWorker::processChannels()
             throw;
           }
         }
-        else if (stopping && localSolver) {
+        else if (stopping && itsLocalSolver) {
           break; // should be done if I am in local solver mode.
         }
 
@@ -1245,7 +1269,7 @@ void ContinuumWorker::processChannels()
             ASKAPLOG_WARN_STR(logger, "Askap error in calcNE after majorcycle: " << e.what());
           }
         }
-        else if (stopping && !localSolver) {
+        else if (stopping && !itsLocalSolver) {
           ASKAPLOG_INFO_STR(logger, "Not local solver but last run - Reset normal equations");
           rootImager.getNE()->reset();
 
@@ -1268,7 +1292,7 @@ void ContinuumWorker::processChannels()
 
 
 
-      if (!localSolver) { // all my work is done - only continue if in local mode
+      if (!itsLocalSolver) { // all my work is done - only continue if in local mode
         ASKAPLOG_INFO_STR(logger,"Finished imaging");
         ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
         itsComms.barrier(itsComms.theWorkers());
@@ -1300,21 +1324,7 @@ void ContinuumWorker::processChannels()
       ASKAPCHECK(rootImager.params()->has("model.slice"), "Params are missing model.slice parameter");
 
       if (itsWriteGrids) {
-        ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
-        casacore::Array<casacore::Complex> garr = rootImager.getGrid();
-        casacore::Vector<casacore::Complex> garrVec(garr.reform(IPosition(1,garr.nelements())));
-        rootImager.params()->addComplexVector("grid.slice",garrVec);
-        ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
-        casacore::Array<casacore::Complex> pcfarr = rootImager.getPCFGrid();
-        if (pcfarr.nelements()) {
-            ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
-            casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(IPosition(1,pcfarr.nelements())));
-            rootImager.params()->addComplexVector("pcf.slice",pcfVec);
-        }
-        ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
-        casacore::Array<casacore::Complex> psfarr = rootImager.getPSFGrid();
-        casacore::Vector<casacore::Complex> psfVec(psfarr.reform(IPosition(1,psfarr.nelements())));
-        rootImager.params()->addComplexVector("psfgrid.slice",psfVec);
+          rootImager.addGridsToModel();
       }
 
       rootImager.check();
@@ -1333,7 +1343,7 @@ void ContinuumWorker::processChannels()
       } else if (clearcache) {
         // clear the hypercube caches (with 1 channel tiles we won't use it again)
         static int count = 0;
-        for (string fileName : cached_files) {
+        for (string fileName : itsCachedFiles) {
             ROTiledStManAccessor tsm(Table(fileName),colName,True);
             ASKAPLOG_INFO_STR(logger, "Clearing Table cache for " <<colName<< " column");
             tsm.clearCaches();
@@ -1344,7 +1354,7 @@ void ContinuumWorker::processChannels()
                 tsm2.clearCaches();
             }
         }
-        cached_files.clear();
+        itsCachedFiles.clear();
         if (++count > 16) {
             count = 0;
         }
@@ -1358,9 +1368,9 @@ void ContinuumWorker::processChannels()
 
         ASKAPLOG_INFO_STR(logger, "I have (including my own) " << itsComms.getOutstanding() << " units to write");
         ASKAPLOG_INFO_STR(logger, "I have " << itsComms.getClients().size() << " clients with work");
-        int cubeChannel = workUnits[workUnitCount - 1].get_globalChannel() - this->baseCubeGlobalChannel;
-        ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << this->nchanCube);
-        ASKAPCHECK((cubeChannel >= 0 || cubeChannel < this->nchanCube), "cubeChannel outside range of cube slice");
+        int cubeChannel = itsWorkUnits[workUnitCount - 1].get_globalChannel() - itsBaseCubeGlobalChannel;
+        ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
+        ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
         handleImageParams(rootImager.params(), cubeChannel);
         ASKAPLOG_INFO_STR(logger, "Written channel " << cubeChannel);
 
@@ -1380,8 +1390,8 @@ void ContinuumWorker::processChannels()
         ASKAPLOG_INFO_STR(logger, "iteration count is " << itsComms.getOutstanding());
 
         while (itsComms.getOutstanding() > targetOutstanding) {
-          if (itsComms.getOutstanding() <= (workUnits.size() - workUnitCount)) {
-            ASKAPLOG_INFO_STR(logger, "local remaining count is " << (workUnits.size() - workUnitCount)) ;
+          if (itsComms.getOutstanding() <= (itsWorkUnits.size() - workUnitCount)) {
+            ASKAPLOG_INFO_STR(logger, "local remaining count is " << (itsWorkUnits.size() - workUnitCount)) ;
 
             break;
           }
@@ -1394,11 +1404,11 @@ void ContinuumWorker::processChannels()
           ASKAPLOG_INFO_STR(logger, "Waiting for a write request");
           result.receiveRequest(id, itsComms);
           ASKAPLOG_INFO_STR(logger, "Received a request to write from rank " << id);
-          int cubeChannel = result.get_globalChannel() - this->baseCubeGlobalChannel;
+          int cubeChannel = result.get_globalChannel() - itsBaseCubeGlobalChannel;
 
           try {
-            ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << this->nchanCube);
-            ASKAPCHECK((cubeChannel >= 0 || cubeChannel < this->nchanCube), "cubeChannel outside range of cube slice");
+            ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
+            ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
 
             handleImageParams(result.get_params(), cubeChannel);
 
@@ -1418,9 +1428,9 @@ void ContinuumWorker::processChannels()
 
         ContinuumWorkRequest result;
         result.set_params(rootImager.params());
-        result.set_globalChannel(workUnits[workUnitCount - 1].get_globalChannel());
+        result.set_globalChannel(itsWorkUnits[workUnitCount - 1].get_globalChannel());
         /// send the work to the writer with a blocking send
-        result.sendRequest(workUnits[workUnitCount - 1].get_writer(), itsComms);
+        result.sendRequest(itsWorkUnits[workUnitCount - 1].get_writer(), itsComms);
         itsComms.removeChannelFromWorker(itsComms.rank());
 
       }
@@ -1430,7 +1440,7 @@ void ContinuumWorker::processChannels()
 
     catch (const std::exception& e) {
 
-      if (!localSolver) {
+      if (!itsLocalSolver) {
         /// this is MFS/continuum mode
         /// throw this further up - this avoids a failure in continuum mode generating bogus - or furphy-like
         /// error messages
@@ -1448,18 +1458,18 @@ void ContinuumWorker::processChannels()
       } else {
         int goodUnitCount = workUnitCount - 1; // last good one - needed for the correct freq label and writer
         ASKAPLOG_INFO_STR(logger, "Failed on count " << goodUnitCount);
-        ASKAPLOG_INFO_STR(logger, "Sending blankparams to writer " << workUnits[goodUnitCount].get_writer());
+        ASKAPLOG_INFO_STR(logger, "Sending blankparams to writer " << itsWorkUnits[goodUnitCount].get_writer());
         askap::scimath::Params::ShPtr blankParams;
 
         blankParams.reset(new Params(true));
         ASKAPCHECK(blankParams, "blank parameters (images) not initialised");
-        setupImage(blankParams, workUnits[goodUnitCount].get_channelFrequency());
+        setupImage(blankParams, itsWorkUnits[goodUnitCount].get_channelFrequency());
 
         ContinuumWorkRequest result;
         result.set_params(blankParams);
-        result.set_globalChannel(workUnits[goodUnitCount].get_globalChannel());
+        result.set_globalChannel(itsWorkUnits[goodUnitCount].get_globalChannel());
         /// send the work to the writer with a blocking send
-        result.sendRequest(workUnits[goodUnitCount].get_writer(), itsComms);
+        result.sendRequest(itsWorkUnits[goodUnitCount].get_writer(), itsComms);
         ASKAPLOG_INFO_STR(logger, "Sent\n");
       }
       // No need to increment workunit. Although this assumes that we are here because we failed the solveNE not the calcNE
@@ -1477,12 +1487,12 @@ void ContinuumWorker::processChannels()
       int id;
       result.receiveRequest(id, itsComms);
       ASKAPLOG_INFO_STR(logger, "Received a request to write from rank " << id);
-      int cubeChannel = result.get_globalChannel() - this->baseCubeGlobalChannel;
+      int cubeChannel = result.get_globalChannel() - itsBaseCubeGlobalChannel;
       try {
 
 
-        ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << this->nchanCube);
-        ASKAPCHECK((cubeChannel >= 0 || cubeChannel < this->nchanCube), "cubeChannel outside range of cube slice");
+        ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
+        ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
         handleImageParams(result.get_params(), cubeChannel);
         ASKAPLOG_INFO_STR(logger, "Written the slice from rank" << id);
 

@@ -280,6 +280,28 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
    return tvg->getGrid();
 }
 
+/// @brief store all complex grids in the model object for future writing
+/// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
+/// returned arrays in the model so they can be exported later.
+void CalcCore::addGridsToModel() 
+{
+   ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
+   casacore::Array<casacore::Complex> garr = getGrid();
+   casacore::Vector<casacore::Complex> garrVec(garr.reform(casacore::IPosition(1,garr.nelements())));
+   params()->addComplexVector("grid.slice",garrVec);
+   ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
+   casacore::Array<casacore::Complex> pcfarr = getPCFGrid();
+   if (pcfarr.nelements()) {
+       ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
+       casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(casacore::IPosition(1,pcfarr.nelements())));
+       params()->addComplexVector("pcf.slice",pcfVec);
+   }
+   ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
+   casacore::Array<casacore::Complex> psfarr = getPSFGrid();
+   casacore::Vector<casacore::Complex> psfVec(psfarr.reform(casacore::IPosition(1,psfarr.nelements())));
+   params()->addComplexVector("psfgrid.slice",psfVec);
+}
+
 void CalcCore::calcNE()
 {
 
