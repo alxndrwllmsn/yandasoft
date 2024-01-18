@@ -99,7 +99,9 @@ ASKAP_LOGGER(logger, ".ContinuumWorker");
 
 ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
   CubeComms& comms, StatReporter& stats)
-  : itsParset(parset), itsComms(comms), itsStats(stats), itsBeamList(),itsWeightsList()
+  : itsParset(parset), itsComms(comms), itsStats(stats), 
+    // setup whether we solve locally (spectral line mode) or on the master (continuum mode)
+    itsLocalSolver(parset.getBool("solverpercore", false))
 {
     ASKAPTRACE("ContinuumWorker::constructor");
 
@@ -244,76 +246,8 @@ void ContinuumWorker::run(void)
   itsComms.barrier(itsComms.theWorkers());
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
 
-  const bool localSolver = itsParset.getBool("solverpercore", false);
+  configureChannelAllocation();
 
-  int nchanpercore = itsParset.getInt("nchanpercore", 1);
-
-  int nWorkers = itsComms.nProcs() - 1;
-  int nGroups = itsComms.nGroups();
-  int nchanTotal = nWorkers * nchanpercore / nGroups;
-
-
-  if (localSolver) {
-    ASKAPLOG_INFO_STR(logger, "In local solver mode - reprocessing allocations)");
-    itsAdvisor->updateComms();
-    int myMinClient = itsComms.rank();
-    int myMaxClient = itsComms.rank();
-
-    if (itsComms.isWriter()) {
-      ASKAPLOG_DEBUG_STR(logger, "Getting client list for cube generation");
-      std::list<int> myClients = itsComms.getClients();
-      myClients.push_back(itsComms.rank());
-      myClients.sort();
-      myClients.unique();
-
-      ASKAPLOG_DEBUG_STR(logger, "Client list " << myClients);
-      if (myClients.size() > 0) {
-        std::list<int>::iterator iter = std::min_element(myClients.begin(), myClients.end());
-
-        myMinClient = *iter;
-        iter = std::max_element(myClients.begin(), myClients.end());
-        myMaxClient = *iter;
-
-      }
-      // these are in ranks
-      // If a client is missing entirely from the list - the cube will be missing
-      // channels - but they will be correctly labelled
-
-      // e.g
-      // bottom client rank is 4 - top client is 7
-      // we have 4 chanpercore
-      // 6*4 - 3*4
-      // 3*4 = 12
-      // (6 - 3 + 1) * 4
-      if (!itsComms.isSingleSink()) {
-        ASKAPLOG_INFO_STR(logger, "MultiCube with multiple writers");
-        itsNChanCube = (myMaxClient - myMinClient + 1) * nchanpercore;
-        itsBaseCubeGlobalChannel = (myMinClient - 1) * nchanpercore;
-        itsBaseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((myMinClient - 1));
-      } else {
-        ASKAPLOG_INFO_STR(logger, "SingleCube with multiple writers");
-        itsNChanCube = nchanTotal;
-        itsBaseCubeGlobalChannel = 0;
-        itsBaseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((0));
-      }
-      initialiseBeamLog(itsNChanCube);
-      initialiseWeightsLog(itsNChanCube);
-
-      ASKAPLOG_INFO_STR(logger, "Number of channels in cube is: " << itsNChanCube);
-      ASKAPLOG_INFO_STR(logger, "Base global channel of cube is " << itsBaseCubeGlobalChannel);
-    }
-    itsBaseFrequency = itsAdvisor->getBaseFrequencyAllocation(itsComms.rank() - 1);
-  }
-  else {
-      bool combineChannels = itsParset.getBool("combinechannels", false);
-      if (combineChannels) {
-          ASKAPLOG_INFO_STR(logger, "Not in localsolver (spectral line) mode - and combine channels is set so compressing channel allocations)");
-          compressWorkUnits();
-      }
-      initialiseBeamLog(nchanTotal);
-      initialiseWeightsLog(nchanTotal);
-
-  }
   ASKAPLOG_INFO_STR(logger, "Adding all missing parameters");
 
   itsAdvisor->addMissingParameters(true);
@@ -324,7 +258,6 @@ void ContinuumWorker::run(void)
     ASKAPLOG_WARN_STR(logger, "Failure processing the channel allocation");
     ASKAPLOG_WARN_STR(logger, "Exception detail: " << e.what());
     throw;
-
   }
 
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " finished");
@@ -337,6 +270,80 @@ void ContinuumWorker::run(void)
     itsComms.barrier(itsComms.theWorkers());
   }
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed final barrier");
+}
+
+/// @brief configure allocation in channels
+/// @details This method sets up channel allocation for cube writing (in local solver mode)
+/// or combines channels in the global solver mode if configured in the parset.
+void ContinuumWorker::configureChannelAllocation()
+{
+   const int nchanpercore = itsParset.getInt("nchanpercore", 1);
+
+   const int nWorkers = itsComms.nProcs() - 1;
+   const int nGroups = itsComms.nGroups();
+   const int nchanTotal = nWorkers * nchanpercore / nGroups;
+   ASKAPDEBUGASSERT(itsAdvisor);
+
+
+   if (itsLocalSolver) {
+       ASKAPLOG_INFO_STR(logger, "In local solver mode - reprocessing allocations)");
+       itsAdvisor->updateComms();
+       int myMinClient = itsComms.rank();
+       int myMaxClient = itsComms.rank();
+
+       if (itsComms.isWriter()) {
+           ASKAPLOG_DEBUG_STR(logger, "Getting client list for cube generation");
+           // MV - probably should've used std::set here (no need to sort + unique by default)
+           std::list<int> myClients = itsComms.getClients();
+           myClients.push_back(itsComms.rank());
+           myClients.sort();
+           myClients.unique();
+
+           ASKAPLOG_DEBUG_STR(logger, "Client list " << myClients);
+           if (myClients.size() > 0) {
+               typedef std::list<int>::const_iterator IterType;
+               const std::pair<IterType, IterType> extrema = std::minmax_element(myClients.begin(), myClients.end());
+
+               myMinClient = *(extrema.first);
+               myMaxClient = *(extrema.second);
+           }
+           // these are in ranks
+           // If a client is missing entirely from the list - the cube will be missing
+           // channels - but they will be correctly labelled
+
+           // e.g
+           // bottom client rank is 4 - top client is 7
+           // we have 4 chanpercore
+           // 6*4 - 3*4
+           // 3*4 = 12
+           // (6 - 3 + 1) * 4
+           if (!itsComms.isSingleSink()) {
+               ASKAPLOG_INFO_STR(logger, "MultiCube with multiple writers");
+               itsNChanCube = (myMaxClient - myMinClient + 1) * nchanpercore;
+               itsBaseCubeGlobalChannel = (myMinClient - 1) * nchanpercore;
+               itsBaseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((myMinClient - 1));
+           } else {
+               ASKAPLOG_INFO_STR(logger, "SingleCube with multiple writers");
+               itsNChanCube = nchanTotal;
+               itsBaseCubeGlobalChannel = 0;
+               itsBaseCubeFrequency = itsAdvisor->getBaseFrequencyAllocation((0));
+           }
+           initialiseBeamLog(itsNChanCube);
+           initialiseWeightsLog(itsNChanCube);
+
+           ASKAPLOG_INFO_STR(logger, "Number of channels in cube is: " << itsNChanCube);
+           ASKAPLOG_INFO_STR(logger, "Base global channel of cube is " << itsBaseCubeGlobalChannel);
+       }
+       itsBaseFrequency = itsAdvisor->getBaseFrequencyAllocation(itsComms.rank() - 1);
+   } else {
+       const bool combineChannels = itsParset.getBool("combinechannels", false);
+       if (combineChannels) {
+           ASKAPLOG_INFO_STR(logger, "Not in localsolver (spectral line) mode - and combine channels is set so compressing channel allocations)");
+           compressWorkUnits();
+       }
+       initialiseBeamLog(nchanTotal);
+       initialiseWeightsLog(nchanTotal);
+   }
 }
 
 // unused
@@ -555,9 +562,9 @@ void ContinuumWorker::processChannels()
     ASKAPLOG_INFO_STR(logger,"Will output gridded visibilities");
   }
 
-  const bool localSolver = itsParset.getBool("solverpercore", false);
+  //const bool localSolver = itsParset.getBool("solverpercore", false);
 
-  if (localSolver) {
+  if (itsLocalSolver) {
     ASKAPLOG_INFO_STR(logger, "Processing multiple channels local solver mode");
   }
   else {
@@ -566,7 +573,7 @@ void ContinuumWorker::processChannels()
 
   const bool updateDir = itsParset.getBool("updatedirection",false);
 
-  ASKAPCHECK(!(updateDir && !localSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
+  ASKAPCHECK(!(updateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
 
 
   // Define reference channel for giving restoring beam
@@ -876,7 +883,7 @@ void ContinuumWorker::processChannels()
           // (although this is probably a bit of the technical debt)
           rootImager.createUVWeightCalculator();
       }
-      if (!localSolver) {
+      if (!itsLocalSolver) {
         // for central solver weight grid computation happens here, if it is required
         if (rootImager.isSampleDensityGridNeeded()) {
             // the code below is expected to be called in normal continuum case, incompatible with updatedir
@@ -987,7 +994,7 @@ void ContinuumWorker::processChannels()
           /// epochs or look directions.
 
           if (frequency != workUnits[tempWorkUnitCount].get_channelFrequency()) {
-            if (localSolver) { // the frequencies should be the same.
+            if (itsLocalSolver) { // the frequencies should be the same.
               // THis is probably the normal spectral line or continuum cube mode.
               // each workunit is a different frequency
               ASKAPLOG_INFO_STR(logger,"Change of frequency for workunit");
@@ -1051,7 +1058,7 @@ void ContinuumWorker::processChannels()
               // computation without interrank communication
               if (workingImager.isSampleDensityGridNeeded()) {
                   ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
-                  ASKAPASSERT(localSolver);
+                  ASKAPASSERT(itsLocalSolver);
                   workingImager.setupUVWeightBuilder();
                   workingImager.accumulateUVWeights();
                   // this will compute weights and add them to the model
@@ -1115,7 +1122,7 @@ void ContinuumWorker::processChannels()
             // the frequency has changed - which means for spectral line we break.
             // but for continuum we continue ...
             // this first condition has already been checked earlier in the loop.
-            if (localSolver) {
+            if (itsLocalSolver) {
               break;
             }
             else {
@@ -1138,14 +1145,14 @@ void ContinuumWorker::processChannels()
 
 
 
-        if (localSolver && (majorCycleNumber == nCycles)) { // done the last cycle
+        if (itsLocalSolver && (majorCycleNumber == nCycles)) { // done the last cycle
           stopping = true;
           break;
         }
 
 
 
-        else if (!localSolver){ // probably continuum mode ....
+        else if (!itsLocalSolver){ // probably continuum mode ....
           // If we are in continuum mode we have probaby ran through the whole allocation
           // lets send it to the master for processing.
           rootImager.sendNE();
@@ -1192,11 +1199,11 @@ void ContinuumWorker::processChannels()
 
         }
 
-        if (!localSolver && (majorCycleNumber == nCycles -1)) {
+        if (!itsLocalSolver && (majorCycleNumber == nCycles -1)) {
           stopping = true;
         }
 
-        if (!stopping && localSolver) {
+        if (!stopping && itsLocalSolver) {
           try {
             rootImager.solveNE();
             itsStats.logSummary();
@@ -1207,7 +1214,7 @@ void ContinuumWorker::processChannels()
             throw;
           }
         }
-        else if (stopping && localSolver) {
+        else if (stopping && itsLocalSolver) {
           break; // should be done if I am in local solver mode.
         }
 
@@ -1245,7 +1252,7 @@ void ContinuumWorker::processChannels()
             ASKAPLOG_WARN_STR(logger, "Askap error in calcNE after majorcycle: " << e.what());
           }
         }
-        else if (stopping && !localSolver) {
+        else if (stopping && !itsLocalSolver) {
           ASKAPLOG_INFO_STR(logger, "Not local solver but last run - Reset normal equations");
           rootImager.getNE()->reset();
 
@@ -1268,7 +1275,7 @@ void ContinuumWorker::processChannels()
 
 
 
-      if (!localSolver) { // all my work is done - only continue if in local mode
+      if (!itsLocalSolver) { // all my work is done - only continue if in local mode
         ASKAPLOG_INFO_STR(logger,"Finished imaging");
         ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
         itsComms.barrier(itsComms.theWorkers());
@@ -1416,7 +1423,7 @@ void ContinuumWorker::processChannels()
 
     catch (const std::exception& e) {
 
-      if (!localSolver) {
+      if (!itsLocalSolver) {
         /// this is MFS/continuum mode
         /// throw this further up - this avoids a failure in continuum mode generating bogus - or furphy-like
         /// error messages

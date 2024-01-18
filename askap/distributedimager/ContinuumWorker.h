@@ -65,6 +65,10 @@ class ContinuumWorker
         void writeCubeStatistics();
 
     private:
+        /// @brief configure allocation in channels
+        /// @details This method sets up channel allocation for cube writing (in local solver mode)
+        /// or combines channels in the global solver mode if configured in the parset.
+        void configureChannelAllocation();
 
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
@@ -141,6 +145,10 @@ class ContinuumWorker
 
         // the number of channels in this cube (if writer)
         int itsNChanCube;
+
+        /// @brief true if solver is run locally (spectral line mode), 
+        /// false for central solver (continuum). 
+        const bool itsLocalSolver;
 
         boost::shared_ptr<CubeBuilder<casacore::Float> > itsImageCube;
         boost::shared_ptr<CubeBuilder<casacore::Float> > itsPSFCube;
