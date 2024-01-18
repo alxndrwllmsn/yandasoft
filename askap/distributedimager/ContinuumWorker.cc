@@ -574,6 +574,169 @@ void ContinuumWorker::configureReferenceChannel()
    }
 }
 
+/// @brief initialise cube writing if in local solver mode
+/// @details This method encapsulates the code which handles cube writing in the local solver mode
+/// (i.e. when it is done from the worker). Safe to call in continuum mode too (as itsComms.isWriter
+/// would return false in this case)
+void ContinuumWorker::initialiseCubeWritingIfNecessary()
+{
+   // MV: I factored out this code with little modification (largely constness and the like), mainly to avoid 
+   // having a giant processChannel method. I feel that more restructuring can be done to this code
+   if (itsComms.isWriter()) {
+
+       // This code is only used in the spectral line/local solver case -
+       //   continuum images are written from ImagerParallel::writeModel in ContinuumMaster
+       ASKAPDEBUGASSERT(itsLocalSolver);
+
+       const Quantity f0(itsBaseCubeFrequency, "Hz");
+       /// The width of a channel. THis does <NOT> take account of the variable width
+       /// of Barycentric channels
+       const Quantity freqinc(itsWorkUnits[0].get_channelWidth(), "Hz");
+
+       // add rank based postfix if we're writing to multiple cubes
+       const std::string postfix = (itsComms.isSingleSink() ? "" : std::string(".wr.") + utility::toString(itsComms.rank()));
+
+       const std::string img_name = "image" + postfix;
+       const std::string psf_name = "psf" + postfix;
+       const std::string residual_name = "residual" + postfix;
+       // may need this name for the weightslog
+       const std::string weights_name = "weights" + postfix;
+       const std::string visgrid_name = "visgrid" + postfix;
+       const std::string pcfgrid_name = "pcfgrid" + postfix;
+       const std::string psfgrid_name = "psfgrid" + postfix;
+       const std::string psf_image_name = "psf.image" + postfix;
+       const std::string restored_image_name = "image.restored" + postfix;
+
+       ASKAPLOG_DEBUG_STR(logger, "Configuring Spectral Cube");
+       ASKAPLOG_DEBUG_STR(logger, "nchan: " << itsNChanCube << " base f0: " << f0.getValue("MHz")
+            << " width: " << freqinc.getValue("MHz") << " (" << itsWorkUnits[0].get_channelWidth() << ")");
+
+       if (itsWriteWtLog) {
+           itsWeightsName = CubeBuilder<casacore::Float>::makeImageName(itsParset,weights_name);
+       }
+
+       LOFAR::ParameterSet gridParset = itsParset.makeSubset("");
+       gridParset.remove("Images.extraoversampling");
+
+       if ( itsComms.isCubeCreator() ) {
+
+            // Get keywords to write to the image header
+            if (!itsParset.isDefined("header.DATE-OBS")) {
+                // We want the start of observations stored in the image keywords
+                // The velocity calculations use the first MS for this, so we'll do that too
+                casacore::MVEpoch dateObs = itsAdvisor->getEpoch(0);
+                String date, timesys;
+                casacore::FITSDateUtil::toFITS(date, timesys, casacore::MVTime(dateObs));
+                // replace adds if non-existant
+                itsParset.replace("header.DATE-OBS","["+date+",Start of observation]");
+                itsParset.replace("header.TIMESYS","["+timesys+",Time System]");
+            }
+
+            if (itsWriteModelImage) {
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
+            }
+            if (itsWritePsfRaw) {
+                itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, psf_name));
+            }
+            if (itsWriteResidual) {
+                itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, residual_name));
+                itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
+                ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for residual cube");
+            }
+            if (itsWriteWtImage) {
+                itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, weights_name));
+            }
+            if (itsWriteGrids) {
+                if (itsGridFFT) {
+                    itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name));
+                    itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name));
+                    itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name));
+                } else {
+                    if (itsGridType == "casa") {
+                        itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, visgrid_name, true));
+                        itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name, true));
+                        itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name, true));
+                    } else {
+                        itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
+                        itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
+                        itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));
+                        itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name+".imag", itsGridCoordUV));
+                        itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name+".imag", itsGridCoordUV));
+                        itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name+".imag", itsGridCoordUV));
+                    }
+                }
+            }
+            if (itsRestore) {
+                // Only create these if we are restoring, as that is when they get made
+                if (itsDoingPreconditioning) {
+                    if (itsWritePsfImage) {
+                        itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, psf_image_name));
+                    }
+                }
+                itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, restored_image_name));
+                // we are only interested to collect statistics for the restored image cube
+                itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
+                ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for restored cube");
+            }
+
+       } else {
+            // this is a cube writer rather than creator
+
+            if (itsWriteModelImage) {
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
+            }
+            if (itsWritePsfRaw) {
+                itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_name));
+            }
+            if (itsWriteResidual) {
+                itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset,  residual_name));
+                itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
+            }
+            if (itsWriteWtImage) {
+                itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset,  weights_name));
+            }
+
+            if (itsWriteGrids) {
+                if (itsGridFFT) {
+                    itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name));
+                    itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name));
+                    itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name));
+                } else {
+                    if (itsGridType == "casa") {
+                        itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, visgrid_name));
+                        itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, pcfgrid_name));
+                        itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, psfgrid_name));
+                    } else {
+                        itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".real"));
+                        itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".real"));
+                        itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".real"));
+                        itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".imag"));
+                        itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".imag"));
+                        itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".imag"));
+                    }
+                }
+            }
+            if (itsRestore) {
+                // Only create these if we are restoring, as that is when they get made
+                if (itsDoingPreconditioning) {
+                    if (itsWritePsfImage) {
+                        itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_image_name));
+                    }
+                }
+                itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, restored_image_name));
+                // we are only interested to collect statistics for the restored image cube
+                itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
+            }
+       }
+   }
+
+   // MV - moved code pretty much as it was with only minor polishing during refactoring, but perhaps this barrier could be moved inside 
+   // the if-statement above as presumably it is not needed in the continuum case
+   ASKAPLOG_DEBUG_STR(logger, "You shall not pass. Waiting at a barrier for all ranks to have created the cubes ");
+   itsComms.barrier(itsComms.theWorkers());
+   ASKAPLOG_DEBUG_STR(logger, "Passed the barrier");
+}
+
 void ContinuumWorker::processChannels()
 {
   ASKAPTRACE("ContinuumWorker::processChannels");
@@ -583,8 +746,6 @@ void ContinuumWorker::processChannels()
   if (itsWriteGrids) {
     ASKAPLOG_INFO_STR(logger,"Will output gridded visibilities");
   }
-
-  //const bool localSolver = itsParset.getBool("solverpercore", false);
 
   if (itsLocalSolver) {
     ASKAPLOG_INFO_STR(logger, "Processing multiple channels local solver mode");
@@ -599,155 +760,7 @@ void ContinuumWorker::processChannels()
 
   configureReferenceChannel();
 
-  if (itsComms.isWriter()) {
-
-    // This code is only used in the spectral line/local solver case -
-    //   continuum images are written from ImagerParallel::writeModel in ContinuumMaster
-
-    Quantity f0(itsBaseCubeFrequency, "Hz");
-    /// The width of a channel. THis does <NOT> take account of the variable width
-    /// of Barycentric channels
-    Quantity freqinc(itsWorkUnits[0].get_channelWidth(), "Hz");
-
-    // add rank based postfix if we're writing to multiple cubes
-    std::string postfix = (itsComms.isSingleSink() ? "" : std::string(".wr.") + utility::toString(itsComms.rank()));
-
-    std::string img_name = "image" + postfix;
-    std::string psf_name = "psf" + postfix;
-    std::string residual_name = "residual" + postfix;
-    // may need this name for the weightslog
-    std::string weights_name = "weights" + postfix;
-    std::string visgrid_name = "visgrid" + postfix;
-    std::string pcfgrid_name = "pcfgrid" + postfix;
-    std::string psfgrid_name = "psfgrid" + postfix;
-    std::string psf_image_name = "psf.image" + postfix;
-    std::string restored_image_name = "image.restored" + postfix;
-
-    ASKAPLOG_DEBUG_STR(logger, "Configuring Spectral Cube");
-    ASKAPLOG_DEBUG_STR(logger, "nchan: " << itsNChanCube << " base f0: " << f0.getValue("MHz")
-    << " width: " << freqinc.getValue("MHz") << " (" << itsWorkUnits[0].get_channelWidth() << ")");
-
-    if (itsWriteWtLog) {
-        itsWeightsName = CubeBuilder<casacore::Float>::makeImageName(itsParset,weights_name);
-    }
-
-    LOFAR::ParameterSet gridParset = itsParset.makeSubset("");
-    gridParset.remove("Images.extraoversampling");
-
-    if ( itsComms.isCubeCreator() ) {
-
-      // Get keywords to write to the image header
-      if (!itsParset.isDefined("header.DATE-OBS")) {
-        // We want the start of observations stored in the image keywords
-        // The velocity calculations use the first MS for this, so we'll do that too
-        casacore::MVEpoch dateObs = itsAdvisor->getEpoch(0);
-        String date, timesys;
-        casacore::FITSDateUtil::toFITS(date, timesys, casacore::MVTime(dateObs));
-        // replace adds if non-existant
-        itsParset.replace("header.DATE-OBS","["+date+",Start of observation]");
-        itsParset.replace("header.TIMESYS","["+timesys+",Time System]");
-      }
-
-      if (itsWriteModelImage) {
-        itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
-      }
-      if (itsWritePsfRaw) {
-        itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, psf_name));
-      }
-      if (itsWriteResidual) {
-        itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, residual_name));
-        itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
-        ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for residual cube");
-      }
-      if (itsWriteWtImage) {
-        itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, weights_name));
-      }
-      if (itsWriteGrids) {
-        if (itsGridFFT) {
-          itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name));
-          itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name));
-          itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name));
-        } else {
-          if (itsGridType == "casa") {
-              itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, visgrid_name, true));
-              itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name, true));
-              itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name, true));
-          } else {
-              itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
-              itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
-              itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));
-              itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, visgrid_name+".imag", itsGridCoordUV));
-              itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name+".imag", itsGridCoordUV));
-              itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name+".imag", itsGridCoordUV));
-          }
-        }
-      }
-      if (itsRestore) {
-        // Only create these if we are restoring, as that is when they get made
-          if (itsDoingPreconditioning) {
-            if (itsWritePsfImage) {
-              itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, psf_image_name));
-            }
-          }
-          itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, restored_image_name));
-          // we are only interested to collect statistics for the restored image cube
-          itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
-          ASKAPLOG_INFO_STR(logger,"Created StatsAndMask object for restored cube");
-      }
-
-    } else {
-
-      if (itsWriteModelImage) {
-        itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
-      }
-      if (itsWritePsfRaw) {
-        itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_name));
-      }
-      if (itsWriteResidual) {
-        itsResidualCube.reset(new CubeBuilder<casacore::Float>(itsParset,  residual_name));
-        itsResidualStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsResidualCube->filename(),itsResidualCube->imageHandler()));
-      }
-      if (itsWriteWtImage) {
-        itsWeightsCube.reset(new CubeBuilder<casacore::Float>(itsParset,  weights_name));
-      }
-
-      if (itsWriteGrids) {
-        if (itsGridFFT) {
-          itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name));
-          itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name));
-          itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name));
-        } else {
-          if (itsGridType == "casa") {
-              itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, visgrid_name));
-              itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, pcfgrid_name));
-              itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, psfgrid_name));
-          } else {
-              itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".real"));
-              itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".real"));
-              itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".real"));
-              itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, visgrid_name+".imag"));
-              itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, pcfgrid_name+".imag"));
-              itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(gridParset, psfgrid_name+".imag"));
-          }
-        }
-      }
-      if (itsRestore) {
-        // Only create these if we are restoring, as that is when they get made
-          if (itsDoingPreconditioning) {
-            if (itsWritePsfImage) {
-              itsPSFimageCube.reset(new CubeBuilder<casacore::Float>(itsParset, psf_image_name));
-            }
-          }
-          itsRestoredCube.reset(new CubeBuilder<casacore::Float>(itsParset, restored_image_name));
-          // we are only interested to collect statistics for the restored image cube
-          itsRestoredStatsAndMask.reset(new askap::utils::StatsAndMask(itsComms,itsRestoredCube->filename(),itsRestoredCube->imageHandler()));
-      }
-    }
-  }
-
-  ASKAPLOG_DEBUG_STR(logger, "You shall not pass. Waiting at a barrier for all ranks to have created the cubes ");
-  itsComms.barrier(itsComms.theWorkers());
-  ASKAPLOG_DEBUG_STR(logger, "Passed the barrier");
+  initialiseCubeWritingIfNecessary();
 
   if (itsWorkUnits.size() == 0) {
     ASKAPLOG_INFO_STR(logger,"No work todo");

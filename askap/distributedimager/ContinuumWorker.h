@@ -75,6 +75,12 @@ class ContinuumWorker
         /// the number of channels allocated to the cube handled by this rank
         void configureReferenceChannel();
 
+        /// @brief initialise cube writing if in local solver mode
+        /// @details This method encapsulates the code which handles cube writing in the local solver mode
+        /// (i.e. when it is done from the worker). Safe to call in continuum mode too (as itsComms.isWriter
+        /// would return false in this case)
+        void initialiseCubeWritingIfNecessary();
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
          // The work units
