@@ -70,12 +70,17 @@ class ContinuumWorker
         /// or combines channels in the global solver mode if configured in the parset.
         void configureChannelAllocation();
 
+        /// @brief configure reference channel used for the restoring beam
+        /// @details This method populates itsBeamReferenceChannel based on the parset and
+        /// the number of channels allocated to the cube handled by this rank
+        void configureReferenceChannel();
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
          // The work units
-        vector<ContinuumWorkUnit> workUnits;
+        vector<ContinuumWorkUnit> itsWorkUnits;
         // cached files
-        vector<string> cached_files;
+        vector<string> itsCachedFiles;
 
         // Whether preconditioning has been requested
         bool itsDoingPreconditioning;
@@ -98,11 +103,6 @@ class ContinuumWorker
         //For all workunits .... process
 
         void processChannels();
-
-        // For a given workunit, just process a single snapshot - the channel is specified
-        // in the parset ...
-        void processSnapshot();
-
 
         // Setup the image specified in parset and add it to the Params instance.
         void setupImage(const askap::scimath::Params::ShPtr& params,
@@ -127,9 +127,6 @@ class ContinuumWorker
 
         // ID of the master process
         static const int itsMaster = 0;
-
-        // List of measurement sets to work on
-        //vector<std::string> itsDatasets;
 
         // the basechannel number assigned to this worker
         unsigned int itsBaseChannel;
@@ -181,7 +178,6 @@ class ContinuumWorker
 
         void initialiseBeamLog(const unsigned int numChannels);
         void recordBeam(const askap::scimath::Axes &axes, const unsigned int globalChannel);
-        //void storeBeam(const unsigned int cubeChannel);
 
         std::map<unsigned int, casacore::Vector<casacore::Quantum<double> > > itsBeamList;
         unsigned int itsBeamReferenceChannel;
