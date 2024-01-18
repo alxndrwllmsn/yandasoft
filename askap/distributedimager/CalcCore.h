@@ -108,6 +108,11 @@ namespace cp {
         /// @brief return the PSF grid
         casacore::Array<casacore::Complex> getPSFGrid() const;
 
+        /// @brief store all complex grids in the model object for future writing
+        /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
+        /// returned arrays in the model so they can be exported later.
+        void addGridsToModel();
+
         /// @brief iterate over data and accumulate samples for uv weights
         /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
         /// and weight builder class. It expects the builder already setup and accessible via the normal equations 

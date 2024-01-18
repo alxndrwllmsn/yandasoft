@@ -1300,21 +1300,7 @@ void ContinuumWorker::processChannels()
       ASKAPCHECK(rootImager.params()->has("model.slice"), "Params are missing model.slice parameter");
 
       if (itsWriteGrids) {
-        ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
-        casacore::Array<casacore::Complex> garr = rootImager.getGrid();
-        casacore::Vector<casacore::Complex> garrVec(garr.reform(IPosition(1,garr.nelements())));
-        rootImager.params()->addComplexVector("grid.slice",garrVec);
-        ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
-        casacore::Array<casacore::Complex> pcfarr = rootImager.getPCFGrid();
-        if (pcfarr.nelements()) {
-            ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
-            casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(IPosition(1,pcfarr.nelements())));
-            rootImager.params()->addComplexVector("pcf.slice",pcfVec);
-        }
-        ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
-        casacore::Array<casacore::Complex> psfarr = rootImager.getPSFGrid();
-        casacore::Vector<casacore::Complex> psfVec(psfarr.reform(IPosition(1,psfarr.nelements())));
-        rootImager.params()->addComplexVector("psfgrid.slice",psfVec);
+          rootImager.addGridsToModel();
       }
 
       rootImager.check();
