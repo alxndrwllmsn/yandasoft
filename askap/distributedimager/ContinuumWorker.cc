@@ -581,7 +581,7 @@ void ContinuumWorker::configureReferenceChannel()
 void ContinuumWorker::initialiseCubeWritingIfNecessary()
 {
    // MV: I factored out this code with little modification (largely constness and the like), mainly to avoid 
-   // having a giant processChannel method. I feel that more restructuring can be done to this code
+   // having a giant processChannels method. I feel that more restructuring can be done to this code
    if (itsComms.isWriter()) {
 
        // This code is only used in the spectral line/local solver case -
@@ -748,7 +748,7 @@ void ContinuumWorker::processChannels()
   }
 
   if (itsLocalSolver) {
-    ASKAPLOG_INFO_STR(logger, "Processing multiple channels local solver mode");
+    ASKAPLOG_INFO_STR(logger, "Processing multiple channels in local solver mode");
   }
   else {
     ASKAPLOG_INFO_STR(logger, "Processing multiple channels in central solver mode");
@@ -778,7 +778,7 @@ void ContinuumWorker::processChannels()
   ASKAPLOG_DEBUG_STR(logger, "Ascertaining Cleaning Plan");
   const bool writeAtMajorCycle = itsParset.getBool("Images.writeAtMajorCycle", false);
   const int nCycles = itsParset.getInt32("ncycles", 0);
-  std::string majorcycle = itsParset.getString("threshold.majorcycle", "-1Jy");
+  const std::string majorcycle = itsParset.getString("threshold.majorcycle", "-1Jy");
   const double targetPeakResidual = SynthesisParamsHelper::convertQuantity(majorcycle, "Jy");
 
   const int uvwMachineCacheSize = itsParset.getInt32("nUVWMachines", 1);
@@ -849,8 +849,8 @@ void ContinuumWorker::processChannels()
       const string colName = itsParset.getString("datacolumn", "DATA");
 
       int localChannel = 0;
-      bool usetmpfs = itsParset.getBool("usetmpfs", false);
-      bool clearcache = itsParset.getBool("clearcache", false);
+      const bool usetmpfs = itsParset.getBool("usetmpfs", false);
+      const bool clearcache = itsParset.getBool("clearcache", false);
       if (usetmpfs) {
         // probably in spectral line mode
         // copy the caching here ...
