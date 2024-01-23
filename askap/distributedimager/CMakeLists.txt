@@ -6,6 +6,7 @@ ContinuumMaster.cc
 ContinuumWorker.cc
 CubeComms.cc
 MSSplitter.cc
+WorkUnitContainer.cc
 )
 
 install (FILES
@@ -19,5 +20,6 @@ CubeBuilder.tcc
 CubeComms.h
 CubeManager.h
 MSSplitter.h
+WorkUnitContainer.h
 DESTINATION include/askap/distributedimager
 )

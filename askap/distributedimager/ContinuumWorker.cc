@@ -530,10 +530,9 @@ void ContinuumWorker::preProcessWorkUnit(ContinuumWorkUnit& wu)
   ASKAPLOG_DEBUG_STR(logger, "In preProcessWorkUnit");
   ASKAPLOG_DEBUG_STR(logger, "Parset Reports: (In preProcess workunit)" << (itsParset.getStringVector("dataset", true)));
 
-  const bool localsolve = itsParset.getBool("solverpercore", false);
   const bool usetmpfs = itsParset.getBool("usetmpfs", false);
 
-  if (usetmpfs && !localsolve) {
+  if (usetmpfs && !itsLocalSolver) {
     // only do this here if in continuum mode
     cacheWorkUnit(wu);
   }
