@@ -19,5 +19,5 @@ set ( BASE_IMAGEMATH_TAG           tags/1.12.0      CACHE  STRING    "base-image
 set ( BASE_ASKAPPARALLEL_TAG       tags/1.7.0       CACHE  STRING    "base-askapparallel version"       FORCE )
 set ( BASE_SCIMATH_TAG             e2fe12f7204854f4981e8dd130555e5f97bd377f CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.11.0      CACHE  STRING    "base-components version"          FORCE )
-set ( BASE_ACCESSORS_TAG           tags/1.14.0      CACHE  STRING    "base-accessors version"           FORCE )
+set ( BASE_ACCESSORS_TAG           7e89e6c9cfa67f4b35a3d4c11e5b2e77b846590b CACHE  STRING    "base-accessors version"           FORCE )
 # TOS related repos are not versioned yet, so pinned this build with commit hash values.

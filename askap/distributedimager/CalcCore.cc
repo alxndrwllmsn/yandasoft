@@ -196,6 +196,9 @@ void CalcCore::createMeasurementEquation()
 
    fftEquation->configure(parset());
    fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+   if (calDirMap().size()>0) {
+       fftEquation->setCalDirMap(calDirMap());
+   }
    // MV: it is not great that the code breaks encapsulation here by changing the data member of a base class, leave it as is for now
    itsEquation = fftEquation;
 }
@@ -283,7 +286,7 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 /// @brief store all complex grids in the model object for future writing
 /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
 /// returned arrays in the model so they can be exported later.
-void CalcCore::addGridsToModel() 
+void CalcCore::addGridsToModel()
 {
    ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
    casacore::Array<casacore::Complex> garr = getGrid();

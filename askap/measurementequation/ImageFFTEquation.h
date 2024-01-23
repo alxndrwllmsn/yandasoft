@@ -160,6 +160,10 @@ namespace askap
         /// @brief set the number of DD calibration directions
         void setNDir(casacore::uInt nDir) const { itsNDir = nDir; }
 
+        /// @brief set calibration direction map
+        void setCalDirMap(const std::map<std::string, int>& map)
+        { itsCalDirMap = map; itsNDir = (map.size() == 0 ? 1 : map.size());}
+
 // DAM TRADITIONAL
         /// @brief set robustness
         void setRobustness(float value) const { itsRobustness = value; }
@@ -236,6 +240,9 @@ namespace askap
         /// DDCALTAG
         /// The number of separate directions (equations)
         mutable casacore::uInt itsNDir;
+
+        /// The map of calibration directions
+        mutable std::map<string, int> itsCalDirMap;
 
 // DAM TRADITIONAL
         /// @brief store the desired robustness if given as a parameter

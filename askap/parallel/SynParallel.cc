@@ -114,6 +114,39 @@ namespace askap
       return itsModel;
     }
 
+    // sort the image names, so all Taylor 0 images come first, then 1, 2
+    // but only if all images have the same number of taylor terms
+    void sortTaylorTerms(std::vector<std::string>& names)
+    {
+        ASKAPLOG_DEBUG_STR(logger,"sortTaylorTerms: names= "<<names);
+        std::vector<std::string> sorted(names.size());
+        std::map<std::string, int> taylorMap;
+        SynthesisParamsHelper::listTaylor(names,taylorMap);
+        // check all taylor images have same order
+        int maxTaylor = 0;
+        bool allEqual = true;
+        for ( auto t : taylorMap) {
+            if (maxTaylor == 0) {
+                maxTaylor = t.second;
+            }
+            if (maxTaylor != t.second) {
+                allEqual = false;
+                break;
+            }
+        }
+        if (allEqual && maxTaylor > 1) {
+            const int n = taylorMap.size();
+            int i = 0;
+            for (int i = 0; i < n; i++) {
+                for (int taylor = 0; taylor < maxTaylor; taylor++) {
+                    sorted[i + taylor * n] = names[i * maxTaylor + taylor];
+                }
+            }
+            ASKAPLOG_DEBUG_STR(logger,"sortTaylorTerms: sorted= "<<sorted);
+            names = sorted;
+        }
+    }
+
     // Send the model to all workers
     void SynParallel::broadcastModel()
     {
@@ -152,7 +185,9 @@ namespace askap
                      names2keep.push_back(*ci);
                  }
             }
-            //
+            // re-sort to enable distribution by Taylor term for multiple images
+            sortTaylorTerms(names2distribute);
+
             ASKAPDEBUGASSERT(itsComms.nGroups() > 1);
             // number of parameters per group (note the last group can have more)
             const size_t nPerGroup = names2distribute.size() / itsComms.nGroups();
