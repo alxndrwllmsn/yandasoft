@@ -53,6 +53,18 @@ namespace synthesis {
 /// @ingroup distributedimager
 class WorkUnitContainer : public boost::noncopyable { 
 public:
+   /// @brief const iterator type over all stored work units 
+   typedef std::vector<cp::ContinuumWorkUnit>::const_iterator const_iterator;
+
+   /// @brief stl start iterator over the whole container
+   /// @return stl-compliant iterator pointing to the first element
+   inline const_iterator begin() const { return itsWorkUnits.begin(); }
+
+   /// @brief stl end iterator for iteration over the whole container
+   /// @return stl-compliant iterator pointing to the end of the sequence 
+   /// (i.e. an imaginary element after the last one)
+   inline const_iterator end() const { return itsWorkUnits.end(); }
+
    /// @brief add a work unit to the container
    /// @details The new unit is prepended to the existing vector of work units
    /// (to match the code behaviour prior to refactoring)
