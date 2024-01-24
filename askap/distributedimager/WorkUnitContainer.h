@@ -75,7 +75,7 @@ public:
    /// @details This method was copied pretty much as it was from ContinuumWorker as part of
    /// the refactoring. It modifies the container in situ by merging work units corresponding to 
    /// adjacent channels. This allows us to save on processing in the continuum case.
-   void compressWorkUnits(); 
+   void mergeAdjacentChannels(); 
 
    /// @brief obtain the number of work units in the container
    /// @return the current number of stored workunits

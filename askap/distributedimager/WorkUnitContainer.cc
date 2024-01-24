@@ -53,101 +53,57 @@ void WorkUnitContainer::add(const cp::ContinuumWorkUnit &wu) {
 /// @details This method was copied pretty much as it was from ContinuumWorker as part of
 /// the refactoring. It modifies the container in situ by merging work units corresponding to 
 /// adjacent channels. This allows us to save on processing in the continuum case.
-void WorkUnitContainer::compressWorkUnits() {
-    // This takes the list of workunits and reprocesses them so that all the contiguous
-    // channels are compressed into single workUnits for multiple channels
-    // this is not applicable for the spectral line experiment but can markedly reduce
-    // the number of FFT required for the continuum processesing mode
-
-    // In preProcessWorkUnit we made a list of all the channels in the allocation
-    // but the workunit may contain different measurement sets so I suppose it is
-    // globalChannel that is more important for the sake of allocation ... but
-    // the selector only works on one measurement set.
-
-    // So the upshot is this simple scheme cannot combine channels from different
-    // measurement sets into the same grid as we are using the MS accessor as the vehicle to
-    // provide the integration.
-
-    // So we need to loop through our workunit list and make a new list that just contains a
-    // single workunit for each contiguous group of channels.
-
-    // First lets loop through our workunits
-
-    std::vector<cp::ContinuumWorkUnit> compressedList; // probably easier to generate a new list
-
-    ASKAPDEBUGASSERT(itsWorkUnits.size() > 0u);
-    cp::ContinuumWorkUnit startUnit = itsWorkUnits[0];
-
-    unsigned int contiguousCount = 1;
-    int sign = 1;
-    if (itsWorkUnits.size() == 1) {
-        ASKAPLOG_WARN_STR(logger,"Asked to compress channels but workunit count 1");
-    }
-    cp::ContinuumWorkUnit compressedWorkUnit = startUnit;
-
-
-    for ( size_t count = 1; count < itsWorkUnits.size(); ++count) {
-
-        cp::ContinuumWorkUnit nextUnit = itsWorkUnits[count];
-
-        const std::string startDataset = startUnit.get_dataset();
-        const int startChannel = startUnit.get_localChannel();
-        const std::string nextDataset = nextUnit.get_dataset();
-        const int nextChannel = nextUnit.get_localChannel();
-        if (contiguousCount == 1 && nextChannel == startChannel - 1) {
-            // channels are running backwards
-            sign = -1;
+void WorkUnitContainer::mergeAdjacentChannels() 
+{
+   // current working element, everything before that one has already been processed
+   std::vector<cp::ContinuumWorkUnit>::iterator cursorIt = itsWorkUnits.begin();
+   for (; cursorIt != itsWorkUnits.end(); ++cursorIt) {
+        size_t contiguousCount = 1u;
+        int sign = 1;
+        std::vector<cp::ContinuumWorkUnit>::const_iterator testIt = cursorIt;
+        const unsigned int cursorChan = cursorIt->get_localChannel();
+        for (++testIt; testIt != itsWorkUnits.end(); ++testIt, ++contiguousCount) {
+             // break if beam or dataset changes (can add more conditions like that later on)
+             if ((cursorIt->get_dataset() != testIt->get_dataset()) || (cursorIt->get_beam() != testIt->get_beam())) {
+                 break;
+             }
+             const unsigned int testChan = testIt->get_localChannel();
+             ASKAPDEBUGASSERT(cursorChan != testChan);
+             if (contiguousCount == 1u) {
+                 sign = testChan > cursorChan ? 1 : -1;
+             }
+             // gap condition
+             if (testChan != cursorChan + sign * contiguousCount) {
+                 break;
+             }
         }
-
-
-        if (startDataset == nextDataset) { // same dataset
-            ASKAPLOG_DEBUG_STR(logger,"nextChannel "<<nextChannel<<" startChannel "<<startChannel<<" contiguousCount"<< contiguousCount);
-            if (nextChannel == (startChannel + sign * contiguousCount)) { // next channel is contiguous to previous
-                ++contiguousCount;
-                ASKAPLOG_DEBUG_STR(logger, "contiguous channel detected: count " << contiguousCount);
-                if (sign < 0) {
-                    compressedWorkUnit = nextUnit;
-                }
-                compressedWorkUnit.set_nchan(contiguousCount); // update the nchan count for this workunit
-                /*
-                // MV: do we really need to update the parset here? It doesn't make sense to me because it will be overwritten by successive
-                // blocks. There is some technical debt here. When this class is used we need to ensure that parset is updated in the loop before
-                // the actual processing takes place for the given work unit with squashed channels
-                // ah, the comment below refers to this and AXA-1004 ticket
- 
-
-                // Now need to update the parset details
-                string ChannelParam = "["+toString(contiguousCount)+","+
-                    toString(compressedWorkUnit.get_localChannel())+"]";
-                ASKAPLOG_DEBUG_STR(logger, "compressWorkUnit: ChannelParam = "<<ChannelParam);
-                itsParset.replace("Channels",ChannelParam);
-                */
-            } else { // no longer contiguous channels reset the count
-                contiguousCount = 0;
+        if (contiguousCount > 1u) {
+            // can merge all work units up to (but not including) testIt into the one pointed by cursorIt
+            // For now leave frequencies, width, etc untouched and just update the number of channels. This matches the 
+            // old behaviour prior to refactoring
+            cursorIt->set_nchan(contiguousCount);
+            if (sign < 0) {
+                // always keep the lowest channel number for the group. By default the unit pointed to by cursorIt will have the first
+                ASKAPDEBUGASSERT(cursorChan + 1 >= contiguousCount);
+                cursorIt->set_localChannel(cursorChan + 1 - contiguousCount);
             }
+            contiguousCount = 1u;
+            std::vector<cp::ContinuumWorkUnit>::const_iterator obsoletePartIt = cursorIt;
+            // we keep the element pointed by cursorIt, but delete the ones after that
+            ++obsoletePartIt;
+            ASKAPDEBUGASSERT(obsoletePartIt != itsWorkUnits.end());
+            // the following invalidates iterators from obsoletePartIt onwards, including itsWorkUnits.end(), but we don't 
+            // cache it (so the call as part of the loop condition is ok). The cursorIt iterator remains valid.
+            itsWorkUnits.erase(obsoletePartIt, testIt);
         }
-        else { // different dataset reset the count
-            ASKAPLOG_DEBUG_STR(logger, "Datasets differ resetting count");
-            contiguousCount = 0;
-        }
-        if (count == (itsWorkUnits.size()-1) || contiguousCount == 0) { // last unit
-            ASKAPLOG_DEBUG_STR(logger, "Adding unit to compressed list");
-            compressedList.insert(compressedList.end(),compressedWorkUnit);
-            startUnit = nextUnit;
-            compressedWorkUnit = startUnit;
-        }
-
-    }
-    if (compressedList.size() > 0) {
-        ASKAPLOG_INFO_STR(logger, "Replacing workUnit list of size " << itsWorkUnits.size() << " with compressed list of size " << compressedList.size());
-        ASKAPLOG_INFO_STR(logger,"A corresponding change has been made to the parset");
-        itsWorkUnits = compressedList;
-    }
-    else {
-        ASKAPLOG_WARN_STR(logger,"No compression performed");
-    }
-    // MV: this check should probably go on the user's side as this class can implement the general case with no issues
-    ASKAPCHECK(compressedList.size() < 2, "The number of compressed workunits is greater than one. Channel parameters may be incorrect - see AXA-1004 and associated technical debt tickets");
+   }
+  
+   // the original code prior to refactoring updated parset as well from inside this procedure (to select a group of channels rather than one)
+   // This needs to be performed elsewhere. I leave this original code here commented out as a reminder. 
+   // string ChannelParam = "["+toString(contiguousCount)+","+
+   //       toString(compressedWorkUnit.get_localChannel())+"]";
+   //       ASKAPLOG_DEBUG_STR(logger, "compressWorkUnit: ChannelParam = "<<ChannelParam);
+   //       itsParset.replace("Channels",ChannelParam);
 }
 
 } // namespace synthesis

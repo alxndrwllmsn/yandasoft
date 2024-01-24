@@ -40,6 +40,11 @@ class WorkUnitContainerTest : public CppUnit::TestFixture
    CPPUNIT_TEST_SUITE(WorkUnitContainerTest);
    CPPUNIT_TEST(testAdd);
    CPPUNIT_TEST(testChannelMerge);
+   CPPUNIT_TEST(testChannelMergeWithInversion);
+   CPPUNIT_TEST(testChannelMergeGap);
+   CPPUNIT_TEST(testChannelMergeDifferentDatasets);
+   CPPUNIT_TEST(testChannelMergeDifferentBeams);
+   CPPUNIT_TEST(testChannelMergeNotAdjacent);
    CPPUNIT_TEST_SUITE_END();
 public:
    
@@ -58,15 +63,144 @@ public:
    }
 
    void testChannelMerge() {
+      testSimpleChannelMergeImpl(1);
+   }
+
+   void testChannelMergeWithInversion() {
+      testSimpleChannelMergeImpl(-1);
+   }
+
+   void testChannelMergeGap() {
       WorkUnitContainer wuc;
       cp::ContinuumWorkUnit wu;
       wu.set_localChannel(1u);
       wu.set_dataset("test1.ms");
       wu.set_beam(0u);
-      CPPUNIT_ASSERT_EQUAL(1u, wu.get_nchan());
       addWorkUnits(wuc, wu, 5u, 1);
+      wu.set_localChannel(10u);
+      addWorkUnits(wuc, wu, 5u, 1);
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(10u), wuc.size());
+      wuc.mergeAdjacentChannels();
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(2u), wuc.size());
+      CPPUNIT_ASSERT(wuc.begin() != wuc.end());
+      WorkUnitContainer::const_iterator ci = wuc.begin();
+      CPPUNIT_ASSERT(ci != wuc.end());
+      const cp::ContinuumWorkUnit firstWu = *ci;
+      CPPUNIT_ASSERT_EQUAL(wu.get_dataset(), firstWu.get_dataset());
+      CPPUNIT_ASSERT_EQUAL(wu.get_beam(), firstWu.get_beam());
+      CPPUNIT_ASSERT_EQUAL(5u, firstWu.get_nchan());
+      // local channel should point to the base of the group
+      // because wuc.add prepends work units the order is backwards
+      CPPUNIT_ASSERT_EQUAL(10u, firstWu.get_localChannel());
+      ++ci;
+      CPPUNIT_ASSERT(ci != wuc.end());
+      const cp::ContinuumWorkUnit secondWu = *ci;
+      CPPUNIT_ASSERT_EQUAL(wu.get_dataset(), secondWu.get_dataset());
+      CPPUNIT_ASSERT_EQUAL(wu.get_beam(), secondWu.get_beam());
+      CPPUNIT_ASSERT_EQUAL(5u, secondWu.get_nchan());
+      // local channel should point to the base of the group
+      // because wuc.add prepends work units the order is backwards
+      CPPUNIT_ASSERT_EQUAL(1u, secondWu.get_localChannel());
+      ++ci;
+      CPPUNIT_ASSERT(ci == wuc.end());
+   }
+
+   void testChannelMergeDifferentDatasets() {
+      WorkUnitContainer wuc;
+      cp::ContinuumWorkUnit wu;
+      wu.set_localChannel(1u);
+      wu.set_dataset("test1.ms");
+      wu.set_beam(0u);
+      addWorkUnits(wuc, wu, 5u, 1);
+      wu.set_localChannel(6u);
+      wu.set_dataset("test2.ms");
+      addWorkUnits(wuc, wu, 5u, 1);
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(10u), wuc.size());
+      wuc.mergeAdjacentChannels();
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(2u), wuc.size());
+      CPPUNIT_ASSERT(wuc.begin() != wuc.end());
+      WorkUnitContainer::const_iterator ci = wuc.begin();
+      CPPUNIT_ASSERT(ci != wuc.end());
+      // note, the order of workunits is backwards because wuc.add prepands new items
+      const cp::ContinuumWorkUnit firstWu = *ci;
+      CPPUNIT_ASSERT_EQUAL(wu.get_dataset(), firstWu.get_dataset());
+      CPPUNIT_ASSERT_EQUAL(wu.get_beam(), firstWu.get_beam());
+      CPPUNIT_ASSERT_EQUAL(5u, firstWu.get_nchan());
+      // local channel should point to the base of the group
+      CPPUNIT_ASSERT_EQUAL(6u, firstWu.get_localChannel());
+      ++ci;
+      CPPUNIT_ASSERT(ci != wuc.end());
+      const cp::ContinuumWorkUnit secondWu = *ci;
+      CPPUNIT_ASSERT_EQUAL(std::string("test1.ms"), secondWu.get_dataset());
+      CPPUNIT_ASSERT_EQUAL(wu.get_beam(), secondWu.get_beam());
+      CPPUNIT_ASSERT_EQUAL(5u, secondWu.get_nchan());
+      // local channel should point to the base of the group
+      CPPUNIT_ASSERT_EQUAL(1u, secondWu.get_localChannel());
+      ++ci;
+      CPPUNIT_ASSERT(ci == wuc.end());
+   }
+
+   void testChannelMergeDifferentBeams() {
+      WorkUnitContainer wuc;
+      cp::ContinuumWorkUnit wu;
+      wu.set_localChannel(1u);
+      wu.set_dataset("test1.ms");
+      wu.set_beam(0u);
+      addWorkUnits(wuc, wu, 5u, 1);
+      wu.set_localChannel(6u);
+      wu.set_beam(1u);
+      addWorkUnits(wuc, wu, 5u, 1);
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(10u), wuc.size());
+      wuc.mergeAdjacentChannels();
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(2u), wuc.size());
+      CPPUNIT_ASSERT(wuc.begin() != wuc.end());
+      WorkUnitContainer::const_iterator ci = wuc.begin();
+      CPPUNIT_ASSERT(ci != wuc.end());
+      // note, the order of workunits is backwards because wuc.add prepands new items
+      const cp::ContinuumWorkUnit firstWu = *ci;
+      CPPUNIT_ASSERT_EQUAL(wu.get_dataset(), firstWu.get_dataset());
+      CPPUNIT_ASSERT_EQUAL(wu.get_beam(), firstWu.get_beam());
+      CPPUNIT_ASSERT_EQUAL(5u, firstWu.get_nchan());
+      // local channel should point to the base of the group
+      CPPUNIT_ASSERT_EQUAL(6u, firstWu.get_localChannel());
+      ++ci;
+      CPPUNIT_ASSERT(ci != wuc.end());
+      const cp::ContinuumWorkUnit secondWu = *ci;
+      CPPUNIT_ASSERT_EQUAL(wu.get_dataset(), secondWu.get_dataset());
+      CPPUNIT_ASSERT_EQUAL(0u, secondWu.get_beam());
+      CPPUNIT_ASSERT_EQUAL(5u, secondWu.get_nchan());
+      // local channel should point to the base of the group
+      CPPUNIT_ASSERT_EQUAL(1u, secondWu.get_localChannel());
+      ++ci;
+      CPPUNIT_ASSERT(ci == wuc.end());
+   }
+
+   void testChannelMergeNotAdjacent() {
+      WorkUnitContainer wuc;
+      cp::ContinuumWorkUnit wu;
+      wu.set_localChannel(1u);
+      wu.set_dataset("test1.ms");
+      wu.set_beam(0u);
+      addWorkUnits(wuc, wu, 5u, 2);
       CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(5u), wuc.size());
-      wuc.compressWorkUnits();
+      wuc.mergeAdjacentChannels();
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(5u), wuc.size());
+   }
+
+protected:
+
+   /// @brief helper method doing the test of work units merge
+   /// @param[in] increment channel increment to use (+1 or -1)
+   void testSimpleChannelMergeImpl(int increment) {
+      WorkUnitContainer wuc;
+      cp::ContinuumWorkUnit wu;
+      wu.set_localChannel(increment > 0 ? 1u : 5u);
+      wu.set_dataset("test1.ms");
+      wu.set_beam(0u);
+      CPPUNIT_ASSERT_EQUAL(1u, wu.get_nchan());
+      addWorkUnits(wuc, wu, 5u, increment);
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(5u), wuc.size());
+      wuc.mergeAdjacentChannels();
       CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wuc.size());
       CPPUNIT_ASSERT(wuc.begin() != wuc.end());
       const cp::ContinuumWorkUnit newWu = *wuc.begin();
@@ -74,7 +208,6 @@ public:
       CPPUNIT_ASSERT_EQUAL(wu.get_beam(), newWu.get_beam());
       CPPUNIT_ASSERT_EQUAL(5u, newWu.get_nchan());
    }
-protected:
  
    /// @brief helper method to add work units for a range of local channels
    /// @details 
@@ -85,6 +218,7 @@ protected:
    /// @param[in] increment local channel increment for the added work units
    static void addWorkUnits(WorkUnitContainer& wuc, const cp::ContinuumWorkUnit& wuTemplate, unsigned int nchan, int increment) {
       for (unsigned int chan = 0; chan < nchan; ++chan) {
+           // add backwards to account for the way wuc.add works
            const int adjustment = increment * chan;
            const unsigned int startChan = wuTemplate.get_localChannel();
            if (adjustment < 0) {
