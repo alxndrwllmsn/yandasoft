@@ -41,12 +41,87 @@ namespace askap {
 
 namespace synthesis {
 
+/// @brief constructor
+WorkUnitContainer::WorkUnitContainer() : itsFreqBoundariesValid(false) {}
+
+/// @brief helper method to populate itsFreqBoundaries if it needs an update
+/// @details It goes over all stored workunits and appends a pointer (in the form of iterator)
+/// if the frequency changes. Adding new elements invalidates itsFreqBoundaries, so we don't
+/// need to keep track the validity of individual iterators stored in the vector.
+/// @note The method has been declared const because it works with mutable fields (caching scenario)
+void WorkUnitContainer::updateFreqBoundariesIfNecessary() const
+{
+   if (!itsFreqBoundariesValid) {
+       itsFreqBoundariesValid = true;
+       itsFreqBoundaries.clear();
+       if (itsWorkUnits.size() == 0u) {
+           return;
+       }
+       itsFreqBoundaries.reserve(itsWorkUnits.size());
+       const_iterator ci = itsWorkUnits.begin();
+       for (double currentFreq = (ci++)->get_channelFrequency(); ci != itsWorkUnits.end(); ++ci) {
+            // although it is usually bad to rely on floating point exact comparison, it was like that prior to refactoring
+            // (and is ok here because this frequency is assigned to the appropriate field without further math)
+            if (currentFreq != ci->get_channelFrequency()) {
+                itsFreqBoundaries.push_back(ci);
+            }
+       }
+   }
+}
+
+/// @brief return the number of unique frequencies
+/// @details The work units are groupped by frequency channels, but may contain different beams, epochs.
+/// This method returns the number of unique frequencies which can be used together with frequency-specific
+/// begin and end methods which require the zero-based sequence number of such frequency block.
+/// @return the number of unique frequencies across all stored work units. Zero is returned for an empty container.
+size_t WorkUnitContainer::numberOfFrequencyBlocks() const
+{
+   if (itsWorkUnits.size() == 0u) {
+       return 0u;
+   }
+   updateFreqBoundariesIfNecessary();
+   return itsFreqBoundaries.size() + 1u;
+}
+
+/// @brief stl start iterator over the given frequency block
+/// @details This version returns the iterator for the group of work units with unique
+/// frequency. There could be many such frequency blocks. The one desired (from 0 to N-1, 
+/// where N is the return value of numberOfFrequencyBlocks) is given as a parameter
+/// @param[in] block frequency block number
+/// @return start iterator for the section of interest
+WorkUnitContainer::const_iterator WorkUnitContainer::begin(size_t block) const
+{
+   // numberOfFrequencyBlocks() will call updateFreqBoundariesIfNecessary
+   ASKAPCHECK(block < numberOfFrequencyBlocks(), "Requested frequency block "<<block<<" exceeds the number available");
+   if (block == 0u) {
+       return itsWorkUnits.begin();
+   }
+   return itsFreqBoundaries[block - 1];
+}
+
+/// @brief stl end iterator for the given frequency block
+/// @details This version returns the end iterator for the group of work units with unique
+/// frequency. There could be many such frequency blocks. The one desired (from 0 to N-1, 
+/// where N is the return value of numberOfFrequencyBlocks) is given as a parameter
+/// @param[in] block frequency block number
+/// @return end iterator for the section of interest
+WorkUnitContainer::const_iterator WorkUnitContainer::end(size_t block) const
+{
+   // numberOfFrequencyBlocks() will call updateFreqBoundariesIfNecessary
+   ASKAPCHECK(block < numberOfFrequencyBlocks(), "Requested frequency block "<<block<<" exceeds the number available");
+   if (block + 1 == itsFreqBoundaries.size()) {
+       return itsWorkUnits.end();
+   }
+   return itsFreqBoundaries[block];
+}
+
 /// @brief add a work unit to the container
 /// @details The new unit is prepended to the existing vector of work units
 /// (to match the code behaviour prior to refactoring)
 /// @param[in] wu work unit to add
 void WorkUnitContainer::add(const cp::ContinuumWorkUnit &wu) {
    itsWorkUnits.insert(itsWorkUnits.begin(),wu); 
+   itsFreqBoundariesValid = false;
 }
 
 /// @brief squash work units with adjacent channels into one work unit

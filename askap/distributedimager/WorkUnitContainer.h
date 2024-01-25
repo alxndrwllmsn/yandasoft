@@ -56,6 +56,9 @@ public:
    /// @brief const iterator type over all stored work units 
    typedef std::vector<cp::ContinuumWorkUnit>::const_iterator const_iterator;
 
+   /// @brief constructor
+   WorkUnitContainer();
+
    /// @brief stl start iterator over the whole container
    /// @return stl-compliant iterator pointing to the first element
    inline const_iterator begin() const { return itsWorkUnits.begin(); }
@@ -64,6 +67,22 @@ public:
    /// @return stl-compliant iterator pointing to the end of the sequence 
    /// (i.e. an imaginary element after the last one)
    inline const_iterator end() const { return itsWorkUnits.end(); }
+
+   /// @brief stl start iterator over the given frequency block
+   /// @details This version returns the iterator for the group of work units with unique
+   /// frequency. There could be many such frequency blocks. The one desired (from 0 to N-1, 
+   /// where N is the return value of numberOfFrequencyBlocks) is given as a parameter
+   /// @param[in] block frequency block number
+   /// @return start iterator for the section of interest
+   const_iterator begin(size_t block) const;
+
+   /// @brief stl end iterator for the given frequency block
+   /// @details This version returns the end iterator for the group of work units with unique
+   /// frequency. There could be many such frequency blocks. The one desired (from 0 to N-1, 
+   /// where N is the return value of numberOfFrequencyBlocks) is given as a parameter
+   /// @param[in] block frequency block number
+   /// @return end iterator for the section of interest
+   const_iterator end(size_t block) const;
 
    /// @brief add a work unit to the container
    /// @details The new unit is prepended to the existing vector of work units
@@ -81,11 +100,35 @@ public:
    /// @return the current number of stored workunits
    inline size_t size() const { return itsWorkUnits.size(); }
 
+   /// @brief return the number of unique frequencies
+   /// @details The work units are groupped by frequency channels, but may contain different beams, epochs.
+   /// This method returns the number of unique frequencies which can be used together with frequency-specific
+   /// begin and end methods which require the zero-based sequence number of such frequency block.
+   /// @return the number of unique frequencies across all stored work units. Zero is returned for an empty container.
+   size_t numberOfFrequencyBlocks() const;
+
 private:
+   /// @brief helper method to populate itsFreqBoundaries if it needs an update
+   /// @details It goes over all stored workunits and appends a pointer (in the form of iterator)
+   /// if the frequency changes. Adding new elements invalidates itsFreqBoundaries, so we don't
+   /// need to keep track the validity of individual iterators stored in the vector.
+   /// @note The method has been declared const because it works with mutable fields (caching scenario)
+   void updateFreqBoundariesIfNecessary() const;
+
    /// @brief vector of work units 
    /// @note It may be more appropriate to use some other container type here based on the usage, but at this stage 
    /// mimic the original code prior to refactoring to minimise work
    std::vector<cp::ContinuumWorkUnit> itsWorkUnits;
+
+   /// @brief true if itsFreqBoundaries is valid
+   mutable bool itsFreqBoundariesValid;
+
+   /// @brief iterators to the of the first element with each new frequency
+   /// @details The number of sections with unique frequency is one more than
+   /// the size of this vector (i.e. the very first is pointed to by the iterator 
+   /// returned by begin() method), so if all work units correspond to the same frequency
+   /// this vector will be empty. It is only valid if itsFreqBoundariesValid is true
+   mutable std::vector<const_iterator> itsFreqBoundaries;
 };
 
 } // namespace synthesis
