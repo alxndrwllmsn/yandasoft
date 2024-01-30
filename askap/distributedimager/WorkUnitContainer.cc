@@ -64,6 +64,7 @@ void WorkUnitContainer::updateFreqBoundariesIfNecessary() const
             // (and is ok here because this frequency is assigned to the appropriate field without further math)
             if (currentFreq != ci->get_channelFrequency()) {
                 itsFreqBoundaries.push_back(ci);
+                currentFreq = ci->get_channelFrequency();
             }
        }
    }
@@ -109,7 +110,7 @@ WorkUnitContainer::const_iterator WorkUnitContainer::end(size_t block) const
 {
    // numberOfFrequencyBlocks() will call updateFreqBoundariesIfNecessary
    ASKAPCHECK(block < numberOfFrequencyBlocks(), "Requested frequency block "<<block<<" exceeds the number available");
-   if (block + 1 == itsFreqBoundaries.size()) {
+   if (block == itsFreqBoundaries.size()) {
        return itsWorkUnits.end();
    }
    return itsFreqBoundaries[block];
@@ -125,8 +126,7 @@ void WorkUnitContainer::add(const cp::ContinuumWorkUnit &wu) {
 }
 
 /// @brief squash work units with adjacent channels into one work unit
-/// @details This method was copied pretty much as it was from ContinuumWorker as part of
-/// the refactoring. It modifies the container in situ by merging work units corresponding to 
+/// @details It modifies the container in situ by merging work units corresponding to 
 /// adjacent channels. This allows us to save on processing in the continuum case.
 void WorkUnitContainer::mergeAdjacentChannels() 
 {

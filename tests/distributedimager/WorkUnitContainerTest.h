@@ -45,6 +45,7 @@ class WorkUnitContainerTest : public CppUnit::TestFixture
    CPPUNIT_TEST(testChannelMergeDifferentDatasets);
    CPPUNIT_TEST(testChannelMergeDifferentBeams);
    CPPUNIT_TEST(testChannelMergeNotAdjacent);
+   CPPUNIT_TEST(testChannelPartition);
    CPPUNIT_TEST_SUITE_END();
 public:
    
@@ -187,7 +188,46 @@ public:
       CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(5u), wuc.size());
    }
 
+   void testChannelPartition() {
+      WorkUnitContainer wuc;
+      cp::ContinuumWorkUnit wu;
+      wu.set_localChannel(10u);
+      wu.set_dataset("test1.ms");
+      wu.set_beam(0u);
+      wu.set_channelFrequency(1.421e9);
+      addWorkUnits(wuc, wu, 5u, -1);
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1u), wuc.numberOfFrequencyBlocks());
+      CPPUNIT_ASSERT_EQUAL(5u, verifyFrequencyInWorkUnits(wuc.begin(0u), wuc.end(0u), 1.421e9));
+      wu.set_channelFrequency(1.420e9);
+      addWorkUnits(wuc, wu, 5u, -1);
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(2u), wuc.numberOfFrequencyBlocks());
+      // we're prepending new data, so the index will also change
+      CPPUNIT_ASSERT_EQUAL(5u, verifyFrequencyInWorkUnits(wuc.begin(1u), wuc.end(1u), 1.421e9));
+      CPPUNIT_ASSERT_EQUAL(5u, verifyFrequencyInWorkUnits(wuc.begin(0u), wuc.end(0u), 1.420e9));
+      wu.set_channelFrequency(1.419e9);
+      addWorkUnits(wuc, wu, 5u, -1);
+      CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(3u), wuc.numberOfFrequencyBlocks());
+      CPPUNIT_ASSERT_EQUAL(5u, verifyFrequencyInWorkUnits(wuc.begin(2u), wuc.end(2u), 1.421e9));
+      CPPUNIT_ASSERT_EQUAL(5u, verifyFrequencyInWorkUnits(wuc.begin(1u), wuc.end(1u), 1.420e9));
+      CPPUNIT_ASSERT_EQUAL(5u, verifyFrequencyInWorkUnits(wuc.begin(0u), wuc.end(0u), 1.419e9));
+   }
+
 protected:
+   /// @brief helper method testing common frequency in the set of work units
+   /// @param[in] begin start iterator
+   /// @param[in] end end iterator
+   /// @param[in] freq expected frequency
+   /// @return the number of elements checked
+   /// @note the frequency is checked with 1e-13 tolerance, although exact comparison would be acceptable
+   /// in the current circumstances because no math is done with the numbers.
+   template<typename It>
+   static unsigned int verifyFrequencyInWorkUnits(It begin, It end, double freq) {
+       unsigned int count = 0u;
+       for (It it = begin; it != end; ++it, ++count) {
+            CPPUNIT_ASSERT_DOUBLES_EQUAL(freq, it->get_channelFrequency(), 1e-13);
+       }
+       return count;
+   }
 
    /// @brief helper method doing the test of work units merge
    /// @param[in] increment channel increment to use (+1 or -1)

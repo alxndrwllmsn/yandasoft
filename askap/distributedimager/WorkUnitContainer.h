@@ -68,6 +68,13 @@ public:
    /// (i.e. an imaginary element after the last one)
    inline const_iterator end() const { return itsWorkUnits.end(); }
 
+   // similar methods to the ones below can be implemented for other types of partitioning
+   // (e.g. by direction) if needed. Perhaps, better naming would be required in this case.
+   // Also it is possible to embed this functionality into the iterator instead of searching 
+   // for the appropriate section on-the-fly (but the iterator type would need to be changed).
+   // Such an approach would be more flexible and would make it possible to iterate over
+   // non-contigous selection of work units.
+
    /// @brief stl start iterator over the given frequency block
    /// @details This version returns the iterator for the group of work units with unique
    /// frequency. There could be many such frequency blocks. The one desired (from 0 to N-1, 
@@ -91,8 +98,7 @@ public:
    void add(const cp::ContinuumWorkUnit &wu);
 
    /// @brief squash work units with adjacent channels into one work unit
-   /// @details This method was copied pretty much as it was from ContinuumWorker as part of
-   /// the refactoring. It modifies the container in situ by merging work units corresponding to 
+   /// @details It modifies the container in situ by merging work units corresponding to 
    /// adjacent channels. This allows us to save on processing in the continuum case.
    void mergeAdjacentChannels(); 
 
