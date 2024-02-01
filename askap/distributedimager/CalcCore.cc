@@ -52,7 +52,7 @@
 #include <askap/measurementequation/CalibrationIterator.h>
 #include <askap/calibaccess/CalibAccessFactory.h>
 #include <casacore/casa/OS/Timer.h>
-#include <askap/dataaccess/TableDataSource.h>
+#include <askap/dataaccess/IDataSource.h>
 #include <askap/dataaccess/ParsetInterface.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/parallel/GroupVisAggregator.h>
@@ -78,7 +78,7 @@ ASKAP_LOGGER(logger, ".CalcCore");
 
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
-                       accessors::TableDataSource ds, int localChannel, double frequency)
+                       accessors::IDataSource& ds, int localChannel, double frequency)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsChannel(localChannel),itsFrequency(frequency)
 {
     /// We need to set the calibration info here
@@ -106,7 +106,7 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
 }
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
-                       accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
+                       accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
                        int localChannel, double frequency)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsGridder(gdr), itsChannel(localChannel),
       itsFrequency(frequency)
