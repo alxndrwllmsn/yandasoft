@@ -89,6 +89,12 @@ public:
    /// requiring non-const one throughout. Leave as it was before the refactoring for now. It may be changed in the future.
    accessors::TableDataSource& dataSource(const std::string &name);
 
+   /// @brief force creation of the new data source next time
+   /// @details This method disposes the old data source object (if created previously, otherwise - no operation) which 
+   /// forces the creation of a new one next time dataSource method is called. This is handy if measurement set itself 
+   /// represents a cache and has been replaced since the last call to dataSource method
+   void forceNewDataSourceNextTime();
+
 private:
    /// @brief cached data source object
    boost::shared_ptr<accessors::TableDataSource> itsDataSource;

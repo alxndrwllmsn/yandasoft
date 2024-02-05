@@ -63,6 +63,15 @@ DataSourceManager::~DataSourceManager()
    reset();
 }
 
+/// @brief force creation of the new data source next time
+/// @details This method disposes the old data source object (if created previously, otherwise - no operation) which 
+/// forces the creation of a new one next time dataSource method is called. This is handy if measurement set itself 
+/// represents a cache and has been replaced since the last call to dataSource method
+void DataSourceManager::forceNewDataSourceNextTime()
+{
+   itsDataSource.reset();
+}
+
 /// @brief revert to the state immediately after construction
 /// @details This method destroys the datasource if it has been created and performs cleanup action if necessary.
 /// The same operation happens in the destructor, so it may result in a more clear code if this object is recreated 

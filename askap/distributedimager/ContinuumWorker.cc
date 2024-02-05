@@ -860,6 +860,7 @@ void ContinuumWorker::processChannels()
         // probably in spectral line mode
         // copy the caching here ...
         cacheWorkUnit(itsWorkUnits[workUnitCount]);
+        dsm.forceNewDataSourceNextTime();
       } else {
         localChannel = itsWorkUnits[workUnitCount].get_localChannel();
       }
@@ -1022,6 +1023,7 @@ void ContinuumWorker::processChannels()
           if (usetmpfs) {
             // probably in spectral line mode
             cacheWorkUnit(itsWorkUnits[tempWorkUnitCount]);
+            dsm.forceNewDataSourceNextTime();
             localChannel = 0;
           } else {
             localChannel = itsWorkUnits[tempWorkUnitCount].get_localChannel();
