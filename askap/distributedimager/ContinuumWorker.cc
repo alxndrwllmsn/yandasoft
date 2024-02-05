@@ -57,6 +57,7 @@
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
+#include <askap/distributedimager/DataSourceManager.h>
 /*
 #include <askap/dataaccess/IConstDataSource.h>
 #include <askap/dataaccess/TableConstDataSource.h>
@@ -789,8 +790,16 @@ void ContinuumWorker::processChannels()
 
   ASKAPLOG_DEBUG_STR(logger,
       "UVWMachine cache will store " << uvwMachineCacheSize << " machines");
-      ASKAPLOG_DEBUG_STR(logger, "Tolerance on the directions is "
+  ASKAPLOG_DEBUG_STR(logger, "Tolerance on the directions is "
       << uvwMachineCacheTolerance / casacore::C::pi * 180. * 3600. << " arcsec");
+
+  const string colName = itsParset.getString("datacolumn", "DATA");
+  const bool usetmpfs = itsParset.getBool("usetmpfs", false);
+  const bool clearcache = itsParset.getBool("clearcache", false);
+
+  // force cache clearing off if the temporary file system is in use (the whole temporary measurement set will be deleted anyway)
+  // this matches the behaviour of the code prior to refactoring
+  DataSourceManager dsm(colName, !usetmpfs && clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance);
 
 
   // the itsWorkUnits may include different epochs (for the same channel)
@@ -845,28 +854,20 @@ void ContinuumWorker::processChannels()
       }
 
       double frequency=itsWorkUnits[workUnitCount].get_channelFrequency();
-      const string colName = itsParset.getString("datacolumn", "DATA");
 
       int localChannel = 0;
-      const bool usetmpfs = itsParset.getBool("usetmpfs", false);
-      const bool clearcache = itsParset.getBool("clearcache", false);
       if (usetmpfs) {
         // probably in spectral line mode
         // copy the caching here ...
         cacheWorkUnit(itsWorkUnits[workUnitCount]);
       } else {
         localChannel = itsWorkUnits[workUnitCount].get_localChannel();
-        if (clearcache) {
-            itsCachedFiles.push_back(itsWorkUnits[workUnitCount].get_dataset());
-        }
       }
 
       double globalFrequency = itsWorkUnits[workUnitCount].get_channelFrequency();
-      const string ms = itsWorkUnits[workUnitCount].get_dataset();
       int globalChannel = itsWorkUnits[workUnitCount].get_globalChannel();
 
-      // MEMORY_BUFFERS mode opens the MS readonly
-      TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, colName);
+      TableDataSource& ds = dsm.dataSource(itsWorkUnits[workUnitCount].get_dataset());
 
       /// Need to set up the rootImager here
       if (updateDir) {
@@ -1024,15 +1025,10 @@ void ContinuumWorker::processChannels()
             localChannel = 0;
           } else {
             localChannel = itsWorkUnits[tempWorkUnitCount].get_localChannel();
-            if (clearcache) {
-                itsCachedFiles.push_back(itsWorkUnits[tempWorkUnitCount].get_dataset());
-            }
           }
 
           globalFrequency = itsWorkUnits[tempWorkUnitCount].get_channelFrequency();
-          const string myMs = itsWorkUnits[tempWorkUnitCount].get_dataset();
-          TableDataSource myDs(myMs, TableDataSource::MEMORY_BUFFERS, colName);
-          myDs.configureUVWMachineCache(uvwMachineCacheSize, uvwMachineCacheTolerance);
+          TableDataSource& myDs = dsm.dataSource(itsWorkUnits[tempWorkUnitCount].get_dataset());
           try {
 
             boost::shared_ptr<CalcCore> workingImagerPtr;
@@ -1338,26 +1334,11 @@ void ContinuumWorker::processChannels()
         ASKAPLOG_INFO_STR(logger, "clearing cache");
         clearWorkUnitCache();
         ASKAPLOG_INFO_STR(logger, "done clearing cache");
-
-      } else if (clearcache) {
-        // clear the hypercube caches (with 1 channel tiles we won't use it again)
-        static int count = 0;
-        for (string fileName : itsCachedFiles) {
-            ROTiledStManAccessor tsm(Table(fileName),colName,True);
-            ASKAPLOG_INFO_STR(logger, "Clearing Table cache for " <<colName<< " column");
-            tsm.clearCaches();
-            // Not sure we should clear the FLAG cache everytime, flags are normally stored in tile with 8 channels
-            if (count == 16) {
-                ROTiledStManAccessor tsm2(Table(fileName),"FLAG",True);
-                ASKAPLOG_INFO_STR(logger, "Clearing Table cache for FLAG column");
-                tsm2.clearCaches();
-            }
-        }
-        itsCachedFiles.clear();
-        if (++count > 16) {
-            count = 0;
-        }
-      }
+      } 
+      // force cache clearing here (although it would be done automatically at the end of the method) to match the
+      // code behaviour prior to refactoring. Also do it outside if(usetmpfs) "else" section. It will be no operation
+      // if usetmpfs is true
+      dsm.reset();
 
       itsStats.logSummary();
 

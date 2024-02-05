@@ -52,8 +52,10 @@ namespace synthesis {
 /// @brief constructor
 /// @param[in] dataColumn the name of the data column in the measurement set to use
 /// @param[in] clearCache if true, reset or destructor will perform cache cleanup for all previously opened files
-DataSourceManager::DataSourceManager(const std::string &dataColumn, bool clearCache) : itsDataColumn(dataColumn),
-   itsClearCache(clearCache) {}
+/// @param[in] uvwMachineCacheSize the size of the uvw machine cache for newly created data sources
+/// @param[in] uvwMachineCacheTolerance directional tolerance in radians for the uvw machine cache of data sources
+DataSourceManager::DataSourceManager(const std::string &dataColumn, bool clearCache, size_t uvwMachineCacheSize, double uvwMachineCacheTolerance) : itsDataColumn(dataColumn),
+   itsClearCache(clearCache), itsUVWMachineCacheSize(uvwMachineCacheSize), itsUVWMachineCacheTolerance(uvwMachineCacheTolerance) {}
 
 /// @brief destructor
 DataSourceManager::~DataSourceManager()
@@ -96,7 +98,8 @@ void DataSourceManager::reset()
 /// @brief get datasource for the given file name
 /// @details It is created on demand. The existing object is returned if the file name is the same. If the requested 
 /// file name is different, the old data source object is destroyed. Note however, that if the cleanup action is
-/// enabled it is not called until explicit reset or destructor call.
+/// enabled it is not called until explicit reset or destructor call. The size of uvw machine cache and the corresponding tolerance
+/// set in the constructor are passed to each new data source object.
 /// @param[in] name file name of the measurement set to use
 /// @return reference to the data source object
 /// @note Technically, const data source would be sufficient for our use. But there is some technical debt in the code
@@ -109,6 +112,7 @@ accessors::TableDataSource& DataSourceManager::dataSource(const std::string &nam
    }
    itsCachedFileName = name;
    itsDataSource.reset(new accessors::TableDataSource(name, accessors::TableDataSource::MEMORY_BUFFERS, itsDataColumn));
+   itsDataSource->configureUVWMachineCache(itsUVWMachineCacheSize, itsUVWMachineCacheTolerance);
    if (itsClearCache) {
        itsFilesForCleanup.insert(name);
    }
