@@ -70,6 +70,7 @@ DataSourceManager::~DataSourceManager()
 void DataSourceManager::forceNewDataSourceNextTime()
 {
    itsDataSource.reset();
+   itsCachedFileName.clear();
 }
 
 /// @brief revert to the state immediately after construction
@@ -79,7 +80,7 @@ void DataSourceManager::forceNewDataSourceNextTime()
 void DataSourceManager::reset()
 {
    // this will call the normal destructor of the data source if it has been previously created
-   itsDataSource.reset();
+   forceNewDataSourceNextTime();
 
    // MV: this code was moved pretty much as it was from ContinuumWorker during refactoring. I am not sure why we need
    // to do this cleanup in the first place (i.e. it should've been done by destructors of the appropriate classes). If 
