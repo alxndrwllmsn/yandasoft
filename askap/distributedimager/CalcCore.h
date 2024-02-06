@@ -43,7 +43,7 @@
 
 #include <casacore/casa/Quanta/Quantum.h>
 #include <casacore/casa/Arrays/Vector.h>
-#include <askap/dataaccess/TableDataSource.h>
+#include <askap/dataaccess/IDataSource.h>
 #include <askap/dataaccess/SharedIter.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
 
@@ -65,12 +65,12 @@ namespace cp {
         /// @brief Constructor
         CalcCore(LOFAR::ParameterSet& parset,
                    askap::askapparallel::AskapParallel& comms,
-                   accessors::TableDataSource ds, int localChannel=1, double frequency=0);
+                   accessors::IDataSource& ds, int localChannel=1, double frequency=0);
 
         /// @brief Constructor that maintains the gridder
         CalcCore(LOFAR::ParameterSet& parset,
                 askap::askapparallel::AskapParallel& comms,
-                accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
+                accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
                  int localChannel=1, double frequency=0);
 
         /// @brief Calc the normal equations
@@ -156,7 +156,7 @@ namespace cp {
         bool itsRestore;
 
         /// @brief data source to work with (essentially a measurement set)
-        accessors::TableDataSource itsDataSource;
+        accessors::IDataSource& itsDataSource;
 
         /// @brief shared pointer to the gridder prototype
         /// @details WARNING this is cloned by the Equation - so you get little from specifying it
