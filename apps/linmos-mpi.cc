@@ -67,6 +67,7 @@ using ImageBlcTrcMapT =  std::map<std::string,std::pair<casacore::IPosition,casa
 void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& outImgName,
                  const int nchanCube, ImageBlcTrcMapT& boundingBoxMap)
 {
+  ASKAPLOG_INFO_STR(logger,"calculateBlcTrc() invoked"); 
   ASKAPCHECK(outMask.ndim() == 4, "outMask shape is no 4");
   ASKAPCHECK(outMask.shape()[2] == 1, "outMask shape(2) is not 1");
   ASKAPCHECK(outMask.shape()[3] == 1, "outMask shape(3) is not 1");
@@ -77,6 +78,7 @@ void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& ou
   int xMax = -1;
   int yMin = -1;
   int yMax = -1;
+  bool globalFirstTime = true;
 
   #pragma omp parallel
   {
@@ -85,13 +87,16 @@ void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& ou
     int xMaxLocal = -1;
     int yMinLocal = -1;
     int yMaxLocal = -1;
+    bool localFirstTime = true;
 
     #pragma omp for
     for(int y = 0; y < ny; ++y) {
       for(int x = 0; x < nx; ++x) {
         if (outMask(casacore::IPosition(4,x,y,0,0)) == casa::True ) {
-          if ( xMinLocal == -1 && xMaxLocal == -1 && yMinLocal == -1 && yMaxLocal == -1 ) {
+          //if ( xMinLocal == -1 && xMaxLocal == -1 && yMinLocal == -1 && yMaxLocal == -1 ) {
+          if ( localFirstTime ) {
             // first time
+            localFirstTime = false;
             xMinLocal = x; xMaxLocal = x;
             yMinLocal = y; yMaxLocal = y;
           } else {
@@ -104,9 +109,15 @@ void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& ou
       }
     } // for
     #pragma omp critical
-    {
-      if ( xMin == -1 && xMax == -1 && yMin == -1 && yMax == -1 ) {
+    { 
+      //ASKAPLOG_INFO_STR(logger,"xMin = " << xMin << ", yMin = " << yMin <<
+      //                         ", xMax = " << xMax << ", yMax = " << yMax);
+      bool dontcare = (xMinLocal == -1 || yMinLocal == -1 || xMaxLocal == -1 || yMaxLocal == -1);
+      //if ( xMin == -1 && xMax == -1 && yMin == -1 && yMax == -1 ) {
+      if ( !dontcare ) {
+      if ( globalFirstTime ) {
         // first thread
+        globalFirstTime = false;
         xMin = xMinLocal; xMax = xMaxLocal;
         yMin = yMinLocal; yMax = yMaxLocal;
       } else {
@@ -115,9 +126,12 @@ void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& ou
         if ( yMinLocal < yMin ) yMin = yMinLocal;
         if ( yMaxLocal > yMax ) yMax = yMaxLocal;
       }
+      }
     } // critical
   } // parallel
 
+      ASKAPLOG_INFO_STR(logger,"xMin = " << xMin << ", yMin = " << yMin <<
+                               ", xMax = " << xMax << ", yMax = " << yMax);
   auto boundingBoxMapIter = boundingBoxMap.find(outImgName);
   if ( boundingBoxMapIter != boundingBoxMap.end() ) {
     casacore::IPosition prevBlc = boundingBoxMapIter->second.first;
@@ -135,9 +149,10 @@ void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& ou
   p.second = trc;
 
   boundingBoxMap[outImgName] = p;
-  ASKAPLOG_DEBUG_STR(logger,"trimmed outImgName: " << outImgName
+  ASKAPLOG_INFO_STR(logger,"trimmed outImgName: " << outImgName
                         << ", blc: " << blc
                         << ", trc: " << trc);
+
 }
 
 /// @brief - distributes the content of what is it the map (boundingBoxPerOutput) from the master to the workers
@@ -154,6 +169,7 @@ void distributeBlcTrc(askap::askapparallel::AskapParallel &comms, ImageBlcTrcMap
   int blcArr[4];
   int trcArr[4];
   if ( comms.isMaster() ) {
+    std::cout << "distributeBlcTrc master" << std::endl;
     // send the map size
     mapSize = boundingBoxPerOutput.size();
     for (int r = 1; r < nProc; r++) {
@@ -214,7 +230,7 @@ void distributeBlcTrc(askap::askapparallel::AskapParallel &comms, ImageBlcTrcMap
       p.first = blc;
       p.second = trc;
       std::string n(outImgName,nameLen);
-      ASKAPLOG_DEBUG_STR(logger,"rank: " << comms.rank() << ", outImgName: "
+      ASKAPLOG_INFO_STR(logger,"rank: " << comms.rank() << ", outImgName: "
                          << n << ", blc: " << blc << ", trc: " << trc);
       boundingBoxPerOutput.insert(std::make_pair(n,p));
 
@@ -288,6 +304,7 @@ static void getTrimmedShapeAndCoord(const accessors::IImageAccess<casacore::Floa
   casa::IPosition trimmedShape = blcTrcPair.second - blcTrcPair.first + 1;
   trimmedShape[3] = 1;
   inShapeVec.push_back(trimmedShape);
+
 }
 
 /// @brief - linmos imaging main function.
@@ -308,12 +325,14 @@ static void getTrimmedShapeAndCoord(const accessors::IImageAccess<casacore::Floa
 ///            the input and output bounding boxes. if false, it does the imaging using the
 ///            boundingBoxMap and inputBlcTrcMap provided.
 /// @param[in] trimming - whether the function does the trimming or not.
-/// @param[in/out] inputBlcTrcMap - input bounding box. If indSmallestBoundingBox is set, the
+/// @param[in/out] inputBlcTrcMap - input bounding box. If findSmallestBoundingBox is set, the
 ///                master updates/fills it with the new values. Otherwise, it is utilised by the
 ///                function to set the size of the input image.
 static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::AskapParallel &comms,
                      ImageBlcTrcMapT& boundingBoxMap, bool findSmallestBoundingBox, const bool trimming,
                      ImageBlcTrcMapT& inputBlcTrcMap) {
+
+  static CoordinateSystem staticCoord;
 
   std::string trimmingType = parset.getString("trimming.type","conservative");
   if ( comms.isMaster() ) {
@@ -602,9 +621,13 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       //            on the trimming bounding box (see the code below). In case 2, The inTrimmedShapeVec
       //            and inTrimmedCoordSysVec store the trimmed shape and coord system.
       //
+      //if ( !trimming || findSmallestBoundingBox ) {
+      //  accumulator.setOutputParameters(inShapeVec, inCoordSysVec);
+      //  staticCoord = accumulator.outCoordSys();
+      //}
       accumulator.setOutputParameters(inShapeVec, inCoordSysVec);
 
-      if ( trimming && !findSmallestBoundingBox && trimmingType == "aggressive" ) {
+      if ( trimming && !findSmallestBoundingBox  && trimmingType == "aggressive" ) {
         // calculate the reference pixel for aggressive trimming type
         const auto boundingBoxIter = boundingBoxMap.find(outImgName);
         ASKAPCHECK(boundingBoxIter != boundingBoxMap.end(),"output image (" << outImgName << ") is not in imageBlcTrcMap");
@@ -797,12 +820,14 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
             if ( trimmingType == "aggressive" ) {
                 accumulator.setInputParameters(inTrimmedShapeVec[img], inTrimmedCoordSysVec[img], img);
             } else {
-                accumulator.setInputParameters(trimmedShape, inCoordSysVec[img], img);
+                accumulator.setInputParameters(inShapeVec[img],inCoordSysVec[img], img);
             }
           } else {
             // untrimmed case
             accumulator.setInputParameters(inShapeVec[img], inCoordSysVec[img], img);
           }
+
+          ASKAPLOG_INFO_STR(logger, "input Shape: " << accumulator.inShape());
 
           Array<float> inPix = iacc.read(inImgName,blc,trc);
 
@@ -1024,7 +1049,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           accumulator.loadAndWeightInputBuffers(curpos, inPix, inWgtPix, inSenPix);
 
           if ( trimming && findSmallestBoundingBox ) {
-            for (vector<string>::iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
+            //for (vector<string>::iterator it = inImgNames.begin(); it != inImgNames.end(); ++it) {
               // new function in accumulator that uses the itsWgtBuffer to determin x,y min and max
               // get the smallest and largest x, y of channel 0 in this image
               int xMin, xMax, yMin, yMax;
@@ -1036,8 +1061,11 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
               p.first = blc;
               p.second = trc;
               auto trimmedShape = trc-blc+1;
-              inputBlcTrcMap.insert(std::make_pair(*it,p));
-            }
+              //inputBlcTrcMap.insert(std::make_pair(*it,p));
+              inputBlcTrcMap.insert(std::make_pair(inImgNames[img],p));
+              //ASKAPLOG_INFO_STR(logger,"Bounding box for image: " << *it << " -> blc = " << blc << ", trc = " << trc << ". trimmedShape = " << trimmedShape);
+              ASKAPLOG_INFO_STR(logger,"Bounding box for image: " << inImgNames[img] << " -> blc = " << blc << ", trc = " << trc << ". trimmedShape = " << trimmedShape);
+            //}
           }
 
           if ( regridRequired ) {
@@ -1082,14 +1110,17 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
       float wgtCutoff = itsCutoff * itsCutoff * maxVal;
 
+      bool testFlag = false;
       for(size_t i=0;i<outMask.size();i++){
           if (outWgtPix.data()[i] >= wgtCutoff) {
               outMask.data()[i] = casa::True;
+              testFlag =  true;
           } else {
               outMask.data()[i] = casa::False;
               setNaN(outWgtPix.data()[i]);
           }
       }
+      ASKAPLOG_INFO_STR(logger,"testFlag = " << testFlag);
 
       if ( findSmallestBoundingBox ) {
         // Find the smallest bounding box for the weight image/pixel for this output image
