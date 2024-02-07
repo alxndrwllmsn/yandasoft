@@ -69,47 +69,81 @@ using namespace casa;
 using namespace std;
 using namespace cp;
 
-MSSplitter::MSSplitter(LOFAR::ParameterSet& Parset)
+/// @brief Constructor - setup tiling parameters and bucket size of the output MS
+/// @param[in] bucketSize bucket size for the output measurement set
+/// @param[in] tileNCorr number of correlations in the tile for the output measurement set
+/// @param[in] tileNChan number of channels in the tile for the output measurement set
+MSSplitter::MSSplitter(casacore::uInt bucketSize, casacore::uInt tileNCorr, casacore::uInt tileNChan)
     : itsTimeBegin(std::numeric_limits<double>::min()),
     itsTimeEnd(std::numeric_limits<double>::max()),
-    itsParset(Parset)
+    itsBucketSize(bucketSize), itsTileNCorr(tileNCorr), itsTileNChan(tileNChan) {}
+
+/// @brief set beam selection
+/// @details By default, all beams are passed. This method can be used to narrow down the selection.
+/// @param[in] beams set of beams to select
+void MSSplitter::chooseBeams(const std::set<uint32_t>& beams)
 {
+   itsBeams = beams;
+}
 
-    // Read beam selection parameters
-    if (itsParset.isDefined("beams")) {
-        const vector<uint32_t> v = itsParset.getUint32Vector("beams", true);
-        itsBeams.insert(v.begin(), v.end());
-        ASKAPLOG_DEBUG_STR(logger, "Including ONLY beams: " << v);
-    }
+/// @brief set scan selection
+/// @details By default, all scans are passed. This method can be used to narrow down the selection.
+/// @param[in] scans set of scans to select
+void MSSplitter::chooseScans(const std::set<uint32_t>& scans)
+{
+   itsScans = scans;
+}
 
-    // Read scan id selection parameters
-    if (itsParset.isDefined("scans")) {
-        const vector<uint32_t> v = itsParset.getUint32Vector("scans", true);
-        itsScans.insert(v.begin(), v.end());
-        ASKAPLOG_DEBUG_STR(logger, "Including ONLY scan numbers: " << v);
-    }
+/// @brief configure class from the parset
+/// @deails This is the legacy interface configuring the class from the parset. It is not expected to be
+/// used long term. All usage of the parset is confined to this method.
+/// @param[in] parset configuration parameters
+void MSSplitter::configure(const LOFAR::ParameterSet& parset)
+{
+   // tiling parameters for the output MS
+   itsBucketSize = parset.getUint32("stman.bucketsize", 64 * 1024);
+   itsTileNCorr = parset.getUint32("stman.tilencorr", 4);
+   itsTileNChan = parset.getUint32("stman.tilenchan", 1);
 
-    // Read field name selection parameters
-    //if (itsParset.isDefined("fieldnames")) {
-    //    const vector<string> names = itsParset.getStringVector("fieldnames", true);
-    //    ASKAPLOG_DEBUG_STR(logger, "Including ONLY fields with names: " << names);
-    //    const vector<uint32_t> v = configureFieldNameFilter(names,invis);
-    //    itsFieldIds.insert(v.begin(), v.end());
-    //    ASKAPLOG_DEBUG_STR(logger, "  fields: " << v);
-    //}
+   // Read beam selection parameters
+   if (parset.isDefined("beams")) {
+       const std::vector<uint32_t> v = parset.getUint32Vector("beams", true);
+       itsBeams.clear();
+       itsBeams.insert(v.begin(), v.end());
+       ASKAPLOG_DEBUG_STR(logger, "Including ONLY beams: " << v);
+   }
 
+   // Read scan id selection parameters
+   if (parset.isDefined("scans")) {
+       const vector<uint32_t> v = parset.getUint32Vector("scans", true);
+       itsScans.clear();
+       itsScans.insert(v.begin(), v.end());
+       ASKAPLOG_DEBUG_STR(logger, "Including ONLY scan numbers: " << v);
+   }
 
+   // MV - I am not sure why this was commented out. But leave as is.
+   // Read field name selection parameters
+   //if (parset.isDefined("fieldnames")) {
+   //    const vector<string> names = parset.getStringVector("fieldnames", true);
+   //    ASKAPLOG_DEBUG_STR(logger, "Including ONLY fields with names: " << names);
+   //    const vector<uint32_t> v = configureFieldNameFilter(names,invis);
+   //    itsFieldIds.clear();
+   //    itsFieldIds.insert(v.begin(), v.end());
+   //    ASKAPLOG_DEBUG_STR(logger, "  fields: " << v);
+   //}
+
+   // MV - we can add time selection here, although the long term plan is not to rely on this method
+   // and carry parameters explicitly.
 }
 
 boost::shared_ptr<casacore::MeasurementSet> MSSplitter::create(
-    const std::string& filename, const casacore::Bool addSigmaSpec,
-    casacore::uInt bucketSize, casacore::uInt tileNcorr, casacore::uInt tileNchan)
+    const std::string& filename, const casacore::Bool addSigmaSpec)
 {
-    if (bucketSize < 8192) bucketSize = 8192;
+    const casacore::uInt bucketSize = itsBucketSize < 8192u ? 8192u: itsBucketSize;
 
-    if (tileNcorr < 1) tileNcorr = 1;
+    const casacore::uInt tileNcorr = itsTileNCorr < 1u ? 1u : itsTileNCorr;
 
-    if (tileNchan < 1) tileNchan = 1;
+    const casacore::uInt tileNchan = itsTileNChan < 1u ? 1u : itsTileNChan;
 
     ASKAPLOG_DEBUG_STR(logger, "Creating dataset " << filename);
 
@@ -729,8 +763,7 @@ void MSSplitter::splitMainTable(const casacore::MeasurementSet& source,
 int MSSplitter::split(const std::string& invis, const std::string& outvis,
                       const uint32_t startChan,
                       const uint32_t endChan,
-                      const uint32_t width,
-                      const LOFAR::ParameterSet& parset)
+                      const uint32_t width)
 {
     ASKAPLOG_DEBUG_STR(logger,  "Splitting out channel range " << startChan << " to "
                           << endChan << " (inclusive)");
@@ -773,12 +806,7 @@ int MSSplitter::split(const std::string& invis, const std::string& outvis,
         addSigmaSpec = true;
     }
 
-    const casacore::uInt bucketSize = parset.getUint32("stman.bucketsize", 64 * 1024);
-    const casacore::uInt tileNcorr = parset.getUint32("stman.tilencorr", 4);
-    const casacore::uInt tileNchan = parset.getUint32("stman.tilenchan", 1);
-
-    boost::shared_ptr<casacore::MeasurementSet>
-        out(create(outvis, addSigmaSpec, bucketSize, tileNcorr, tileNchan));
+    boost::shared_ptr<casacore::MeasurementSet> out(create(outvis, addSigmaSpec));
 
     // Copy ANTENNA
     ASKAPLOG_DEBUG_STR(logger,  "Copying ANTENNA table");
@@ -822,6 +850,9 @@ int MSSplitter::split(const std::string& invis, const std::string& outvis,
     return 0;
 }
 
+/*
+// MV - unused
+
 void MSSplitter::configureTimeFilter(const std::string& key, const std::string& msg,
                                  double& var)
 {
@@ -837,6 +868,8 @@ void MSSplitter::configureTimeFilter(const std::string& key, const std::string& 
     ASKAPLOG_DEBUG_STR(logger, msg << ts << " (" << var << " sec)");
 
 }
+
+
 
 std::vector<uint32_t> MSSplitter::configureFieldNameFilter(
                           const std::vector<std::string>& names,
@@ -871,3 +904,6 @@ std::vector<uint32_t> MSSplitter::configureFieldNameFilter(
     }
     return fieldIds;
 }
+
+*/
+

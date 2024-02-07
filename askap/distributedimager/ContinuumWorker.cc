@@ -415,9 +415,10 @@ void ContinuumWorker::cacheWorkUnit(ContinuumWorkUnit& wu)
       ofstream trigger;
       trigger.open(outms_flag.c_str());
       trigger.close();
-      MSSplitter mySplitter(itsParset);
+      MSSplitter mySplitter;
+      mySplitter.configure(itsParset);
 
-      mySplitter.split(wu.get_dataset(), outms, wu.get_localChannel() + 1, wu.get_localChannel() + 1, 1, itsParset);
+      mySplitter.split(wu.get_dataset(), outms, wu.get_localChannel() + 1, wu.get_localChannel() + 1, 1);
       unlink(outms_flag.c_str());
       itsCachedFiles.push_back(outms);
 
