@@ -58,8 +58,13 @@ class MSSplitter {
         explicit MSSplitter(casacore::uInt bucketSize = 65536u, casacore::uInt tileNCorr = 4u, 
                             casacore::uInt tileNChan = 1u);
 
-        /// Entry point method
-        int split(const std::string& invis, const std::string& outvis,
+        /// @brief Entry point method
+        /// @param[in] invis input measurement set name
+        /// @param[in] outvis the name of the measurement set to write
+        /// @param[in] startChan start channel to extract from the input MS
+        /// @param[in] endChan end channel to extract from the input MS
+        /// @param[in] width number of consecutive channels to average
+        void split(const std::string& invis, const std::string& outvis,
               const uint32_t startChan,
               const uint32_t endChan,
               const uint32_t width);

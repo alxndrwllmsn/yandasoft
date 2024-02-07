@@ -760,7 +760,13 @@ void MSSplitter::splitMainTable(const casacore::MeasurementSet& source,
     }
 }
 
-int MSSplitter::split(const std::string& invis, const std::string& outvis,
+/// @brief Entry point method
+/// @param[in] invis input measurement set name
+/// @param[in] outvis the name of the measurement set to write
+/// @param[in] startChan start channel to extract from the input MS
+/// @param[in] endChan end channel to extract from the input MS
+/// @param[in] width number of consecutive channels to average
+void MSSplitter::split(const std::string& invis, const std::string& outvis,
                       const uint32_t startChan,
                       const uint32_t endChan,
                       const uint32_t width)
@@ -778,8 +784,7 @@ int MSSplitter::split(const std::string& invis, const std::string& outvis,
     const uInt nChanIn = endChan - startChan + 1;
 
     if ((width < 1) || (nChanIn % width != 0)) {
-        ASKAPLOG_ERROR_STR(logger, "Width must equally divide the channel range");
-        return 1;
+        ASKAPTHROW(AskapError, "Width must equally divide the channel range");
     }
 
     // Open the input measurement set
@@ -788,16 +793,13 @@ int MSSplitter::split(const std::string& invis, const std::string& outvis,
     // Verify split parameters that require input MS info
     const casacore::uInt totChanIn = ROScalarColumn<casacore::Int>(in.spectralWindow(),"NUM_CHAN")(0);
     if ((startChan<1) || (endChan > totChanIn)) {
-        ASKAPLOG_ERROR_STR(logger,
-            "Input channel range is inconsistent with input spectra: ["<<
+        ASKAPTHROW(AskapError, "Input channel range is inconsistent with input spectra: ["<<
             startChan<<","<<endChan<<"] is outside [1,"<<totChanIn<<"]");
-        return 1;
     }
 
     // Create the output measurement set
     if (casacore::File(outvis).exists()) {
-        ASKAPLOG_ERROR_STR(logger, "File or table " << outvis << " already exists!");
-        return 1;
+        ASKAPTHROW(AskapError, "File or table " << outvis << " already exists!");
     }
 
     // Add a sigma spectrum to the output measurement set?
@@ -846,8 +848,6 @@ int MSSplitter::split(const std::string& invis, const std::string& outvis,
     // Split main table
     ASKAPLOG_DEBUG_STR(logger,  "Splitting main table");
     splitMainTable(in, *out, startChan, endChan, width);
-
-    return 0;
 }
 
 /*
