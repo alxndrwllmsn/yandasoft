@@ -8,6 +8,7 @@ CubeComms.cc
 MSSplitter.cc
 WorkUnitContainer.cc
 DataSourceManager.cc
+WorkUnitCache.cc
 )
 
 install (FILES
@@ -23,5 +24,6 @@ CubeManager.h
 MSSplitter.h
 WorkUnitContainer.h
 DataSourceManager.h
+WorkUnitCache.h
 DESTINATION include/askap/distributedimager
 )
