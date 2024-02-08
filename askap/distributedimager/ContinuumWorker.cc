@@ -58,15 +58,7 @@
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/distributedimager/DataSourceManager.h>
-/*
-#include <askap/dataaccess/IConstDataSource.h>
-#include <askap/dataaccess/TableConstDataSource.h>
-#include <askap/dataaccess/IConstDataIterator.h>
-#include <askap/dataaccess/IDataConverter.h>
-#include <askap/dataaccess/IDataSelector.h>
-#include <askap/dataaccess/IDataIterator.h>
-#include <askap/dataaccess/SharedIter.h>
-*/
+#include <askap/distributedimager/WorkUnitCache.h>
 #include <askap/scimath/utils/PolConverter.h>
 #include <Common/ParameterSet.h>
 #include <Common/Exceptions.h>
@@ -802,6 +794,9 @@ void ContinuumWorker::processChannels()
   // this matches the behaviour of the code prior to refactoring
   DataSourceManager dsm(colName, !usetmpfs && clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance);
 
+  WorkUnitCache wuCache(usetmpfs, itsParset.getString("tmpfs", "/dev/shm"), itsComms, itsParset.getUint32("stman.bucketsize", 65536u),
+                        itsParset.getUint32("stman.tilencorr", 4u), itsParset.getUint32("stman.tilenchan", 1u));
+
 
   // the itsWorkUnits may include different epochs (for the same channel)
   // the order is strictly by channel - with multiple work units per channel.
@@ -854,26 +849,25 @@ void ContinuumWorker::processChannels()
         initialChannelWorkUnit = workUnitCount+1;
       }
 
-      double frequency=itsWorkUnits[workUnitCount].get_channelFrequency();
-
-      int localChannel = 0;
-      if (usetmpfs) {
-        // probably in spectral line mode
-        // copy the caching here ...
-        cacheWorkUnit(itsWorkUnits[workUnitCount]);
-        dsm.forceNewDataSourceNextTime();
-      } else {
-        localChannel = itsWorkUnits[workUnitCount].get_localChannel();
+      // wuCache would do caching (if configured) and substitute details in the work unit structure, i.e.
+      // the reference returned may not match the element of itsWorkUnits
+      const cp::ContinuumWorkUnit& currentWorkUnit = wuCache(itsWorkUnits[workUnitCount]);
+      if (wuCache.cacheEnabled()) {
+          dsm.forceNewDataSourceNextTime();
       }
 
-      double globalFrequency = itsWorkUnits[workUnitCount].get_channelFrequency();
-      int globalChannel = itsWorkUnits[workUnitCount].get_globalChannel();
+      double frequency=currentWorkUnit.get_channelFrequency();
 
-      TableDataSource& ds = dsm.dataSource(itsWorkUnits[workUnitCount].get_dataset());
+      int localChannel = currentWorkUnit.get_localChannel();
+      
+      double globalFrequency = currentWorkUnit.get_channelFrequency();
+      int globalChannel = currentWorkUnit.get_globalChannel();
+
+      TableDataSource& ds = dsm.dataSource(currentWorkUnit.get_dataset());
 
       /// Need to set up the rootImager here
       if (updateDir) {
-            itsAdvisor->updateDirectionFromWorkUnit(itsWorkUnits[workUnitCount]);
+            itsAdvisor->updateDirectionFromWorkUnit(currentWorkUnit);
             // change gridder for initial calcNE in updateDir mode
             LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
             tmpParset.replace("gridder","SphFunc");
@@ -1012,7 +1006,11 @@ void ContinuumWorker::processChannels()
           /// assuming subsequent workunits are the same channel but either different
           /// epochs or look directions.
 
-          if (frequency != itsWorkUnits[tempWorkUnitCount].get_channelFrequency()) {
+          // wuCache would do caching (if configured) and substitute details in the work unit structure, i.e.
+          // the reference returned may not match the element of itsWorkUnits
+          const cp::ContinuumWorkUnit& tempWorkUnit = wuCache(itsWorkUnits[tempWorkUnitCount]);
+
+          if (frequency != tempWorkUnit.get_channelFrequency()) {
             if (itsLocalSolver) { // the frequencies should be the same.
               // THis is probably the normal spectral line or continuum cube mode.
               // each workunit is a different frequency
@@ -1021,23 +1019,20 @@ void ContinuumWorker::processChannels()
             }
           }
 
-          if (usetmpfs) {
-            // probably in spectral line mode
-            cacheWorkUnit(itsWorkUnits[tempWorkUnitCount]);
-            dsm.forceNewDataSourceNextTime();
-            localChannel = 0;
-          } else {
-            localChannel = itsWorkUnits[tempWorkUnitCount].get_localChannel();
+          if (wuCache.cacheEnabled()) {
+              dsm.forceNewDataSourceNextTime();
           }
 
-          globalFrequency = itsWorkUnits[tempWorkUnitCount].get_channelFrequency();
-          TableDataSource& myDs = dsm.dataSource(itsWorkUnits[tempWorkUnitCount].get_dataset());
+          localChannel = tempWorkUnit.get_localChannel();
+
+          globalFrequency = tempWorkUnit.get_channelFrequency();
+          TableDataSource& myDs = dsm.dataSource(tempWorkUnit.get_dataset());
           try {
 
             boost::shared_ptr<CalcCore> workingImagerPtr;
 
             if (updateDir) {
-              itsAdvisor->updateDirectionFromWorkUnit(itsWorkUnits[tempWorkUnitCount]);
+              itsAdvisor->updateDirectionFromWorkUnit(tempWorkUnit);
               // in updateDir mode I cannot cache the gridders as they have a tangent point.
               // FIXED: by just having 2 possible working imagers depending on the mode. ... easy really
 
@@ -1127,7 +1122,7 @@ void ContinuumWorker::processChannels()
             std::cerr << "Askap error in: " << e.what() << std::endl;
           }
 
-          if (frequency == itsWorkUnits[tempWorkUnitCount].get_channelFrequency()) {
+          if (frequency == tempWorkUnit.get_channelFrequency()) {
             tempWorkUnitCount++;
             // NOTE: here we increment the workunit count.
             // but the frequency is the same so this is just combining epochs or beams.
@@ -1142,7 +1137,7 @@ void ContinuumWorker::processChannels()
             }
             else {
               // update the frequency
-              frequency = itsWorkUnits[tempWorkUnitCount].get_channelFrequency();
+              frequency = tempWorkUnit.get_channelFrequency();
               // we are now in the next channel
               // NOTE: we also need to increment the tempWorkUnitCount.
               tempWorkUnitCount++;
@@ -1333,6 +1328,10 @@ void ContinuumWorker::processChannels()
         rootImager.restoreImage();
       }
 
+      // force clearing the cached MS here, although it would have happened naturally when the object goes out of scope
+      wuCache.reset();
+
+      // the following to be removed, leave it for now because continuum case needs to be checked
       if (usetmpfs) {
         ASKAPLOG_INFO_STR(logger, "clearing cache");
         clearWorkUnitCache();

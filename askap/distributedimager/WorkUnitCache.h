@@ -85,6 +85,12 @@ public:
    /// @param[in] wu const reference to a work unit to process
    /// @return const reference to either given work unit or the cached one
    const cp::ContinuumWorkUnit& operator()(const cp::ContinuumWorkUnit &wu);
+
+   /// @brief check if caching is enabled
+   /// @details This is largely used for cross-check of compatibility with other modes. In general, caching is hidden from
+   /// the end user.
+   /// @return true if caching is enabled, false otherwise
+   inline bool cacheEnabled() const { return itsCacheEnabled; }
    
 private:
    /// @brief take the appropriate slice from the measurement set and setup caching

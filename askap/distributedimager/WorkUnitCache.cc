@@ -179,7 +179,8 @@ void WorkUnitCache::cacheWorkUnit()
        ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
    }
    itsCachedWorkUnit.set_dataset(outms);
-  
+   // MV: the original code prior to refactoring didn't set the local channel in the cached work unit. This happened in the logic at the higher level. Setting it here simplifies the logic.
+   itsCachedWorkUnit.set_localChannel(0);
 }
 
 } // namespace synthesis
