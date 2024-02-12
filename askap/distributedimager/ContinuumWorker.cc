@@ -415,19 +415,18 @@ void ContinuumWorker::cacheWorkUnit(ContinuumWorkUnit& wu)
       itsCachedFiles.push_back(outms);
 
     }
-    ///wait for all groups this rank to get here
-    if (itsComms.nGroups() > 1) {
-      ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
-      itsComms.barrier(itsComms.interGroupCommIndex());
-      ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
-    }
-    wu.set_dataset(outms);
-
   }
   else {
     ASKAPLOG_WARN_STR(logger,"Cache MS requested but not done");
   }
-
+  ///wait for all groups this rank to get here
+  if (itsComms.nGroups() > 1) {
+     ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+     //itsComms.barrier(itsComms.interGroupCommIndex());
+     itsComms.barrier(itsComms.theWorkers());
+     ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+  }
+  wu.set_dataset(outms);
 
 }
 void ContinuumWorker::compressWorkUnits() {
