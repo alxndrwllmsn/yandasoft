@@ -301,75 +301,25 @@ CubeBuilder<T>::CubeBuilder(const LOFAR::ParameterSet& parset,
     itsFilename = makeImageName(parset, name);
     itsCube = accessors::imageAccessFactory(parset);
 
-    const std::string restFreqString = parset.getString("Images.restFrequency", "-1.");
-    if (restFreqString == "HI") {
-#ifdef HAVE_CASACORE3
-        itsRestFrequency = casacore::QC::HI();
-#else
-        itsRestFrequency = casacore::QC::HI;
-#endif // HAVE_CASACORE3
-    } else {
-        itsRestFrequency = SynthesisParamsHelper::convertQuantity(restFreqString, "Hz");
-    }
+    setupCube(parset, nchan, f0, inc, uvcoord);
+}
 
-    // Polarisation
-    const std::vector<std::string>
-        stokesVec = parset.getStringVector("Images.polarisation", std::vector<std::string>(1,"I"));
-    // there could be many ways to define stokes, e.g. ["XX YY"] or ["XX","YY"] or "XX,YY"
-    // to allow some flexibility we have to concatenate all elements first and then
-    // allow the parser from PolConverter to take care of extracting the products.
-    std::string stokesStr;
-    for (size_t i=0; i<stokesVec.size(); ++i) {
-        stokesStr += stokesVec[i];
-    }
-    itsStokes = scimath::PolConverter::fromString(stokesStr);
-    const casacore::uInt npol=itsStokes.size();
+template <class T>
+CubeBuilder<T>::CubeBuilder(askapparallel::AskapParallel& comm,
+                         size_t comm_index,
+                         const LOFAR::ParameterSet& parset,
+                         const casacore::uInt nchan,
+                         const casacore::Quantity& f0,
+                         const casacore::Quantity& inc,
+                         const std::string& name,
+                         const bool uvcoord)
+{
+    ASKAPLOG_INFO_STR(CubeBuilderLogger, "Instantiating Cube Builder by creating cube");
+    itsFilename = makeImageName(parset, name);
 
-    // Check whether image param is stored at a lower resolution
-    if (parset.isDefined("Images.extraoversampling")) {
-        itsExtraOversamplingFactor = parset.getFloat("Images.extraoversampling");
-        // The parameter should only be defined if has a legitimate value (is set by the code). Check anyway.
-        ASKAPDEBUGASSERT(*itsExtraOversamplingFactor > 1.);
-        ASKAPLOG_INFO_STR(CubeBuilderLogger, "Using extraoversampling " << *itsExtraOversamplingFactor);
-    }
+    itsCube = accessors::imageAccessFactory(parset, comm, comm_index);
 
-    // Get the image shape
-    const vector<casacore::uInt> imageShapeVector = parset.getUintVector("Images.shape");
-    casacore::uInt nx = imageShapeVector[0];
-    casacore::uInt ny = imageShapeVector[1];
-    if (itsExtraOversamplingFactor) {
-        const casacore::IPosition fullShape =
-            scimath::PaddingUtils::paddedShape(casacore::IPosition(2,nx,ny),*itsExtraOversamplingFactor);
-        nx = fullShape[0];
-        ny = fullShape[1];
-    }
-    const casacore::IPosition cubeShape(4, nx, ny, npol, nchan);
-
-    const casacore::CoordinateSystem csys =
-    (uvcoord ? createUVCoordinateSystem(parset, nx, ny, f0, inc) :
-               createCoordinateSystem(parset, nx, ny, f0, inc));
-
-    ASKAPLOG_INFO_STR(CubeBuilderLogger, "Creating Cube " << itsFilename <<
-                       " with shape [xsize:" << nx << " ysize:" << ny <<
-                       " npol:" << npol << " nchan:" << nchan <<
-                       "], f0: " << f0.getValue("MHz") << " MHz, finc: " <<
-                       inc.getValue("kHz") << " kHz");
-
-    itsCube->create(itsFilename, cubeShape, csys);
-
-    // default flux units are Jy/pixel. If we set the restoring beam
-    // later on, can set to Jy/beam
-    itsCube->setUnits(itsFilename,"Jy/pixel");
-
-    // set the header keywords
-    itsCube->setMetadataKeywords(itsFilename,parset.makeSubset("header."));
-
-    // set the image HISTORY keywords
-    const std::vector<std::string> historyLines = parset.getStringVector("imageHistory",std::vector<std::string> {});
-    itsCube->addHistory(itsFilename,historyLines);
-
-
-    ASKAPLOG_INFO_STR(CubeBuilderLogger, "Instantiated Cube Builder by creating cube " << itsFilename);
+    setupCube(parset, nchan, f0, inc, uvcoord);
 }
 
 template <class T>
@@ -442,6 +392,84 @@ CubeBuilder<T>::CubeBuilder(const LOFAR::ParameterSet& parset,
 template < class T >
 CubeBuilder<T>::~CubeBuilder()
 {
+}
+
+template <class T>
+void CubeBuilder<T>::setupCube(const LOFAR::ParameterSet& parset, 
+                               const casacore::uInt nchan,
+                               const casacore::Quantity& f0,
+                               const casacore::Quantity& inc,
+                               const bool uvcoord) {
+
+    const std::string restFreqString = parset.getString("Images.restFrequency", "-1.");
+    if (restFreqString == "HI") {
+#ifdef HAVE_CASACORE3
+        itsRestFrequency = casacore::QC::HI();
+#else
+        itsRestFrequency = casacore::QC::HI;
+#endif // HAVE_CASACORE3
+    } else {
+        itsRestFrequency = SynthesisParamsHelper::convertQuantity(restFreqString, "Hz");
+    }
+
+    // Polarisation
+    const std::vector<std::string>
+        stokesVec = parset.getStringVector("Images.polarisation", std::vector<std::string>(1,"I"));
+    // there could be many ways to define stokes, e.g. ["XX YY"] or ["XX","YY"] or "XX,YY"
+    // to allow some flexibility we have to concatenate all elements first and then
+    // allow the parser from PolConverter to take care of extracting the products.
+    std::string stokesStr;
+    for (size_t i=0; i<stokesVec.size(); ++i) {
+        stokesStr += stokesVec[i];
+    }
+    itsStokes = scimath::PolConverter::fromString(stokesStr);
+    const casacore::uInt npol=itsStokes.size();
+
+    // Check whether image param is stored at a lower resolution
+    if (parset.isDefined("Images.extraoversampling")) {
+        itsExtraOversamplingFactor = parset.getFloat("Images.extraoversampling");
+        // The parameter should only be defined if has a legitimate value (is set by the code). Check anyway.
+        ASKAPDEBUGASSERT(*itsExtraOversamplingFactor > 1.);
+        ASKAPLOG_INFO_STR(CubeBuilderLogger, "Using extraoversampling " << *itsExtraOversamplingFactor);
+    }
+
+    // Get the image shape
+    const vector<casacore::uInt> imageShapeVector = parset.getUintVector("Images.shape");
+    casacore::uInt nx = imageShapeVector[0];
+    casacore::uInt ny = imageShapeVector[1];
+    if (itsExtraOversamplingFactor) {
+        const casacore::IPosition fullShape =
+            scimath::PaddingUtils::paddedShape(casacore::IPosition(2,nx,ny),*itsExtraOversamplingFactor);
+        nx = fullShape[0];
+        ny = fullShape[1];
+    }
+    const casacore::IPosition cubeShape(4, nx, ny, npol, nchan);
+
+    const casacore::CoordinateSystem csys =
+    (uvcoord ? createUVCoordinateSystem(parset, nx, ny, f0, inc) :
+               createCoordinateSystem(parset, nx, ny, f0, inc));
+
+    ASKAPLOG_INFO_STR(CubeBuilderLogger, "Creating Cube " << itsFilename <<
+                       " with shape [xsize:" << nx << " ysize:" << ny <<
+                       " npol:" << npol << " nchan:" << nchan <<
+                       "], f0: " << f0.getValue("MHz") << " MHz, finc: " <<
+                       inc.getValue("kHz") << " kHz");
+
+    itsCube->create(itsFilename, cubeShape, csys);
+
+    // default flux units are Jy/pixel. If we set the restoring beam
+    // later on, can set to Jy/beam
+    itsCube->setUnits(itsFilename,"Jy/pixel");
+
+    // set the header keywords
+    itsCube->setMetadataKeywords(itsFilename,parset.makeSubset("header."));
+
+    // set the image HISTORY keywords
+    const std::vector<std::string> historyLines = parset.getStringVector("imageHistory",std::vector<std::string> {});
+    itsCube->addHistory(itsFilename,historyLines);
+
+
+    ASKAPLOG_INFO_STR(CubeBuilderLogger, "Instantiated Cube Builder by creating cube " << itsFilename);
 }
 
 template <class T>

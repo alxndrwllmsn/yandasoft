@@ -281,7 +281,7 @@ void ContinuumWorker::run(void)
       // 6*4 - 3*4
       // 3*4 = 12
       // (6 - 3 + 1) * 4
-      if (!itsComms.isSingleSink()) {
+      if (!itsComms.isSingleSink() && (itsGridType != "adios")) {
         ASKAPLOG_INFO_STR(logger, "MultiCube with multiple writers");
         this->nchanCube = (myMaxClient - myMinClient + 1) * nchanpercore;
         this->baseCubeGlobalChannel = (myMinClient - 1) * nchanpercore;
@@ -595,7 +595,7 @@ void ContinuumWorker::processChannels()
     Quantity freqinc(workUnits[0].get_channelWidth(), "Hz");
 
     // add rank based postfix if we're writing to multiple cubes
-    std::string postfix = (itsComms.isSingleSink() ? "" : std::string(".wr.") + utility::toString(itsComms.rank()));
+    std::string postfix = ((itsComms.isSingleSink() || (itsParset.getString("imagetype") == "adios")) ? "" : std::string(".wr.") + utility::toString(itsComms.rank()));
 
     std::string img_name = "image" + postfix;
     std::string psf_name = "psf" + postfix;
@@ -657,6 +657,14 @@ void ContinuumWorker::processChannels()
               itsVisGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, visgrid_name, true));
               itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name, true));
               itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name, true));
+          } else if ((itsGridType == "adios") && (itsParset.getString("imageaccess", "individual") == "collective")) {
+              size_t comm_index = itsComms.theWorkers();
+              itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
+              itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
+              itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));
+              itsVisGridCubeImag.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, visgrid_name+".imag", itsGridCoordUV));
+              itsPCFGridCubeImag.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".imag", itsGridCoordUV));
+              itsPSFGridCubeImag.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, psfgrid_name+".imag", itsGridCoordUV));
           } else {
               itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
               itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));

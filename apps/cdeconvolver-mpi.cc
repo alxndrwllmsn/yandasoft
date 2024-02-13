@@ -134,7 +134,13 @@ class CdeconvolverApp : public askap::Application
         {
             askap::askapparallel::AskapParallel comms(argc, const_cast<const char**>(argv));
             try {
-                return _run(argc, argv, comms);
+                bool result = _run(argc, argv, comms);
+                // Need to destroy the cubes, to force flushing of data
+                itsPsfCube.reset();
+                itsResidualCube.reset();
+                itsModelCube.reset();
+                itsRestoredCube.reset();
+                return result;
             } catch (const std::exception &e) {
                 ASKAPLOG_FATAL_STR(logger, "Unexpected error: " << e.what());
                 comms.abort();
@@ -202,6 +208,9 @@ class CdeconvolverApp : public askap::Application
                     imagePlaneInput = true;
                     ASKAPLOG_INFO_STR(logger,"Assuming (dirty, psf) image FITS input");
                 }
+            } else if (imageType == "adios") {
+                combineRealImag = true;
+                ASKAPLOG_INFO_STR(logger, "Assuming CASA ADIOS2 real+imag uv-grid input");
             } else {
                 ASKAPLOG_INFO_STR(logger,"Trying to work out casa image data type");
                 shared_ptr<casacore::LatticeBase> lattp(casacore::ImageOpener::openImage(visGridCubeNames[0]));
@@ -225,8 +234,12 @@ class CdeconvolverApp : public askap::Application
             casacore::Array<casacore::Complex> visGrid;
 
 
-            boost::shared_ptr<accessors::IImageAccess<casacore::Float> > iaccF =
-                imageAccessFactory(subset);
+            boost::shared_ptr<accessors::IImageAccess<casacore::Float> > iaccF;
+            if (imageType == "adios") {
+                iaccF = imageAccessFactory(subset, comms);
+            } else {
+                iaccF = imageAccessFactory(subset);
+            }
             boost::shared_ptr<accessors::IImageAccess<casacore::Complex> > iaccC;
             // Do we need a complex image accessor?
             if (imageType == "casa" && !imagePlaneInput) {
@@ -296,7 +309,7 @@ class CdeconvolverApp : public askap::Application
             }
 
             // create/open the output cubes
-            if (comms.isMaster()) { // only the master makes the output
+            if (comms.isMaster() && imageType != "adios") { // only the master makes the output
                 if (imageType == "casa" && !imagePlaneInput) {
                     // we have uv-grids with UV coordinates attached
                     // using the parset to get the image parameters
@@ -355,8 +368,40 @@ class CdeconvolverApp : public askap::Application
                 }
                 initialiseBeamList(nChanCube);
                 initialiseWeightsList(nChanCube);
-            }
-            else {
+            } else if (imageType == "adios") {
+                // we have uv-grids with UV coordinates attached
+                // using the parset to get the image parameters
+                Int pixelAxis,worldAxis,coordinate;
+                CoordinateUtil::findSpectralAxis(pixelAxis,worldAxis,coordinate,coordSys);
+                const SpectralCoordinate &sc = coordSys.spectralCoordinate(coordinate);
+                casacore::Double baseFreq, nextFreq, freqInc;
+                casacore::Double pixelVal=0;
+
+                sc.toWorld(baseFreq,pixelVal);
+                sc.toWorld(nextFreq,pixelVal+1);
+
+                freqInc = nextFreq-baseFreq;
+
+                Quantity f0(baseFreq, "Hz");
+                Quantity cdelt(freqInc, "Hz");
+
+                ASKAPLOG_INFO_STR(logger,"Base Freq " << f0);
+                ASKAPLOG_INFO_STR(logger,"Freq inc (CDELT) " << cdelt);
+                if (writePsf) {
+                    itsPsfCube.reset(new askap::cp::CubeBuilder<casacore::Float>(comms, 0, subset, nChanCube, f0, cdelt, "psf.image"));
+                }
+                if (writeResidual) {
+                    itsResidualCube.reset(new askap::cp::CubeBuilder<casacore::Float>(comms, 0, subset, nChanCube, f0, cdelt, "residual"));
+                }
+                if (writeModel) {
+                    itsModelCube.reset(new askap::cp::CubeBuilder<casacore::Float>(comms, 0, subset, nChanCube, f0, cdelt, "image"));
+                }
+                if (writeRestored) {
+                    itsRestoredCube.reset(new askap::cp::CubeBuilder<casacore::Float>(comms, 0, subset, nChanCube, f0, cdelt, "restored"));
+                }
+                initialiseBeamList(nChanCube);
+                initialiseWeightsList(nChanCube);
+            } else {
                 // this should work fine as the cubes will exist by the time
                 // they are needed.
                 if (writePsf) {
