@@ -90,7 +90,7 @@ ASKAP_LOGGER(logger, ".ContinuumWorker");
 
 ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
   CubeComms& comms, StatReporter& stats)
-  : itsParset(parset), itsComms(comms), itsStats(stats), 
+  : itsParset(parset), itsComms(comms), itsStats(stats),
     // setup whether we solve locally (spectral line mode) or on the master (continuum mode)
     itsLocalSolver(parset.getBool("solverpercore", false))
 {
@@ -473,7 +473,7 @@ void ContinuumWorker::configureReferenceChannel()
 /// would return false in this case)
 void ContinuumWorker::initialiseCubeWritingIfNecessary()
 {
-   // MV: I factored out this code with little modification (largely constness and the like), mainly to avoid 
+   // MV: I factored out this code with little modification (largely constness and the like), mainly to avoid
    // having a giant processChannels method. I feel that more restructuring can be done to this code
    if (itsComms.isWriter()) {
 
@@ -623,7 +623,7 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
        }
    }
 
-   // MV - moved code pretty much as it was with only minor polishing during refactoring, but perhaps this barrier could be moved inside 
+   // MV - moved code pretty much as it was with only minor polishing during refactoring, but perhaps this barrier could be moved inside
    // the if-statement above as presumably it is not needed in the continuum case
    ASKAPLOG_DEBUG_STR(logger, "You shall not pass. Waiting at a barrier for all ranks to have created the cubes ");
    itsComms.barrier(itsComms.theWorkers());
@@ -747,7 +747,7 @@ void ContinuumWorker::processChannels()
       double frequency=currentWorkUnit.get_channelFrequency();
 
       int localChannel = currentWorkUnit.get_localChannel();
-      
+
       double globalFrequency = currentWorkUnit.get_channelFrequency();
       int globalChannel = currentWorkUnit.get_globalChannel();
 
@@ -1065,7 +1065,6 @@ void ContinuumWorker::processChannels()
 
         }
         // check the model - have we reached a stopping threshold.
-
         if (rootImager.params()->has("peak_residual")) {
           const double peak_residual = rootImager.params()->scalarValue("peak_residual");
           ASKAPLOG_INFO_STR(logger, "Reached peak residual of " << abs(peak_residual));
@@ -1078,14 +1077,18 @@ void ContinuumWorker::processChannels()
               << targetPeakResidual << " Jy. Stopping.");
             }
             stopping = true;
-          }
-          else {
+          } else {
             if (targetPeakResidual < 0) {
               ASKAPLOG_INFO_STR(logger, "Major cycle flux threshold is not used.");
-            }
-            else {
-              ASKAPLOG_INFO_STR(logger, "It is above the major cycle threshold of "
-              << targetPeakResidual << " Jy. Continuing.");
+            } else {
+                if (rootImager.params()->has("noise_threshold_reached") &&
+                    rootImager.params()->scalarValue("noise_threshold_reached")>0) {
+                    ASKAPLOG_INFO_STR(logger, "It is below the noise threshold. Stopping.");
+                    stopping = true;
+                } else {
+                  ASKAPLOG_INFO_STR(logger, "It is above the major cycle threshold of "
+                  << targetPeakResidual << " Jy. Continuing.");
+              }
             }
           }
 
