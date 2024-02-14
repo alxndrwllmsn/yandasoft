@@ -64,7 +64,7 @@ namespace synthesis {
 /// @note There are additional parameters which influence the behaviour of MSSplitter indirectly via the parset.
 /// It is not clear to me (MV), however, whether this is essential for current modes of operation. But it could 
 /// lead to unexpected corner cases.
-WorkUnitCache::WorkUnitCache(bool doCache, const std::string& cachePath, askapparallel::AskapParallel& comms,
+WorkUnitCache::WorkUnitCache(bool doCache, const std::string& cachePath, cp::CubeComms& comms,
                  casacore::uInt bucketSize, casacore::uInt tileNCorr, casacore::uInt tileNChan) :
        itsCacheEnabled(doCache), itsCachePath(cachePath), itsComms(comms), itsBucketSize(bucketSize),
        itsTileNCorr(tileNCorr), itsTileNChan(tileNChan) {}     
@@ -171,11 +171,13 @@ void WorkUnitCache::cacheWorkUnit()
    }
    // MV: the original code prior to refactoring has the barrier part below inside the if-statement above (for group 0). I think this is a bug which would lead to an MPI deadlock,
    // changed it to have all ranks to execute the barrier. Note, master also should do this. Perhaps, it would be better to have a communicator which only involves workers here rather than
-   // trying to optimise
+   // trying to optimise - see also AXA-2889, made similar changes here. In addition, we're probably going to take
+   // this code out long term because tmpfs feature is not used any more. 
    ///wait for all groups this rank to get here
    if (itsComms.nGroups() > 1) {
        ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
-       itsComms.barrier(itsComms.interGroupCommIndex());
+       //itsComms.barrier(itsComms.interGroupCommIndex());
+       itsComms.barrier(itsComms.theWorkers());
        ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
    }
    itsCachedWorkUnit.set_dataset(outms);

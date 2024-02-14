@@ -35,7 +35,7 @@
 
 // own includes
 #include <askap/messages/ContinuumWorkUnit.h>
-#include <askap/askapparallel/AskapParallel.h>
+#include <askap/distributedimager/CubeComms.h>
 
 // std includes
 #include <set>
@@ -70,7 +70,7 @@ public:
    /// @note There are additional parameters which influence the behaviour of MSSplitter indirectly via the parset.
    /// It is not clear to me (MV), however, whether this is essential for current modes of operation. But it could 
    /// lead to unexpected corner cases.
-   WorkUnitCache(bool doCache, const std::string& cachePath, askapparallel::AskapParallel& comms,
+   WorkUnitCache(bool doCache, const std::string& cachePath, cp::CubeComms& comms,
                  casacore::uInt bucketSize = 65536u, casacore::uInt tileNCorr = 4u, casacore::uInt tileNChan = 1u); 
 
    /// @brief destructor
@@ -114,7 +114,7 @@ private:
 
    /// @brief reference to communication object (used for synchronisation between other ranks if
    /// caching is done)
-   askapparallel::AskapParallel& itsComms;
+   cp::CubeComms& itsComms;
 
    /// @brief bucket size for the cached MS
    casacore::uInt itsBucketSize;
