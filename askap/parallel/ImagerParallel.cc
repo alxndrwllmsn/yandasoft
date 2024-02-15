@@ -565,7 +565,7 @@ namespace askap
         ASKAPCHECK(gridder(), "Gridder not defined");
         boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
         ASKAPDEBUGASSERT(fftEquation);
-        fftEquation->useAlternativePSF(parset());
+        fftEquation->configure(parset());
         fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
         itsEquation = fftEquation;
       }

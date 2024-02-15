@@ -114,7 +114,7 @@ namespace askap
       /// @note a non-const adapter is created behind the scene. If no on-the-fly visibility
       /// correction is performed, this adapter is equivalent to the original const data accessor
       virtual void grid(accessors::IConstDataAccessor& acc);
- 
+
 // DAM TRADITIONAL
       virtual void setWeights(accessors::IDataAccessor& acc);
       virtual void addConjugates();
@@ -160,13 +160,13 @@ namespace askap
       inline void setUVWeightAccessor(const boost::shared_ptr<IUVWeightAccessor const> &wtAcc) { itsUVWeightAccessor = wtAcc; }
 
       /// @brief assign uv weight builder
-      /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build 
+      /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build
       /// weights along with the gridding job. This is so-called gridder-dependent builder case.
       /// The alternative option is to build weights directly without invoking gridder (althought the
       /// code of the both routines is similar). The two approaches have different approximations about
-      /// second order effects in the wide-field case. Gridder-dependent weight builder allows to 
+      /// second order effects in the wide-field case. Gridder-dependent weight builder allows to
       /// account for implicit flagging in gridder (e.g. rejection due to unmapped w-plane) and an exact
-      /// offset of CFs, but wastes resources. 
+      /// offset of CFs, but wastes resources.
       /// @param[in] wtBuilder shared pointer to the weight builder
       inline void setUVWeightBuilder(const boost::shared_ptr<IUVWeightBuilder> &wtBuilder) { itsUVWeightBuilder = wtBuilder;}
 
@@ -203,6 +203,11 @@ namespace askap
       /// @details the grid can usually be cleared to save memory
       /// @param[in] flag new value of the flag
       void inline doClearGrid(const bool flag) { itsClearGrid = flag;}
+
+      /// @brief clear the grids if enabled
+      /// @details the grid can usually be cleared after use to save memory, call this to
+      /// clear the grid (but only if doClearGrid(true) has been called first)
+      void clearGrid();
 
       /// @brief set the largest angular separation between the pointing centre and the image centre
       /// @details If the threshold is positive, it is interpreted as the largest allowed angular
@@ -332,7 +337,7 @@ namespace askap
       /// (and the weight builder assigned).
       /// We could've just added this code to initialiseCellSize, but it would be called unnecessary from
       /// initialiseDegrid and for PCF/PSF gridders (although, presumably, the builder won't be set in this
-      /// cases, so no harm). Having a separate method is neater. 
+      /// cases, so no harm). Having a separate method is neater.
       void initialiseWeightBuilder();
 
       /// @brief gridder configured to calculate PSF?
@@ -443,7 +448,7 @@ protected:
       /// @brief obtain current field index
       /// @details This method returns field index corresponding to the last call of initIndices
       /// (i.e this method can only be called after initIndices is called, otherwise the result is undefined).
-      /// The meaning of the index and boundaries are determined in derived classes and only used here for 
+      /// The meaning of the index and boundaries are determined in derived classes and only used here for
       /// uv-weight selection purposes. Note, that the implementation and the current interface are somewhat deficient.
       /// In principle, the measurement set standard (and data accessor implementation) do not require all entries in the
       /// single accessor to correspond to the same field (or share the same beam footprint). But our code never writes MSs
@@ -578,13 +583,13 @@ protected:
       boost::shared_ptr<IUVWeightAccessor const> itsUVWeightAccessor;
 
       /// @brief uv weight builder
-      /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build 
+      /// @details If setup (i.e. non-empty shared pointer), the interface will be used to build
       /// weights along with the gridding job. This is so-called gridder-dependent builder case.
       /// The alternative option is to build weights directly without invoking gridder (althought the
       /// code of the both routines is similar). The two approaches have different approximations about
-      /// second order effects in the wide-field case. Gridder-dependent weight builder allows to 
+      /// second order effects in the wide-field case. Gridder-dependent weight builder allows to
       /// account for implicit flagging in gridder (e.g. rejection due to unmapped w-plane) and an exact
-      /// offset of CFs, but wastes resources. 
+      /// offset of CFs, but wastes resources.
       boost::shared_ptr<IUVWeightBuilder> itsUVWeightBuilder;
 
 
@@ -673,7 +678,7 @@ protected:
       /// Used in direction-dependent calibration
       mutable int itsSourceIndex;
 
-      /// @brief release grid memory in finalise(De)Grid
+      /// @brief release grid memory after finalise(De)Grid
       bool itsClearGrid;
 
     };

@@ -105,8 +105,12 @@ namespace askap
         /// Assignment operator
         ImageFFTEquation& operator=(const ImageFFTEquation& other);
 
-
         virtual ~ImageFFTEquation();
+
+        /// @brief configure from parset
+        /// @details set all configuration options from a parset
+        /// @param parset parameter set
+        void configure(const LOFAR::ParameterSet& parset);
 
         /// Return the default parameters
         static askap::scimath::Params defaultParameters();
@@ -129,22 +133,6 @@ namespace askap
         /// @param idi shared pointer to a new iterator
         void setIterator(accessors::IDataSharedIter& idi);
 
-
-        /// @brief define whether to use an alternative gridder for the PSF
-        /// and/or the preconditioner function.
-        /// @details We have an option to build the PSF using the default
-        /// spheriodal function gridder or the box (nearest neighbour) gridder,
-        /// i.e. no w-term and no primary beam is simulated, as an alternative
-        /// to the same user-defined gridder as used for the model. Apart from
-        /// speed, it probably makes the approximation better (i.e. removes
-        /// some factors of spatial  dependence) and may lead to cleaner
-        /// preconditioning. However it can filter out features of the W and AW
-        /// kernels during preconditioning when robustness approaches uniform
-        /// weighting. A separate preconditioner function can also be selected.
-        /// @param[in] parset imager parameter set to check for PSF options.
-        /// Current options: sphfuncforpsf, boxforpsf and preconditioner.preservecf.
-        void useAlternativePSF(const LOFAR::ParameterSet& parset);
-
         /// @brief setup object function to update degridded visibilities
         /// @details For the parallel implementation of the measurement equation we need
         /// inter-rank communication. To avoid introducing cross-dependency of the measurement
@@ -153,7 +141,6 @@ namespace askap
         /// By default, this class doesn't alter degridded visibilities.
         /// @param[in] obj new object function (or an empty shared pointer to turn this option off)
         void setVisUpdateObject(const boost::shared_ptr<IVisCubeUpdate> &obj);
-
 
         /// I want access to the gridders but I dont want to change them
 
@@ -174,22 +161,38 @@ namespace askap
         void setNDir(casacore::uInt nDir) const { itsNDir = nDir; }
 
 // DAM TRADITIONAL
-        /// @brief set the number of DD calibration directions
+        /// @brief set robustness
         void setRobustness(float value) const { itsRobustness = value; }
 
 // DAM TRADITIONAL
+    /// @brief get robustness
         boost::optional<float> getRobustness() const { return itsRobustness; }
 
       protected:
+      /// @brief define whether to use an alternative gridder for the PSF
+      /// and/or the preconditioner function.
+      /// @details We have an option to build the PSF using the default
+      /// spheriodal function gridder or the box (nearest neighbour) gridder,
+      /// i.e. no w-term and no primary beam is simulated, as an alternative
+      /// to the same user-defined gridder as used for the model. Apart from
+      /// speed, it probably makes the approximation better (i.e. removes
+      /// some factors of spatial  dependence) and may lead to cleaner
+      /// preconditioning. However it can filter out features of the W and AW
+      /// kernels during preconditioning when robustness approaches uniform
+      /// weighting. A separate preconditioner function can also be selected.
+      /// @param[in] parset imager parameter set to check for PSF options.
+      /// Current options: sphfuncforpsf, boxforpsf and preconditioner.preservecf.
+      void useAlternativePSF(const LOFAR::ParameterSet& parset);
+
 
         /// @brief helper method to make accessor for the given image parameter
         /// @details It encapsulates handling the Taylor terms the right way
         /// (same uv-weight for all Taylor terms) and translation the image name
         /// into parameter name in the model (via the appropriate Params helper class).
         /// Also index translation is encapsulated.
-        /// @param[in] name image parameter name (the full one with "image" prefix - 
+        /// @param[in] name image parameter name (the full one with "image" prefix -
         /// we always deal with the full name makes the code more readable, although we
-        /// could've cut down some operations if we take the name without the leading 
+        /// could've cut down some operations if we take the name without the leading
         /// "image").
         /// @return shared pointer to the uv-weight accessor object accepted by gridders
         boost::shared_ptr<IUVWeightAccessor> makeUVWeightAccessor(const std::string &name) const;
@@ -220,6 +223,12 @@ namespace askap
 
         /// Map of coordinate systems
         mutable std::map<string, casacore::CoordinateSystem> itsCoordSystems;
+
+        /// reuse PSF and PCF grids?
+        mutable bool itsReuseGrids;
+
+        /// Map of bools indicating we can reuse gridding results
+        mutable std::map<string, bool> itsReuseGrid;
 
         /// Iterator giving access to the data
         mutable accessors::IDataSharedIter itsIdi;

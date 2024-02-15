@@ -1,4 +1,5 @@
 /// @file
+/// MV: Note, this file is not currently used (and excluded from cmake). It is left checked in just in case we need it in the future.
 /// @brief Class managing caching of a work unit
 /// @details This class is created as part of ContinuumWorker refactoring. It provides caching logic where a part of
 /// the dataset can be stored on a disk (e.g. a ramdisk) and accessed from there. This class manages corresponding

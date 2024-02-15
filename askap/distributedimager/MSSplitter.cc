@@ -1,4 +1,5 @@
 /// @file MSSplitter.cc
+/// MV: Note, this file is not currently used (and excluded from cmake). It is left checked in just in case we need it in the future.
 ///
 /// @copyright (c) 2012 CSIRO
 /// Australia Telescope National Facility (ATNF)
