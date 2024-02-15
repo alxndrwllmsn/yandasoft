@@ -58,7 +58,6 @@
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/distributedimager/DataSourceManager.h>
-#include <askap/distributedimager/WorkUnitCache.h>
 #include <askap/scimath/utils/PolConverter.h>
 #include <Common/ParameterSet.h>
 #include <Common/Exceptions.h>
@@ -74,7 +73,6 @@
 // Local includes
 #include "askap/distributedimager/AdviseDI.h"
 #include "askap/distributedimager/CalcCore.h"
-#include "askap/distributedimager/MSSplitter.h"
 #include "askap/messages/ContinuumWorkUnit.h"
 #include "askap/messages/ContinuumWorkRequest.h"
 #include "askap/distributedimager/CubeBuilder.h"
@@ -165,9 +163,10 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     } else {
       itsNumWriters = nwriters;
     }
+
+    ASKAPCHECK(!itsParset.getBool("usetmpfs", false), "usetmpfs option is no longer supported by the code");
+
     const bool dopplerTracking = itsParset.getBool("dopplertracking",false);
-    const bool usetmpfs = itsParset.getBool("usetmpfs", false);
-    ASKAPCHECK(!dopplerTracking || !usetmpfs,"Doppler tracking and usetmpfs cannot be used together");
     if (dopplerTracking) {
         std::vector<string> direction = itsParset.getStringVector("dopplertracking.direction",{},false);
         if (direction.size() == 3) {
@@ -338,97 +337,6 @@ void ContinuumWorker::configureChannelAllocation()
    }
 }
 
-// unused
-void ContinuumWorker::deleteWorkUnitFromCache(ContinuumWorkUnit& wu)
-{
-
-  const string ms = wu.get_dataset();
-
-  struct stat buffer;
-
-  if (stat(ms.c_str(), &buffer) == 0) {
-    ASKAPLOG_WARN_STR(logger, "Split file " << ms << " exists - deleting");
-    boost::filesystem::remove_all(ms.c_str());
-  } else {
-    ASKAPLOG_WARN_STR(logger, "Split file " << ms << " does not exist - nothing to do");
-  }
-
-}
-void ContinuumWorker::clearWorkUnitCache()
-{
-
-  for (int cf = 0; cf < itsCachedFiles.size(); cf++) {
-    const string ms = itsCachedFiles[cf];
-    struct stat buffer;
-
-    if (stat(ms.c_str(), &buffer) == 0) {
-      ASKAPLOG_WARN_STR(logger, "Split file " << ms << " exists - deleting");
-      boost::filesystem::remove_all(ms.c_str());
-    } else {
-      ASKAPLOG_WARN_STR(logger, "Split file " << ms << " does not exist - nothing to do");
-    }
-
-  }
-}
-
-void ContinuumWorker::cacheWorkUnit(ContinuumWorkUnit& wu)
-{
-  boost::filesystem::path mspath = boost::filesystem::path(wu.get_dataset());
-  const string ms = mspath.filename().string();
-
-  const string shm_root = itsParset.getString("tmpfs", "/dev/shm");
-
-  std::ostringstream pstr;
-
-  pstr << shm_root << "/" << ms << "_chan_" << wu.get_localChannel() + 1 << "_beam_" << wu.get_beam() << ".ms";
-
-  const string outms = pstr.str();
-  pstr << ".working";
-
-  const string outms_flag = pstr.str();
-
-
-
-  if (itsComms.inGroup(0)) {
-
-    struct stat buffer;
-
-    while (stat(outms_flag.c_str(), &buffer) == 0) {
-      // flag file exists - someone is writing
-
-      sleep(1);
-    }
-    if (stat(outms.c_str(), &buffer) == 0) {
-      ASKAPLOG_WARN_STR(logger, "Split file already exists");
-    } else if (stat(outms.c_str(), &buffer) != 0 && stat(outms_flag.c_str(), &buffer) != 0) {
-      // file cannot be read
-
-      // drop trigger
-      ofstream trigger;
-      trigger.open(outms_flag.c_str());
-      trigger.close();
-      MSSplitter mySplitter;
-      mySplitter.configure(itsParset);
-
-      mySplitter.split(wu.get_dataset(), outms, wu.get_localChannel() + 1, wu.get_localChannel() + 1, 1);
-      unlink(outms_flag.c_str());
-      itsCachedFiles.push_back(outms);
-
-    }
-  }
-  else {
-    ASKAPLOG_WARN_STR(logger,"Cache MS requested but not done");
-  }
-  ///wait for all groups this rank to get here
-  if (itsComms.nGroups() > 1) {
-     ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
-     //itsComms.barrier(itsComms.interGroupCommIndex());
-     itsComms.barrier(itsComms.theWorkers());
-     ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
-  }
-  wu.set_dataset(outms);
-
-}
 void ContinuumWorker::compressWorkUnits() {
 
     // This takes the list of workunits and reprocesses them so that all the contiguous
@@ -522,13 +430,6 @@ void ContinuumWorker::preProcessWorkUnit(ContinuumWorkUnit& wu)
   // This also needs to set the frequencies and directions for all the images
   ASKAPLOG_DEBUG_STR(logger, "In preProcessWorkUnit");
   ASKAPLOG_DEBUG_STR(logger, "Parset Reports: (In preProcess workunit)" << (itsParset.getStringVector("dataset", true)));
-
-  const bool usetmpfs = itsParset.getBool("usetmpfs", false);
-
-  if (usetmpfs && !itsLocalSolver) {
-    // only do this here if in continuum mode
-    cacheWorkUnit(wu);
-  }
 
   ASKAPLOG_DEBUG_STR(logger, "Getting advice on missing parameters");
 
@@ -786,16 +687,9 @@ void ContinuumWorker::processChannels()
       << uvwMachineCacheTolerance / casacore::C::pi * 180. * 3600. << " arcsec");
 
   const string colName = itsParset.getString("datacolumn", "DATA");
-  const bool usetmpfs = itsParset.getBool("usetmpfs", false);
   const bool clearcache = itsParset.getBool("clearcache", false);
 
-  // force cache clearing off if the temporary file system is in use (the whole temporary measurement set will be deleted anyway)
-  // this matches the behaviour of the code prior to refactoring
-  DataSourceManager dsm(colName, !usetmpfs && clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance);
-
-  WorkUnitCache wuCache(usetmpfs, itsParset.getString("tmpfs", "/dev/shm"), itsComms, itsParset.getUint32("stman.bucketsize", 65536u),
-                        itsParset.getUint32("stman.tilencorr", 4u), itsParset.getUint32("stman.tilenchan", 1u));
-
+  DataSourceManager dsm(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance);
 
   // the itsWorkUnits may include different epochs (for the same channel)
   // the order is strictly by channel - with multiple work units per channel.
@@ -848,12 +742,7 @@ void ContinuumWorker::processChannels()
         initialChannelWorkUnit = workUnitCount+1;
       }
 
-      // wuCache would do caching (if configured) and substitute details in the work unit structure, i.e.
-      // the reference returned may not match the element of itsWorkUnits
-      const cp::ContinuumWorkUnit& currentWorkUnit = wuCache(itsWorkUnits[workUnitCount]);
-      if (wuCache.cacheEnabled()) {
-          dsm.forceNewDataSourceNextTime();
-      }
+      const cp::ContinuumWorkUnit& currentWorkUnit = itsWorkUnits[workUnitCount];
 
       double frequency=currentWorkUnit.get_channelFrequency();
 
@@ -1005,9 +894,7 @@ void ContinuumWorker::processChannels()
           /// assuming subsequent workunits are the same channel but either different
           /// epochs or look directions.
 
-          // wuCache would do caching (if configured) and substitute details in the work unit structure, i.e.
-          // the reference returned may not match the element of itsWorkUnits
-          const cp::ContinuumWorkUnit& tempWorkUnit = wuCache(itsWorkUnits[tempWorkUnitCount]);
+          const cp::ContinuumWorkUnit& tempWorkUnit = itsWorkUnits[tempWorkUnitCount];
 
           if (frequency != tempWorkUnit.get_channelFrequency()) {
             if (itsLocalSolver) { // the frequencies should be the same.
@@ -1016,10 +903,6 @@ void ContinuumWorker::processChannels()
               ASKAPLOG_INFO_STR(logger,"Change of frequency for workunit");
               break;
             }
-          }
-
-          if (wuCache.cacheEnabled()) {
-              dsm.forceNewDataSourceNextTime();
           }
 
           localChannel = tempWorkUnit.get_localChannel();
@@ -1327,18 +1210,8 @@ void ContinuumWorker::processChannels()
         rootImager.restoreImage();
       }
 
-      // force clearing the cached MS here, although it would have happened naturally when the object goes out of scope
-      wuCache.reset();
-
-      // the following to be removed, leave it for now because continuum case needs to be checked
-      if (usetmpfs) {
-        ASKAPLOG_INFO_STR(logger, "clearing cache");
-        clearWorkUnitCache();
-        ASKAPLOG_INFO_STR(logger, "done clearing cache");
-      } 
       // force cache clearing here (although it would be done automatically at the end of the method) to match the
-      // code behaviour prior to refactoring. Also do it outside if(usetmpfs) "else" section. It will be no operation
-      // if usetmpfs is true
+      // code behaviour prior to refactoring. It will be no operation if clearcache is false
       dsm.reset();
 
       itsStats.logSummary();
