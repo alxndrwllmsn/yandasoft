@@ -5,7 +5,6 @@ ContinuumImager.cc
 ContinuumMaster.cc
 ContinuumWorker.cc
 CubeComms.cc
-MSSplitter.cc
 WorkUnitContainer.cc
 DataSourceManager.cc
 )
@@ -20,7 +19,6 @@ CubeBuilder.h
 CubeBuilder.tcc
 CubeComms.h
 CubeManager.h
-MSSplitter.h
 WorkUnitContainer.h
 DataSourceManager.h
 DESTINATION include/askap/distributedimager

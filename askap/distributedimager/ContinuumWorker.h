@@ -94,20 +94,12 @@ class ContinuumWorker
         // Whether the gridder is a Mosaicking one
         bool itsGridderCanMosaick;
 
-        // Cache a workunit to a different location
-        void cacheWorkUnit(ContinuumWorkUnit& wu);
         // Process a workunit
         void preProcessWorkUnit(ContinuumWorkUnit& wu);
         // Compress all continuous channel allocations into individual workunits
         void compressWorkUnits();
 
-        // Delete a workunit from the cache
-        void deleteWorkUnitFromCache(ContinuumWorkUnit& wu);
-        // clear the current cached files
-        void clearWorkUnitCache();
-
         //For all workunits .... process
-
         void processChannels();
 
         // Setup the image specified in parset and add it to the Params instance.

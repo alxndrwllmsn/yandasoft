@@ -727,7 +727,7 @@ casacore::MVFrequency oneEdge, casacore::MVFrequency otherEdge) const {
     return matches;
 }
 
-void AdviseDI::updateDirectionFromWorkUnit(askap::cp::ContinuumWorkUnit& wu) {
+void AdviseDI::updateDirectionFromWorkUnit(const askap::cp::ContinuumWorkUnit& wu) {
 
   string wu_dataset = wu.get_dataset();
   std::vector<std::string> ms = getDatasets();
