@@ -58,6 +58,7 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/measurementequation/ImageParamsHelper.h>
 #include <askap/scimath/fitting/Params.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
+#include <askap/scimath/fft/FFTUtils.h>
 
 #include <askap/measurementequation/ImageSolverFactory.h>
 #include <askap/measurementequation/ImageCleaningSolver.h>
@@ -465,8 +466,8 @@ namespace askap
       if (shapeNeeded && !parset.isDefined(param)) {
           std::ostringstream pstr;
           const double fieldSize = advice.squareFieldSize(1); // in deg
-          const int lSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[0]) + 1);
-          const int mSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[1]) + 1);
+          const int lSize = scimath::goodFFTSize(int(fieldSize * 3600 / cellSize[0]) + 1);
+          const int mSize = scimath::goodFFTSize(int(fieldSize * 3600 / cellSize[1]) + 1);
           pstr<<"["<<lSize<<","<<mSize<<"]";
           ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param <<": " << pstr.str().c_str());
           parset.add(param, pstr.str().c_str());
