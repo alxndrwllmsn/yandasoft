@@ -81,6 +81,13 @@ class ContinuumWorker
         /// would return false in this case)
         void initialiseCubeWritingIfNecessary();
 
+        /// @brief check stopping thresholds in the model 
+        /// @details This method is used at the end of minor cycle deconvolution to check whether to continue iterations.
+        /// @param[in] model shared pointer to the scimath::Params object with the model
+        /// @return true if stopping is required
+        /// @note We do similar checks in both the master and in workers. So this method can be moved somewhere else to be shared.
+        bool checkStoppingThresholds(const boost::shared_ptr<scimath::Params> &model) const;
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
          // The work units

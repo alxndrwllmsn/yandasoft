@@ -671,8 +671,6 @@ void ContinuumWorker::processChannels()
   ASKAPLOG_DEBUG_STR(logger, "Ascertaining Cleaning Plan");
   const bool writeAtMajorCycle = itsParset.getBool("Images.writeAtMajorCycle", false);
   const int nCycles = itsParset.getInt32("ncycles", 0);
-  const std::string majorcycle = itsParset.getString("threshold.majorcycle", "-1Jy");
-  const double targetPeakResidual = SynthesisParamsHelper::convertQuantity(majorcycle, "Jy");
 
   const int uvwMachineCacheSize = itsParset.getInt32("nUVWMachines", 1);
   ASKAPCHECK(uvwMachineCacheSize > 0 ,
@@ -1065,34 +1063,7 @@ void ContinuumWorker::processChannels()
 
         }
         // check the model - have we reached a stopping threshold.
-        if (rootImager.params()->has("peak_residual")) {
-          const double peak_residual = rootImager.params()->scalarValue("peak_residual");
-          ASKAPLOG_INFO_STR(logger, "Reached peak residual of " << abs(peak_residual));
-          if (peak_residual < targetPeakResidual) {
-            if (peak_residual < 0) {
-              ASKAPLOG_WARN_STR(logger, "Clean diverging, did not reach the major cycle threshold of "
-                              << targetPeakResidual << " Jy. Stopping.");
-            } else {
-              ASKAPLOG_INFO_STR(logger, "It is below the major cycle threshold of "
-              << targetPeakResidual << " Jy. Stopping.");
-            }
-            stopping = true;
-          } else {
-            if (targetPeakResidual < 0) {
-              ASKAPLOG_INFO_STR(logger, "Major cycle flux threshold is not used.");
-            } else {
-                if (rootImager.params()->has("noise_threshold_reached") &&
-                    rootImager.params()->scalarValue("noise_threshold_reached")>0) {
-                    ASKAPLOG_INFO_STR(logger, "It is below the noise threshold. Stopping.");
-                    stopping = true;
-                } else {
-                  ASKAPLOG_INFO_STR(logger, "It is above the major cycle threshold of "
-                  << targetPeakResidual << " Jy. Continuing.");
-              }
-            }
-          }
-
-        }
+        stopping |= checkStoppingThresholds(rootImager.params());
 
         if (!itsLocalSolver && (majorCycleNumber == nCycles -1)) {
           stopping = true;
@@ -1367,6 +1338,45 @@ void ContinuumWorker::processChannels()
   logBeamInfo();
   logWeightsInfo();
 
+}
+
+/// @brief check stopping thresholds in the model 
+/// @details This method is used at the end of minor cycle deconvolution to check whether to continue iterations.
+/// @param[in] model shared pointer to the scimath::Params object with the model
+/// @return true if stopping is required
+/// @note We do similar checks in both the master and in workers. So this method can be moved somewhere else to be shared.
+bool ContinuumWorker::checkStoppingThresholds(const boost::shared_ptr<scimath::Params> &model) const
+{
+   const std::string majorcycle = itsParset.getString("threshold.majorcycle", "-1Jy");
+   const double targetPeakResidual = SynthesisParamsHelper::convertQuantity(majorcycle, "Jy");
+   if (model && model->has("peak_residual")) {
+       const double peak_residual = model->scalarValue("peak_residual");
+       ASKAPLOG_INFO_STR(logger, "Reached peak residual of " << abs(peak_residual));
+       if (peak_residual < targetPeakResidual) {
+           if (peak_residual < 0) {
+               ASKAPLOG_WARN_STR(logger, "Clean diverging, did not reach the major cycle threshold of "
+                                         << targetPeakResidual << " Jy. Stopping.");
+           } else {
+              ASKAPLOG_INFO_STR(logger, "It is below the major cycle threshold of "
+                                        << targetPeakResidual << " Jy. Stopping.");
+           }
+           return true;
+       } else {
+           if (targetPeakResidual < 0) {
+               ASKAPLOG_INFO_STR(logger, "Major cycle flux threshold is not used.");
+           } else {
+               if (model->has("noise_threshold_reached") &&
+                   model->scalarValue("noise_threshold_reached")>0) {
+                   ASKAPLOG_INFO_STR(logger, "It is below the noise threshold. Stopping.");
+                   return true;
+               } else {
+                 ASKAPLOG_INFO_STR(logger, "It is above the major cycle threshold of "
+                                           << targetPeakResidual << " Jy. Continuing.");
+               }
+          }
+       }
+   }
+   return false;
 }
 
 void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams)
