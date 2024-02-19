@@ -521,6 +521,14 @@ namespace askap
                 }
             }
 
+            // get noise for thresholds if needed
+            float sigma = 0.;
+            if (noiseThreshold()>0) {
+                // get mad estimate for sigma
+                // may need to take mask into account?
+                sigma = 1.48f * casacore::madfm(dirtyVec(0));
+            }
+
             // Now that we have all the required images, we can initialise the deconvolver
             if (firstcycle) {// Initialize everything only once.
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._fc_initdeconvolver");
@@ -531,8 +539,14 @@ namespace askap
                 ASKAPDEBUGASSERT(itsCleaners[imageTag]);
 
                 itsCleaners[imageTag]->setMonitor(itsMonitor);
-                itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
-                itsControl->setTargetObjectiveFunction2(deepThreshold());
+                if (sigma > 0) {
+                    // set thresholds based on robust noise estimate
+                    itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
+                    itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                } else {
+                    itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
+                    itsControl->setTargetObjectiveFunction2(deepThreshold());
+                }
                 itsControl->setFractionalThreshold(fractionalThreshold());
 
                 itsCleaners[imageTag]->setControl(itsControl);
@@ -555,6 +569,12 @@ namespace askap
                 ASKAPLOG_INFO_STR(logger, "Multi-Term Basis Function deconvolver already exists - update dirty images");
                 itsCleaners[imageTag]->updateDirty(dirtyVec);
                 ASKAPLOG_INFO_STR(logger, "Successfully updated dirty images");
+                // update thresholds based on robust noise estimate
+                if (sigma > 0) {
+                    itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
+                    itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                    itsCleaners[imageTag]->setControl(itsControl);
+                }
             }
 
             // We have to reset the initial objective function
@@ -638,6 +658,29 @@ namespace askap
             }
             ip.fix(peakResParam);
 
+            // check if we're below the noise thresholds
+            bool below = false;
+            if (peakRes > 0 && sigma > 0) {
+                if (deepNoiseThreshold()>0) {
+                    if (peakRes < itsControl->targetObjectiveFunction2()) {
+                        below = true;
+                    }
+                } else if (noiseThreshold()>0) {
+                    if (peakRes < itsControl->targetObjectiveFunction()) {
+                        below = true;
+                    }
+                } else {
+                    ASKAPTHROW(AskapError,"Logic error in ImageAMSMFSolver::solveNormalEquations");
+                }
+            }
+            const std::string noiseParam = std::string("noise_threshold_reached.") + imageTag;
+            if (ip.has(noiseParam)) {
+                ip.update(noiseParam, below ? 1.0 : -1.0);
+            } else {
+                ip.add(noiseParam, below ? 1.0 : -1.0);
+            }
+            ip.fix(noiseParam);
+
             // Write the final vector of clean model images into parameters
             for( uInt order=0; order < itsNumberTaylor; ++order) {
                 // make the helper to correspond to the given order
@@ -684,6 +727,8 @@ namespace askap
                 const std::string thisOrderParam = iph.paramName();
                 parametersToBeFixed.insert(thisOrderParam);
             }
+
+            //itsCleaners[imageTag]->releaseMemory();
 
         } // end of polarisation (i.e. plane) loop
 

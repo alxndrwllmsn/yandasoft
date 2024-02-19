@@ -642,7 +642,8 @@ namespace askap
        std::vector<std::string> result;
        result.reserve(names.size());
        for (std::vector<std::string>::const_iterator ci=names.begin(); ci!=names.end(); ++ci) {
-            if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) || (ci->find("uvweight") == 0)) {
+            if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) ||
+                (ci->find("uvweight") == 0) || (ci->find("noise_threshold_reached") == 0)) {
                 result.push_back(*ci);
             }
        }
@@ -692,6 +693,22 @@ namespace askap
         }
         itsModel->fix("peak_residual");
       }
+
+      // check if all images have reached the noise threshold
+      bool allDone = true;
+      const std::vector<std::string> noiseParams = itsModel->completions("noise_threshold_reached.",true);
+      for (const std::string& name : noiseParams) {
+          if (itsModel->scalarValue("noise_threshold_reached."+name) < 0.0) {
+              allDone = false;
+          }
+      }
+      if (itsModel->has("noise_threshold_reached")) {
+          itsModel->update("noise_threshold_reached", allDone ? 1.0 : -1.0);
+      } else {
+          itsModel->add("noise_threshold_reached", allDone ? 1.0 : -1.0);
+      }
+      itsModel->fix("noise_threshold_reached");
+
     }
 
     /// @brief Helper method to zero all model images
@@ -1310,7 +1327,7 @@ namespace askap
                                     SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, tmpname+restore_suffix+".restored", boost::none, keywords, historyLines);
                                     // write the image stats to the image table
                                     accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
-                                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix+".restored",parset());
+                                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,tmpname+restore_suffix+".restored",parset());
                                 }
                             } else {
                                 if (!iph.isFacet() && ((ci->find("image") == 0)))  {

@@ -83,52 +83,91 @@ namespace askap
         bool absoluteThresholdDefined = false;
         bool relativeThresholdDefined = false;
         bool absoluteThreshold2Defined = false;
-        for (std::vector<std::string>::const_iterator ci = thresholds.begin();
-             ci != thresholds.end(); ++ci) {
-
+        bool noiseThresholdDefined = false;
+        bool noiseThreshold2Defined = false;
+        for (const string& t : thresholds) {
           casacore::Quantity cThreshold;
-          casacore::Quantity::read(cThreshold, *ci);
-          cThreshold.convert();
-          if (cThreshold.isConform("Jy")) {
-            ASKAPCHECK(!absoluteThreshold2Defined, "Parameter "<<parName<<
-                       " defines absolute threshold thrice ("<<*ci<<")");
-            if (absoluteThresholdDefined) {
-              absoluteThreshold2Defined = true;
-              boost::shared_ptr<ImageCleaningSolver> ics =
-                  boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
-              if (ics) {
-                ics->setDeepThreshold(cThreshold.getValue("Jy"));
-                ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the absolute threshold of "<<
-                                  cThreshold.getValue("mJy")<<" mJy");
+          // check for noise thresholds
+          const string sigma("sigma");
+          const size_t pos = t.rfind(sigma);
+          if (pos != std::string::npos && pos == t.size() - sigma.size()) {
+              ASKAPCHECK(!noiseThreshold2Defined, "Parameter "<<parName<<
+                         " defines noise threshold thrice ("<<t<<")");
+              ASKAPCHECK(!absoluteThresholdDefined,"Cannot mix "<<
+              "absolute and noise thresholds");
+              casacore::Quantity::read(cThreshold, t.substr(0,pos));
+              if (noiseThresholdDefined) {
+                  noiseThreshold2Defined = true;
+                  boost::shared_ptr<ImageCleaningSolver> ics =
+                      boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
+                  if (ics) {
+                    ics->setDeepNoiseThreshold(cThreshold.getValue());
+                    ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the noise threshold of "<<
+                                      cThreshold.getValue("")<<" sigma");
+                  } else {
+                    ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
+                                      "a deep noise threshold, ignoring "<<t<<" in "<<parName);
+                  }
               } else {
-                ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
-                                  "a deep threshold, ignoring "<<*ci<<" in "<<parName);
+                  noiseThresholdDefined = true;
+                  boost::shared_ptr<ImageCleaningSolver> ics =
+                      boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
+                  if (ics) {
+                    ics->setNoiseThreshold(cThreshold.getValue());
+                    ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the noise threshold of "<<
+                                      cThreshold.getValue("")<<" sigma");
+                  } else {
+                    ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
+                                      "a noise threshold, ignoring "<<t<<" in "<<parName);
+                  }
               }
-            } else {
-              absoluteThresholdDefined = true;
-              solver->setThreshold(cThreshold);
-              ASKAPLOG_INFO_STR(logger, "Will stop the minor cycle at the absolute threshold of "<<
-                                cThreshold.getValue("mJy")<<" mJy");
-            }
-          } else if (cThreshold.isConform("")) {
-            ASKAPCHECK(!relativeThresholdDefined, "Parameter "<<parName<<
-                       " defines relative threshold twice ("<<*ci<<")");
-            relativeThresholdDefined = true;
-
-            boost::shared_ptr<ImageCleaningSolver> ics =
-              boost::dynamic_pointer_cast<ImageCleaningSolver>(solver);
-            if (ics) {
-              ics->setFractionalThreshold(cThreshold.getValue());
-              ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the relative threshold of "<<
-                                cThreshold.getValue()*100.<<"\%");
-            } else {
-              ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
-                                "a fractional threshold, ignoring "<<*ci<<" in "<<parName);
-            }
           } else {
-            ASKAPTHROW(AskapError, "Unable to convert units in the quantity "<<
-                       cThreshold<<" to either Jy or a dimensionless quantity");
-          } // if - isConform
+              casacore::Quantity::read(cThreshold, t);
+              cThreshold.convert();
+              if (cThreshold.isConform("Jy")) {
+                ASKAPCHECK(!absoluteThreshold2Defined, "Parameter "<<parName<<
+                           " defines absolute threshold thrice ("<<t<<")");
+                ASKAPCHECK(!noiseThresholdDefined,"Cannot mix "<<
+                "absolute and noise thresholds");
+
+                if (absoluteThresholdDefined) {
+                  absoluteThreshold2Defined = true;
+                  boost::shared_ptr<ImageCleaningSolver> ics =
+                      boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
+                  if (ics) {
+                    ics->setDeepThreshold(cThreshold.getValue("Jy"));
+                    ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the absolute threshold of "<<
+                                      cThreshold.getValue("mJy")<<" mJy");
+                  } else {
+                    ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
+                                      "a deep threshold, ignoring "<<t<<" in "<<parName);
+                  }
+                } else {
+                  absoluteThresholdDefined = true;
+                  solver->setThreshold(cThreshold);
+                  ASKAPLOG_INFO_STR(logger, "Will stop the minor cycle at the absolute threshold of "<<
+                                    cThreshold.getValue("mJy")<<" mJy");
+                }
+              } else if (cThreshold.isConform("")) {
+                ASKAPCHECK(!relativeThresholdDefined, "Parameter "<<parName<<
+                           " defines relative threshold twice ("<<t<<")");
+                relativeThresholdDefined = true;
+
+                boost::shared_ptr<ImageCleaningSolver> ics =
+                  boost::dynamic_pointer_cast<ImageCleaningSolver>(solver);
+                if (ics) {
+                  ics->setFractionalThreshold(cThreshold.getValue());
+                  ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the relative threshold of "<<
+                                    cThreshold.getValue()*100.<<"\%");
+                } else {
+                  ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
+                                    "a fractional threshold, ignoring "<<t<<" in "<<parName);
+                }
+              } else {
+                ASKAPTHROW(AskapError, "Unable to convert units in the quantity "<<
+                           cThreshold<<" to either Jy or a dimensionless quantity");
+              } // if - isConform
+          } // if - noise threshold
         } // for - parameter loop
       } // if - parameter defined
       const std::string parName2 = "threshold.masking";

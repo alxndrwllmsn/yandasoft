@@ -283,7 +283,7 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 /// @brief store all complex grids in the model object for future writing
 /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
 /// returned arrays in the model so they can be exported later.
-void CalcCore::addGridsToModel() 
+void CalcCore::addGridsToModel()
 {
    ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
    casacore::Array<casacore::Complex> garr = getGrid();
@@ -402,6 +402,21 @@ void CalcCore::solveNE()
         itsModel->add("peak_residual", peak);
     }
     itsModel->fix("peak_residual");
+
+    // check if all images have reached the noise threshold
+    bool allDone = true;
+    const std::vector<std::string> noiseParams = itsModel->completions("noise_threshold_reached.",true);
+    for (const std::string& name : noiseParams) {
+        if (itsModel->scalarValue("noise_threshold_reached."+name) < 0.0) {
+            allDone = false;
+        }
+    }
+    if (itsModel->has("noise_threshold_reached")) {
+        itsModel->update("noise_threshold_reached", allDone ? 1.0 : -1.0);
+    } else {
+        itsModel->add("noise_threshold_reached", allDone ? 1.0 : -1.0);
+    }
+    itsModel->fix("noise_threshold_reached");
 
 }
 
