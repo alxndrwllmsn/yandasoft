@@ -96,7 +96,12 @@ class ContinuumWorker
         /// @brief cleanup outstanding write jobs
         /// @details This method is used for cube writing ranks (does nothing for non-writers), it loops over all outstanding
         /// work units and performs write operation assigned to this rank.
-        void performOutstandingWriteJobs();
+        /// @param[in] targetOutstanding desired number of outstanding write jobs at the end of execution
+        ///                              (to spread writing across the iteration), default is all jobs
+        /// @param[in] minOutstanding    minimal number of outstanding jobs to remain (default - none)
+        /// @note (MV) I didn't fully understand the logic behind targetOutstanding and minOutstanding (one should be
+        /// sufficient), the same behaviour as we had prior to refactoring has been implemented.
+        void performOutstandingWriteJobs(int targetOutstanding = 0, int minOutstanding = -1);
 
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;

@@ -1210,24 +1210,9 @@ void ContinuumWorker::processChannels()
 
         /// one per client ... I dont care what order they come in at
 
-        int targetOutstanding = itsComms.getOutstanding() - itsComms.getClients().size();
-        if (targetOutstanding < 0) {
-          targetOutstanding = 0;
-        }
-        ASKAPLOG_INFO_STR(logger, "this iteration target is " << targetOutstanding);
-        ASKAPLOG_INFO_STR(logger, "iteration count is " << itsComms.getOutstanding());
-
-        while (itsComms.getOutstanding() > targetOutstanding) {
-          if (itsComms.getOutstanding() <= (itsWorkUnits.size() - workUnitCount)) {
-            ASKAPLOG_INFO_STR(logger, "local remaining count is " << (itsWorkUnits.size() - workUnitCount)) ;
-
-            break;
-          }
-
-          performSingleWriteJob();
-          ASKAPLOG_INFO_STR(logger, "this iteration target is " << targetOutstanding);
-          ASKAPLOG_INFO_STR(logger, "iteration count is " << itsComms.getOutstanding());
-        }
+        performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ? 
+                                    itsComms.getOutstanding() - itsComms.getClients().size() : 0, 
+                                    itsWorkUnits.size() - workUnitCount);
 
       } else {
 
@@ -1318,14 +1303,24 @@ void ContinuumWorker::performSingleWriteJob()
    itsComms.removeChannelFromWriter(itsComms.rank());
 }
 
-/// @brief cleanup outstanding write jobs
-/// @details This method is used for cube writing ranks (does nothing for non-writers), it loops over all outstanding
 /// work units and performs write operation assigned to this rank.
-void ContinuumWorker::performOutstandingWriteJobs()
+/// @param[in] targetOutstanding desired number of outstanding write jobs at the end of execution
+///                              (to spread writing across the iteration), default is all jobs
+/// @param[in] minOutstanding    minimal number of outstanding jobs to remain (default - none)
+/// @note (MV) I didn't fully understand the logic behind targetOutstanding and minOutstanding (one should be
+/// sufficient), the same behaviour as we had prior to refactoring has been implemented.
+void ContinuumWorker::performOutstandingWriteJobs(int targetOutstanding, int minOutstanding)
 {
    if (itsComms.isWriter()) {
-       while (itsComms.getOutstanding() > 0) {
-              ASKAPLOG_INFO_STR(logger, "I have " << itsComms.getOutstanding() << "outstanding work units");
+       ASKAPLOG_DEBUG_STR(logger, "this iteration target is " << targetOutstanding);
+       ASKAPLOG_DEBUG_STR(logger, "iteration count is " << itsComms.getOutstanding());
+
+       while (itsComms.getOutstanding() > targetOutstanding) {
+              if (itsComms.getOutstanding() <= minOutstanding) {
+                  ASKAPLOG_DEBUG_STR(logger, "local remaining count is " << minOutstanding);
+                  break;
+              }
+              ASKAPLOG_DEBUG_STR(logger, "I have " << itsComms.getOutstanding() << "outstanding work units");
               performSingleWriteJob();
        }
    }
