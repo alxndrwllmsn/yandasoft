@@ -1224,30 +1224,7 @@ void ContinuumWorker::processChannels()
             break;
           }
 
-
-          ContinuumWorkRequest result;
-
-          int id;
-          /// this is a blocking receive
-          ASKAPLOG_INFO_STR(logger, "Waiting for a write request");
-          result.receiveRequest(id, itsComms);
-          ASKAPLOG_INFO_STR(logger, "Received a request to write from rank " << id);
-          int cubeChannel = result.get_globalChannel() - itsBaseCubeGlobalChannel;
-
-          try {
-            ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
-            ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
-
-            handleImageParams(result.get_params(), cubeChannel);
-
-            ASKAPLOG_INFO_STR(logger, "Written the slice from rank" << id);
-          }
-
-          catch (const askap::AskapError& e) {
-            ASKAPLOG_WARN_STR(logger, "Failed to write a channel to the cube: " << e.what());
-          }
-
-          itsComms.removeChannelFromWriter(itsComms.rank());
+          performSingleWriteJob();
           ASKAPLOG_INFO_STR(logger, "this iteration target is " << targetOutstanding);
           ASKAPLOG_INFO_STR(logger, "iteration count is " << itsComms.getOutstanding());
         }
@@ -1317,33 +1294,39 @@ void ContinuumWorker::processChannels()
 
 }
 
+/// @brief perform one write job for a remote client
+/// @details This method is expected to be used for cube writing ranks only. It receives a single
+/// write job and performs it.
+void ContinuumWorker::performSingleWriteJob()
+{
+   ASKAPDEBUGASSERT(itsComms.isWriter());
+   ContinuumWorkRequest result;
+   int id;
+   result.receiveRequest(id, itsComms);
+   ASKAPLOG_INFO_STR(logger, "Received a request to write from rank " << id);
+   const int cubeChannel = result.get_globalChannel() - itsBaseCubeGlobalChannel;
+   try {
+        ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
+        ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
+        handleImageParams(result.get_params(), cubeChannel);
+        ASKAPLOG_INFO_STR(logger, "Written the slice from rank" << id);
+
+   } catch (const askap::AskapError& e) {
+        ASKAPLOG_WARN_STR(logger, "Failed to write a channel to the cube: " << e.what());
+   }
+
+   itsComms.removeChannelFromWriter(itsComms.rank());
+}
+
 /// @brief cleanup outstanding write jobs
 /// @details This method is used for cube writing ranks (does nothing for non-writers), it loops over all outstanding
 /// work units and performs write operation assigned to this rank.
 void ContinuumWorker::performOutstandingWriteJobs()
 {
    if (itsComms.isWriter()) {
-
        while (itsComms.getOutstanding() > 0) {
               ASKAPLOG_INFO_STR(logger, "I have " << itsComms.getOutstanding() << "outstanding work units");
-              ContinuumWorkRequest result;
-              int id;
-              result.receiveRequest(id, itsComms);
-              ASKAPLOG_INFO_STR(logger, "Received a request to write from rank " << id);
-              const int cubeChannel = result.get_globalChannel() - itsBaseCubeGlobalChannel;
-              try {
-
-
-                  ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
-                  ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
-                  handleImageParams(result.get_params(), cubeChannel);
-                  ASKAPLOG_INFO_STR(logger, "Written the slice from rank" << id);
-
-              } catch (const askap::AskapError& e) {
-                       ASKAPLOG_WARN_STR(logger, "Failed to write a channel to the cube: " << e.what());
-              }
-
-              itsComms.removeChannelFromWriter(itsComms.rank());
+              performSingleWriteJob();
        }
    }
 }

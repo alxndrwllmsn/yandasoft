@@ -88,6 +88,11 @@ class ContinuumWorker
         /// @note We do similar checks in both the master and in workers. So this method can be moved somewhere else to be shared.
         bool checkStoppingThresholds(const boost::shared_ptr<scimath::Params> &model) const;
 
+        /// @brief perform one write job for a remote client
+        /// @details This method is expected to be used for cube writing ranks only. It receives a single
+        /// write job and performs it.
+        void performSingleWriteJob(); 
+
         /// @brief cleanup outstanding write jobs
         /// @details This method is used for cube writing ranks (does nothing for non-writers), it loops over all outstanding
         /// work units and performs write operation assigned to this rank.
