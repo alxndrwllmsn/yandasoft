@@ -88,6 +88,15 @@ class ContinuumWorker
         /// @note We do similar checks in both the master and in workers. So this method can be moved somewhere else to be shared.
         bool checkStoppingThresholds(const boost::shared_ptr<scimath::Params> &model) const;
 
+
+        /// @brief add current image as a model
+        /// @details This method adds fullres (if present) or ordinary image as model.slice in the given params object.
+        /// It is expected that model.slice will be absent and either fullres or Nyquist resolution image should be
+        /// present.
+        /// @param[in] params shared pointer to the params object to work with (should be non-empty)
+        /// @note I (MV) think there could be untidy design here - we probably make an extra copy which could be avoided
+        static void addImageAsModel(const boost::shared_ptr<scimath::Params> &params);
+
         /// @brief perform one write job for a remote client
         /// @details This method is expected to be used for cube writing ranks only. It receives a single
         /// write job and performs it.
@@ -102,6 +111,14 @@ class ContinuumWorker
         /// @note (MV) I didn't fully understand the logic behind targetOutstanding and minOutstanding (one should be
         /// sufficient), the same behaviour as we had prior to refactoring has been implemented.
         void performOutstandingWriteJobs(int targetOutstanding = 0, int minOutstanding = -1);
+
+        /// @brief perform write job allocated to this rank
+        /// @details unlike performOutstandingWriteJobs or performSingleWriteJob this method deals with the write
+        /// job handled entirely by this rank (i.e. its own write job) and, hence, provided explicitly rather than
+        /// received from another rank.
+        /// @param[in] globalChannel global channel (i.e. channel in the whole cube) to write
+        /// @param[in] params shared pointer to the model with required info (should not be empty)
+        void performOwnWriteJob(unsigned int globalChannel, const boost::shared_ptr<scimath::Params> &params);
 
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;

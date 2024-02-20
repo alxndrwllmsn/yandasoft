@@ -1160,17 +1160,7 @@ void ContinuumWorker::processChannels()
       // At this point we have finished our last major cycle. We have the "best" model from the
       // last minor cycle. Which should be in the archive - or full coordinate system
       // the residual image should be merged into the archive coordinated as well.
-
-      ASKAPLOG_INFO_STR(logger,"Adding model.slice");
-      ASKAPCHECK(rootImager.params()->has("image.slice"), "Params are missing image.slice parameter");
-      // before archiving "image.slice" as the model, check if a high-resolution "fullres.slice" has been set up
-      if (rootImager.params()->has("fullres.slice")) {
-        rootImager.params()->add("model.slice", rootImager.params()->valueT("fullres.slice"));
-      }
-      else {
-        rootImager.params()->add("model.slice", rootImager.params()->valueT("image.slice"));
-      }
-      ASKAPCHECK(rootImager.params()->has("model.slice"), "Params are missing model.slice parameter");
+      addImageAsModel(rootImager.params());
 
       if (itsWriteGrids) {
           rootImager.addGridsToModel();
@@ -1194,17 +1184,8 @@ void ContinuumWorker::processChannels()
 
       if (itsComms.isWriter()) {
 
-        ASKAPLOG_INFO_STR(logger, "I have (including my own) " << itsComms.getOutstanding() << " units to write");
-        ASKAPLOG_INFO_STR(logger, "I have " << itsComms.getClients().size() << " clients with work");
-        int cubeChannel = itsWorkUnits[workUnitCount - 1].get_globalChannel() - itsBaseCubeGlobalChannel;
-        ASKAPLOG_INFO_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
-        ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
-        handleImageParams(rootImager.params(), cubeChannel);
-        ASKAPLOG_INFO_STR(logger, "Written channel " << cubeChannel);
-
-        itsComms.removeChannelFromWriter(itsComms.rank());
-
-        itsComms.removeChannelFromWorker(itsComms.rank());
+        // write own portion first
+        performOwnWriteJob(itsWorkUnits[workUnitCount - 1].get_globalChannel(), rootImager.params());
 
         /// write everyone elses
 
@@ -1277,6 +1258,28 @@ void ContinuumWorker::processChannels()
   logBeamInfo();
   logWeightsInfo();
 
+}
+
+/// @brief perform write job allocated to this rank
+/// @details unlike performOutstandingWriteJobs or performSingleWriteJob this method deals with the write
+/// job handled entirely by this rank (i.e. its own write job) and, hence, provided explicitly rather than
+/// received from another rank.
+/// @param[in] globalChannel global channel (i.e. channel in the whole cube) to write
+/// @param[in] params shared pointer to the model with required info (should not be empty)
+void ContinuumWorker::performOwnWriteJob(unsigned int globalChannel, const boost::shared_ptr<scimath::Params> &params)
+{
+   ASKAPLOG_INFO_STR(logger, "I have (including my own) " << itsComms.getOutstanding() << " units to write");
+   ASKAPLOG_INFO_STR(logger, "I have " << itsComms.getClients().size() << " clients with work");
+   ASKAPDEBUGASSERT(params);
+   const int cubeChannel = globalChannel - itsBaseCubeGlobalChannel;
+   ASKAPLOG_DEBUG_STR(logger, "Attempting to write channel " << cubeChannel << " of " << itsNChanCube);
+   ASKAPCHECK((cubeChannel >= 0 || cubeChannel < itsNChanCube), "cubeChannel outside range of cube slice");
+   handleImageParams(params, cubeChannel);
+   ASKAPLOG_INFO_STR(logger, "Written channel " << cubeChannel);
+
+   itsComms.removeChannelFromWriter(itsComms.rank());
+
+   itsComms.removeChannelFromWorker(itsComms.rank());
 }
 
 /// @brief perform one write job for a remote client
@@ -1563,6 +1566,28 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
 
 }
+
+/// @brief add current image as a model
+/// @details This method adds fullres (if present) or ordinary image as model.slice in the given params object.
+/// It is expected that model.slice will be absent and either fullres or Nyquist resolution image should be
+/// present.
+/// @param[in] params shared pointer to the params object to work with (should be non-empty)
+/// @note I (MV) think there could be untidy design here - we probably make an extra copy which could be avoided
+void ContinuumWorker::addImageAsModel(const boost::shared_ptr<scimath::Params> &params)
+{
+   ASKAPLOG_INFO_STR(logger,"Adding model.slice");
+   ASKAPDEBUGASSERT(params);
+  
+   ASKAPCHECK(params->has("image.slice"), "Params are missing image.slice parameter");
+   // before archiving "image.slice" as the model, check if a high-resolution "fullres.slice" has been set up
+   if (params->has("fullres.slice")) {
+       params->add("model.slice", params->valueT("fullres.slice"));
+   } else {
+       params->add("model.slice", params->valueT("image.slice"));
+   }
+   ASKAPCHECK(params->has("model.slice"), "Params are missing model.slice parameter");
+}
+
 
 void ContinuumWorker::initialiseBeamLog(const unsigned int numChannels)
 {
