@@ -65,7 +65,6 @@
 #include <askap/parallel/ImagerParallel.h>
 #include <askap/imageaccess/BeamLogger.h>
 #include <askap/imageaccess/WeightsLog.h>
-#include <askap/imagemath/linmos/LinmosAccumulator.h>
 #include <askap/gridding/UVWeightParamsHelper.h>
 
 // CASA Includes
@@ -844,12 +843,7 @@ void ContinuumWorker::processChannels()
         // Why not just use a spheroidal for the PSF gridders (use sphfuncforpsf)/ full FOV (done)
         // FIXME
         if (updateDir) {
-            // definition of rootINERef moved here, because getNE will only return a valid NE after calcNE
-            // call if traditional weighting is enabled. Besides, it only appears to be used inside this block
-            ImagingNormalEquations &rootINERef =
-                dynamic_cast<ImagingNormalEquations&>(*rootImager.getNE());
-            rootINERef.weightType(FROM_WEIGHT_IMAGES);
-            rootINERef.weightState(WEIGHTED);
+            rootImager.configureNormalEquationsForMosaicing();
             rootImager.zero(); // then we delete all our work ....
         }
       }
@@ -986,16 +980,13 @@ void ContinuumWorker::processChannels()
             // this is required if there is more than one workunit per channel
             // either in time or by beam.
 
-            ASKAPLOG_INFO_STR(logger,"About to merge into rootImager");
-            ImagingNormalEquations &workingINERef =
-            dynamic_cast<ImagingNormalEquations&>(*workingImager.getNE());
+            ASKAPLOG_DEBUG_STR(logger,"About to merge into rootImager");
             if (updateDir) {
-              workingINERef.weightType(FROM_WEIGHT_IMAGES);
-              workingINERef.weightState(WEIGHTED);
+              workingImager.configureNormalEquationsForMosaicing();
             }
 
-            rootImager.getNE()->merge(*workingImager.getNE());
-            ASKAPLOG_INFO_STR(logger,"Merged");
+            rootImager.mergeNormalEquations(workingImager);
+            ASKAPLOG_DEBUG_STR(logger,"Merged");
           }
           catch( const askap::AskapError& e) {
             ASKAPLOG_WARN_STR(logger, "Askap error in imaging - skipping accumulation: carrying on - this will result in a blank channel" << e.what());

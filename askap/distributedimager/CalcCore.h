@@ -120,6 +120,25 @@ namespace cp {
         /// this version uses the iterator returned by makeDataIterator (wrapped into the calibration adapter, if needed)
         void accumulateUVWeights() const;
 
+        /// @brief configure normal equation for linear mosaicing
+        /// @details When linmos is expected to happen during merge of normal equations we need to configure
+        /// NEs appropriately to interpret weight correctly. This helper method does it. 
+        /// @note Normal equations should already be setup (although could be empty) before this method is called.
+        /// Otherwise, an exception will be thrown. Also, we could've do this setup automatically based on the 
+        /// gridder type. But at the moment the same approach is followed as we had prior to refactoring.
+        void configureNormalEquationsForMosaicing() const;
+
+        /// @brief merge normal equations from another CalcCore
+        /// @details This is a convenience method to merge in normal equations held by other CalcCore
+        /// object. In principle, we can have this method in one of the base classes (and require 
+        /// broader type rather than CalcCore as the input) because all of the required functionality is
+        /// in the base classes. But we only use it with CalcCore, so keep it in this class as well.
+        /// @note Normal equations should be initialised (and with the consistent type) in both
+        /// this and other CalcCore instances, but could be empty. The method is const because it doesn't change
+        /// this class (only changes normal equations held by pointer).
+        /// @param[in] other an instance of CalcCore to merge from
+        void mergeNormalEquations(const CalcCore &other) const;
+
     protected:
         /// @brief keep the base class' version accessible here
         /// @note for quick reference, it has the following signature:
