@@ -120,6 +120,15 @@ class ContinuumWorker
         /// @param[in] params shared pointer to the model with required info (should not be empty)
         void performOwnWriteJob(unsigned int globalChannel, const boost::shared_ptr<scimath::Params> &params);
 
+        /// @brief send blank image to writer
+        /// @details This method is expected to be used when calculation of a spectral plane is failed for some reason,
+        /// but some other rank is responsible for writing it. Essentially it sends a blank image with parameters 
+        /// (like frequency and channel) filled from the work unit. 
+        /// @param[in] wu work unit to take the information from
+        /// @note (MV:) This doesn't seem like a good design, but the behaviour is left the same as it was prior to
+        /// the refactoring.
+        void sendBlankImageToWriter(const cp::ContinuumWorkUnit &wu) const;
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
          // The work units
@@ -143,7 +152,7 @@ class ContinuumWorker
 
         // Setup the image specified in parset and add it to the Params instance.
         void setupImage(const askap::scimath::Params::ShPtr& params,
-                    double channelFrequency, bool shapeOveride = false);
+                    double channelFrequency, bool shapeOveride = false) const;
 
         void buildSpectralCube();
 

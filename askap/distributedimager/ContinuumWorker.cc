@@ -1227,21 +1227,9 @@ void ContinuumWorker::processChannels()
         ASKAPLOG_INFO_STR(logger, "Marking bad channel as processed in count for writer\n");
         itsComms.removeChannelFromWriter(itsComms.rank());
       } else {
-        int goodUnitCount = workUnitCount - 1; // last good one - needed for the correct freq label and writer
+        const int goodUnitCount = workUnitCount - 1; // last good one - needed for the correct freq label and writer
         ASKAPLOG_INFO_STR(logger, "Failed on count " << goodUnitCount);
-        ASKAPLOG_INFO_STR(logger, "Sending blankparams to writer " << itsWorkUnits[goodUnitCount].get_writer());
-        askap::scimath::Params::ShPtr blankParams;
-
-        blankParams.reset(new Params(true));
-        ASKAPCHECK(blankParams, "blank parameters (images) not initialised");
-        setupImage(blankParams, itsWorkUnits[goodUnitCount].get_channelFrequency());
-
-        ContinuumWorkRequest result;
-        result.set_params(blankParams);
-        result.set_globalChannel(itsWorkUnits[goodUnitCount].get_globalChannel());
-        /// send the work to the writer with a blocking send
-        result.sendRequest(itsWorkUnits[goodUnitCount].get_writer(), itsComms);
-        ASKAPLOG_INFO_STR(logger, "Sent\n");
+        sendBlankImageToWriter(itsWorkUnits[goodUnitCount]);
       }
       // No need to increment workunit. Although this assumes that we are here because we failed the solveNE not the calcNE
 
@@ -1258,6 +1246,30 @@ void ContinuumWorker::processChannels()
   logBeamInfo();
   logWeightsInfo();
 
+}
+
+/// @brief send blank image to writer
+/// @details This method is expected to be used when calculation of a spectral plane is failed for some reason,
+/// but some other rank is responsible for writing it. Essentially it sends a blank image with parameters 
+/// (like frequency and channel) filled from the work unit. 
+/// @param[in] wu work unit to take the information from
+/// @note (MV:) This doesn't seem like a good design, but the behaviour is left the same as it was prior to
+/// the refactoring.
+void ContinuumWorker::sendBlankImageToWriter(const cp::ContinuumWorkUnit &wu) const
+{
+   ASKAPLOG_DEBUG_STR(logger, "Sending blankparams to writer " << wu.get_writer());
+   askap::scimath::Params::ShPtr blankParams;
+
+   blankParams.reset(new Params(true));
+   ASKAPCHECK(blankParams, "blank parameters (images) not initialised");
+   setupImage(blankParams, wu.get_channelFrequency());
+
+   ContinuumWorkRequest result;
+   result.set_params(blankParams);
+   result.set_globalChannel(wu.get_globalChannel());
+   /// send the work to the writer with a blocking send
+   result.sendRequest(wu.get_writer(), itsComms);
+   ASKAPLOG_DEBUG_STR(logger, "Sent");
 }
 
 /// @brief perform write job allocated to this rank
@@ -1732,7 +1744,7 @@ void ContinuumWorker::logWeightsInfo()
 
 
 void ContinuumWorker::setupImage(const askap::scimath::Params::ShPtr& params,
-                                 double channelFrequency, bool shapeOverride)
+                                 double channelFrequency, bool shapeOverride) const
 {
   try {
     const LOFAR::ParameterSet imParset = itsParset.makeSubset("Images.");
