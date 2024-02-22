@@ -181,6 +181,18 @@ void WorkUnitContainer::mergeAdjacentChannels()
    //       itsParset.replace("Channels",ChannelParam);
 }
 
+/// @brief access work unit by index
+/// @details This is hopefully a temporary method to enable early integration with ContinuumWorker. It
+/// mimics the direct access as for the std::vector. In the future, it is expected that iterator interfaces
+/// would be sufficient.
+/// @param[in] index index to work with (should be less than size)
+/// @return const reference to the work unit stored at the given index
+const cp::ContinuumWorkUnit& WorkUnitContainer::operator[](size_t index) const
+{
+   ASKAPASSERT(index < itsWorkUnits.size());
+   return itsWorkUnits[index];
+}
+
 } // namespace synthesis
 
 } // namespace askap
