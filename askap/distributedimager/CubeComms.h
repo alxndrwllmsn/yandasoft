@@ -101,7 +101,7 @@ class CubeComms: public askapparallel::AskapParallel {
         /// @brief its communicator for its fellow workers
         size_t buildCommIndex();
         /// @brief its communicator for its fellow writers
-        size_t buildWriterIndex(size_t comm);
+        size_t buildWriterIndex(size_t comm = 0);
 
         /// @brief translate vector of ranks from MPI_COMM_WORLD to specified comm
         std::vector<int> translateRanks(std::vector<int> ranks, size_t comm);
