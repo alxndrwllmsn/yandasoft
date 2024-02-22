@@ -31,6 +31,9 @@
 // System includes
 #include <string>
 
+// boost includes
+#include <boost/noncopyable.hpp>
+
 // ASKAPsoft includes
 #include "boost/shared_ptr.hpp"
 #include <Common/ParameterSet.h>
@@ -45,6 +48,7 @@
 #include "askap/distributedimager/MSSplitter.h"
 #include "askap/distributedimager/CalcCore.h"
 #include "askap/messages/ContinuumWorkUnit.h"
+#include "askap/distributedimager/WorkUnitContainer.h"
 #include "askap/distributedimager/CubeBuilder.h"
 #include "askap/distributedimager/CubeComms.h"
 #include <askap/utils/StatsAndMask.h>
@@ -52,13 +56,12 @@
 namespace askap {
 namespace cp {
 
-class ContinuumWorker
+class ContinuumWorker : public boost::noncopyable
 
     {
     public:
         ContinuumWorker(LOFAR::ParameterSet& parset,
                            CubeComms& comms, StatReporter& stats);
-        ~ContinuumWorker();
 
         void run(void);
 
@@ -129,21 +132,35 @@ class ContinuumWorker
         /// the refactoring.
         void sendBlankImageToWriter(const cp::ContinuumWorkUnit &wu) const;
 
+        /// @brief figure out if preconditioning is to be done
+        /// @details This method encapsulates checks of the parset indicating that preconditioning is going to be done.
+        /// It is necessary to configure writing of additional data products, although preconditioning itself 
+        /// is enabled and done by the appropriate solver class.
+        /// @param[in] parset parset to use (this method is expected to be used in the constructor, so it is handy not
+        /// to rely on the itsParset data field).
+        /// @return true if preconditioning is to be done, false otherwise
+        static bool doingPreconditioning(const LOFAR::ParameterSet &parset);
+
+        /// @brief helper method to obtain the number of writers for the cube
+        /// @details This method obtains the number of writers from the parset and adjusts it if necessary.
+        /// It is intended to be used in the constructor to fill itsNumWriters data field and requires 
+        /// itsGridType and itsParset to be valid.
+        /// @return number of writer ranks for grid export
+        int configureNumberOfWriters();
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
-         // The work units
-        vector<ContinuumWorkUnit> itsWorkUnits;
-        // cached files
-        vector<string> itsCachedFiles;
 
-        // Whether preconditioning has been requested
-        bool itsDoingPreconditioning;
+        /// @brief the work units
+        WorkUnitContainer itsWorkUnits;
 
-        // Whether the gridder is a Mosaicking one
-        bool itsGridderCanMosaick;
+        /// @brief whether preconditioning has been requested
+        /// @details It is populated in the constructor based on the parset using doingPreconditioning method
+        const bool itsDoingPreconditioning;
 
         // Process a workunit
         void preProcessWorkUnit(ContinuumWorkUnit& wu);
+
         // Compress all continuous channel allocations into individual workunits
         void compressWorkUnits();
 
@@ -164,12 +181,6 @@ class ContinuumWorker
 
         // statistics
         StatReporter& itsStats;
-
-        // No support for assignment
-        ContinuumWorker& operator=(const ContinuumWorker& rhs);
-
-        // No support for copy constructor
-        ContinuumWorker(const ContinuumWorker& src);
 
         // ID of the master process
         static const int itsMaster = 0;
@@ -211,61 +222,58 @@ class ContinuumWorker
         boost::shared_ptr<askap::utils::StatsAndMask> itsRestoredStatsAndMask;
         boost::shared_ptr<askap::utils::StatsAndMask> itsResidualStatsAndMask;
         std::string itsWeightsName;
-        std::string itsGridType;
-
-        // calculate the statistic of the per plane image
-        void calculateImageStats(boost::shared_ptr<askap::utils::StatsAndMask> statsAndMask,
-                                 boost::shared_ptr<CubeBuilder<casacore::Float> > imgCube,
-                                 int channel, const casacore::Array<float>& arr);
 
         void handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan);
 
-        void copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams);
+        void copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams) const;
 
         void initialiseBeamLog(const unsigned int numChannels);
         void recordBeam(const askap::scimath::Axes &axes, const unsigned int globalChannel);
 
         std::map<unsigned int, casacore::Vector<casacore::Quantum<double> > > itsBeamList;
         unsigned int itsBeamReferenceChannel;
-        void logBeamInfo();
+        void logBeamInfo() const;
 
         void initialiseWeightsLog(const unsigned int numChannels);
         void recordWeight(float wt, const unsigned int globalChannel);
         std::map<unsigned int, float> itsWeightsList;
-        void logWeightsInfo();
+        void logWeightsInfo() const;
 
         /// @brief Do we want a restored image?
-        bool itsRestore;
+        const bool itsRestore;
 
         /// @brief Do we want a residual image
-        bool itsWriteResidual;
+        const bool itsWriteResidual;
 
         /// @brief write 'raw', unnormalised, natural weight psf
-        bool itsWritePsfRaw;
+        const bool itsWritePsfRaw;
 
         /// @brief write normalised, preconditioned psf
-        bool itsWritePsfImage;
+        const bool itsWritePsfImage;
 
         /// @brief write weights image
-        bool itsWriteWtImage;
+        const bool itsWriteWtImage;
 
         /// @brief write a weights log
-        bool itsWriteWtLog;
+        const bool itsWriteWtLog;
 
         /// @brief write out the (clean) model image
-        bool itsWriteModelImage;
+        const bool itsWriteModelImage;
 
         /// @brief write out the gridded data, pcf and psf
-        bool itsWriteGrids;
+        const bool itsWriteGrids;
+
+        /// @brief grid image type
+        const std::string itsGridType;
 
         /// @brief write out the grids with UV coordinate grid
-        bool itsGridCoordUV;
+        const bool itsGridCoordUV;
 
         /// @brief write out the FFT of the grids
-        bool itsGridFFT;
+        const bool itsGridFFT;
 
         /// @brief the number of rank that can write to the cube
-        int itsNumWriters;
+        const int itsNumWriters;
 
 };
 

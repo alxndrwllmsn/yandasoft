@@ -90,8 +90,33 @@ ASKAP_LOGGER(logger, ".ContinuumWorker");
 ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
   CubeComms& comms, StatReporter& stats)
   : itsParset(parset), itsComms(comms), itsStats(stats),
+    itsDoingPreconditioning(doingPreconditioning(parset)),
     // setup whether we solve locally (spectral line mode) or on the master (continuum mode)
-    itsLocalSolver(parset.getBool("solverpercore", false))
+    itsLocalSolver(parset.getBool("solverpercore", false)),
+    // setup whether we restore and write restored image
+    itsRestore(parset.getBool("restore", false)),
+    // setup whether to write the residual image + support of an alternative parameter name
+    itsWriteResidual(parset.getBool("write.residualimage", parset.getBool("residuals",false))),
+    // write unnormalised, natural wt psf
+    itsWritePsfRaw(parset.getBool("write.psfrawimage", false)),
+    // write normalised, preconditioned psf
+    itsWritePsfImage(parset.getBool("write.psfimage", true)),
+    // write weights image
+    itsWriteWtImage(parset.getBool("write.weightsimage", false)),
+    // write weights log file
+    itsWriteWtLog(parset.getBool("write.weightslog", false)),
+    // clean model (itsRestore is already initialised by this point and can be used for default value)
+    itsWriteModelImage(parset.getBool("write.modelimage", !itsRestore)),
+    // write (dump) the gridded data, psf and pcf + support of an alternative parameter name
+    itsWriteGrids(parset.getBool("write.grids", parset.getBool("dumpgrids", false))),
+    // grid image type
+    itsGridType(parset.getString("imagetype","casa")),
+    // label grid with UV coordinates
+    itsGridCoordUV(parset.getBool("write.grids.uvcoord", itsGridType=="casa")),
+    // write fft of grid (i.e. dirty image, psf)
+    itsGridFFT(parset.getBool("write.grids.fft",false)),
+    // number of cube writers (itsGridType and itsParset are already defined and could be used)
+    itsNumWriters(configureNumberOfWriters())
 {
     ASKAPTRACE("ContinuumWorker::constructor");
 
@@ -121,48 +146,6 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
 
     ASKAPLOG_INFO_STR(logger, "Distribution: Base channel " << itsBaseChannel << " PosInGrp " << posInGroup);
 
-    itsDoingPreconditioning = false;
-    const vector<string> preconditioners = itsParset.getStringVector("preconditioner.Names", std::vector<std::string>());
-    for (vector<string>::const_iterator pc = preconditioners.begin(); pc != preconditioners.end(); ++pc) {
-      if ((*pc) == "Wiener" || (*pc) == "NormWiener" || (*pc) == "Robust" || (*pc) == "GaussianTaper") {
-        itsDoingPreconditioning = true;
-      }
-    }
-
-    itsGridderCanMosaick = false;
-    std::string GridderStr = itsParset.getString("gridder",std::string());
-    ASKAPLOG_INFO_STR(logger, "Gridder is " << GridderStr);
-
-    if (GridderStr == "AWProject" || GridderStr == "AProjectWStack") {
-      itsGridderCanMosaick = true;
-      ASKAPLOG_INFO_STR(logger," Gridder <CAN> mosaick");
-    }
-    else {
-      ASKAPLOG_INFO_STR(logger,"Gridder <CANNOT> mosaick");
-    }
-
-    itsRestore = itsParset.getBool("restore", false); // do restore and write restored image
-    itsWriteResidual = itsParset.getBool("residuals",false); // write residual image
-    itsWriteResidual = itsParset.getBool("write.residualimage",itsWriteResidual); // alternative param name
-    itsWritePsfRaw = itsParset.getBool("write.psfrawimage", false); // write unnormalised, natural wt psf
-    itsWritePsfImage = itsParset.getBool("write.psfimage", true); // write normalised, preconditioned psf
-    itsWriteWtLog = itsParset.getBool("write.weightslog", false); // write weights log file
-    itsWriteWtImage = itsParset.getBool("write.weightsimage", false); // write weights image
-    itsWriteModelImage = itsParset.getBool("write.modelimage", !itsRestore); // clean model
-    itsWriteGrids = itsParset.getBool("dumpgrids", false); // write (dump) the gridded data, psf and pcf
-    itsWriteGrids = itsParset.getBool("write.grids",itsWriteGrids); // new name
-    itsGridType = itsParset.getString("imagetype","casa");
-    itsGridCoordUV = itsParset.getBool("write.grids.uvcoord", itsGridType=="casa"); // label grid with UV coordinates
-    itsGridFFT = itsParset.getBool("write.grids.fft",false); // write fft of grid (i.e. dirty image, psf)
-    const int nwriters = itsParset.getInt32("nwriters",1);
-    ASKAPCHECK(nwriters>0,"Number of writers must be greater than 0");
-    if (itsGridType == "casa" && itsParset.getBool("singleoutputfile",false) && nwriters > 1){
-      ASKAPLOG_WARN_STR(logger,"Reducing number of writers to 1 because we are writing a single casa image cube");
-      itsNumWriters = 1;
-    } else {
-      itsNumWriters = nwriters;
-    }
-
     ASKAPCHECK(!itsParset.getBool("usetmpfs", false), "usetmpfs option is no longer supported by the code");
 
     const bool dopplerTracking = itsParset.getBool("dopplertracking",false);
@@ -177,8 +160,38 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     }
 }
 
-ContinuumWorker::~ContinuumWorker()
+/// @brief figure out if preconditioning is to be done
+/// @details This method encapsulates checks of the parset indicating that preconditioning is going to be done.
+/// It is necessary to configure writing of additional data products, although preconditioning itself 
+/// is enabled and done by the appropriate solver class.
+/// @param[in] parset parset to use (this method is expected to be used in the constructor, so it is handy not
+/// to rely on the itsParset data field).
+/// @return true if preconditioning is to be done, false otherwise
+bool ContinuumWorker::doingPreconditioning(const LOFAR::ParameterSet &parset)
 {
+   const vector<string> preconditioners = parset.getStringVector("preconditioner.Names", std::vector<std::string>());
+   for (vector<string>::const_iterator pc = preconditioners.begin(); pc != preconditioners.end(); ++pc) {
+        if ((*pc) == "Wiener" || (*pc) == "NormWiener" || (*pc) == "Robust" || (*pc) == "GaussianTaper") {
+            return true;
+        }
+   }
+   return false;
+}
+
+/// @brief helper method to obtain the number of writers for the cube
+/// @details This method obtains the number of writers from the parset and adjusts it if necessary.
+/// It is intended to be used in the constructor to fill itsNumWriters data field and requires 
+/// itsGridType and itsParset to be valid.
+/// @return number of writer ranks for grid export
+int ContinuumWorker::configureNumberOfWriters()
+{
+   const int nwriters = itsParset.getInt32("nwriters",1);
+   ASKAPCHECK(nwriters>0,"Number of writers must be greater than 0");
+   if (itsGridType == "casa" && itsParset.getBool("singleoutputfile",false) && nwriters > 1){
+       ASKAPLOG_WARN_STR(logger,"Reducing number of writers to 1 because we are writing a single casa image cube");
+       return 1;
+   }
+   return nwriters;
 }
 
 void ContinuumWorker::run(void)
@@ -338,92 +351,18 @@ void ContinuumWorker::configureChannelAllocation()
 
 void ContinuumWorker::compressWorkUnits() {
 
-    // This takes the list of workunits and reprocesses them so that all the contiguous
-    // channels are compressed into single workUnits for multiple channels
-    // this is not applicable for the spectral line experiment but can markedly reduce
-    // the number of FFT required for the continuum processesing mode
-
-    // In preProcessWorkUnit we made a list of all the channels in the allocation
-    // but the workunit may contain different measurement sets so I suppose it is
-    // globalChannel that is more important for the sake of allocation ... but
-    // the selector only works on one measurement set.
-
-    // So the upshot is this simple scheme cannot combine channels from different
-    // measurement sets into the same grid as we are using the MS accessor as the vehicle to
-    // provide the integration.
-
-    // So we need to loop through our workunit list and make a new list that just contains a
-    // single workunit for each contiguous group of channels.
-
-    // First lets loop through our workunits
-
-    vector<ContinuumWorkUnit> compressedList; // probably easier to generate a new list
-
-    ASKAPDEBUGASSERT(itsWorkUnits.size() > 0u);
-    ContinuumWorkUnit startUnit = itsWorkUnits[0];
-
-    unsigned int contiguousCount = 1;
-    int sign = 1;
-    if (itsWorkUnits.size() == 1) {
-        ASKAPLOG_WARN_STR(logger,"Asked to compress channels but workunit count 1");
-    }
-    ContinuumWorkUnit compressedWorkUnit = startUnit;
-
-
-    for ( int count = 1; count < itsWorkUnits.size(); count++) {
-
-        ContinuumWorkUnit nextUnit = itsWorkUnits[count];
-
-        std::string startDataset = startUnit.get_dataset();
-        int startChannel = startUnit.get_localChannel();
-        std::string nextDataset = nextUnit.get_dataset();
-        int nextChannel = nextUnit.get_localChannel();
-        if (contiguousCount == 1 && nextChannel == startChannel - 1) {
-            // channels are running backwards
-            sign = -1;
-        }
-
-
-        if ( startDataset.compare(nextDataset) == 0 ) { // same dataset
-            ASKAPLOG_DEBUG_STR(logger,"nextChannel "<<nextChannel<<" startChannel "<<startChannel<<" contiguousCount"<< contiguousCount);
-            if (nextChannel == (startChannel + sign * contiguousCount)) { // next channel is contiguous to previous
-                contiguousCount++;
-                ASKAPLOG_DEBUG_STR(logger, "contiguous channel detected: count " << contiguousCount);
-                if (sign < 0) {
-                    compressedWorkUnit = nextUnit;
-                }
-                compressedWorkUnit.set_nchan(contiguousCount); // update the nchan count for this workunit
-                // Now need to update the parset details
-                string ChannelParam = "["+toString(contiguousCount)+","+
-                    toString(compressedWorkUnit.get_localChannel())+"]";
-                ASKAPLOG_DEBUG_STR(logger, "compressWorkUnit: ChannelParam = "<<ChannelParam);
-                itsParset.replace("Channels",ChannelParam);
-            } else { // no longer contiguous channels reset the count
-                contiguousCount = 0;
-            }
-        }
-        else { // different dataset reset the count
-            ASKAPLOG_DEBUG_STR(logger, "Datasets differ resetting count");
-            contiguousCount = 0;
-        }
-        if (count == (itsWorkUnits.size()-1) || contiguousCount == 0) { // last unit
-            ASKAPLOG_DEBUG_STR(logger, "Adding unit to compressed list");
-            compressedList.insert(compressedList.end(),compressedWorkUnit);
-            startUnit = nextUnit;
-            compressedWorkUnit = startUnit;
-        }
-
-    }
-    if (compressedList.size() > 0) {
-        ASKAPLOG_INFO_STR(logger, "Replacing workUnit list of size " << itsWorkUnits.size() << " with compressed list of size " << compressedList.size());
-        ASKAPLOG_INFO_STR(logger,"A corresponding change has been made to the parset");
-        itsWorkUnits = compressedList;
-    }
-    else {
-        ASKAPLOG_WARN_STR(logger,"No compression performed");
-    }
-    ASKAPCHECK(compressedList.size() < 2, "The number of compressed workunits is greater than one. Channel parameters may be incorrect - see AXA-1004 and associated technical debt tickets");
+   itsWorkUnits.mergeAdjacentChannels();
+   ASKAPCHECK(itsWorkUnits.size() < 2, "The number of compressed workunits is greater than one. Channel parameters may be incorrect - see AXA-1004 and associated technical debt tickets");
+   if (itsWorkUnits.size() > 0) {
+       // Now need to update the parset details
+       const cp::ContinuumWorkUnit& wu = *itsWorkUnits.begin();
+       const std::string ChannelParam = "["+toString(wu.get_nchan())+","+
+                    toString(wu.get_localChannel())+"]";
+       ASKAPLOG_DEBUG_STR(logger, "compressWorkUnit: ChannelParam = "<<ChannelParam);
+       itsParset.replace("Channels",ChannelParam);
+   }
 }
+
 void ContinuumWorker::preProcessWorkUnit(ContinuumWorkUnit& wu)
 {
   // This also needs to set the frequencies and directions for all the images
@@ -435,8 +374,7 @@ void ContinuumWorker::preProcessWorkUnit(ContinuumWorkUnit& wu)
   itsAdvisor->addMissingParameters();
 
   ASKAPLOG_DEBUG_STR(logger, "Storing workUnit");
-  itsWorkUnits.insert(itsWorkUnits.begin(),wu); //
-  //itsWorkUnits.push_back(wu);
+  itsWorkUnits.add(wu); //
   ASKAPLOG_DEBUG_STR(logger, "Finished preProcessWorkUnit");
   ASKAPLOG_DEBUG_STR(logger, "Parset Reports (leaving preProcessWorkUnit): " << (itsParset.getStringVector("dataset", true)));
 }
@@ -1371,7 +1309,7 @@ bool ContinuumWorker::checkStoppingThresholds(const boost::shared_ptr<scimath::P
    return false;
 }
 
-void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams)
+void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams) const
 {
   askap::scimath::Params& src = *SourceParams;
   askap::scimath::Params& dest = *SinkParams;
@@ -1385,7 +1323,7 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   hlp.copyTo(dest, "slice");
 }
 
-void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan)
+void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan) 
 {
 
   // Pre-conditions
@@ -1646,7 +1584,7 @@ void ContinuumWorker::recordWeight(float wt, const unsigned int cubeChannel)
 //   }
 // }
 
-void ContinuumWorker::logBeamInfo()
+void ContinuumWorker::logBeamInfo() const
 {
     bool beamlogAsFile = itsParset.getBool("write.beamlog",true);
     askap::accessors::BeamLogger beamlog;
@@ -1687,7 +1625,7 @@ void ContinuumWorker::logBeamInfo()
 
 }
 
-void ContinuumWorker::logWeightsInfo()
+void ContinuumWorker::logWeightsInfo() const
 {
 
   if (!itsWriteWtImage) {

@@ -113,6 +113,14 @@ public:
    /// @return the number of unique frequencies across all stored work units. Zero is returned for an empty container.
    size_t numberOfFrequencyBlocks() const;
 
+   /// @brief access work unit by index
+   /// @details This is hopefully a temporary method to enable early integration with ContinuumWorker. It
+   /// mimics the direct access as for the std::vector. In the future, it is expected that iterator interfaces
+   /// would be sufficient.
+   /// @param[in] index index to work with (should be less than size)
+   /// @return const reference to the work unit stored at the given index
+   const cp::ContinuumWorkUnit& operator[](size_t index) const;
+
 private:
    /// @brief helper method to populate itsFreqBoundaries if it needs an update
    /// @details It goes over all stored workunits and appends a pointer (in the form of iterator)
