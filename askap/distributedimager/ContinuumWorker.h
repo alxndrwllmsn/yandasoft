@@ -33,20 +33,15 @@
 
 // boost includes
 #include <boost/noncopyable.hpp>
+#include "boost/shared_ptr.hpp"
 
 // ASKAPsoft includes
-#include "boost/shared_ptr.hpp"
 #include <Common/ParameterSet.h>
-#include <askap/scimath/fitting/INormalEquations.h>
 #include <askap/scimath/fitting/Params.h>
-#include <askap/dataaccess/TableDataSource.h>
-#include <askap/gridding/IVisGridder.h>
 #include <askap/askap/StatReporter.h>
 
 // Local includes
 #include "askap/distributedimager/AdviseDI.h"
-#include "askap/distributedimager/MSSplitter.h"
-#include "askap/distributedimager/CalcCore.h"
 #include "askap/messages/ContinuumWorkUnit.h"
 #include "askap/distributedimager/WorkUnitContainer.h"
 #include "askap/distributedimager/CubeBuilder.h"

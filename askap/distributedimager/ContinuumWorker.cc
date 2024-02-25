@@ -29,37 +29,21 @@
 
 // System includes
 #include <string>
-#include <sstream>
 #include <stdexcept>
 #include <vector>
-#include <complex>
-#include <cmath>
-#include <iostream>
-#include <iomanip>
 
-#include <sys/stat.h>
-#include <unistd.h>
-
+// boost includes
 #include "boost/shared_ptr.hpp"
-#include "boost/filesystem.hpp"
+
 // ASKAPsoft includes
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapUtil.h>
 #include <askap/profile/AskapProfiler.h>
-#include <askap/scimath/fitting/Equation.h>
-#include <askap/scimath/fitting/INormalEquations.h>
-#include <askap/scimath/fitting/ImagingNormalEquations.h>
-#include <askap/scimath/fitting/Params.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
-#include <askap/gridding/IVisGridder.h>
-#include <askap/gridding/VisGridderFactory.h>
-#include <askap/measurementequation/SynthesisParamsHelper.h>
-#include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/distributedimager/DataSourceManager.h>
 #include <askap/scimath/utils/PolConverter.h>
-#include <Common/ParameterSet.h>
 #include <Common/Exceptions.h>
 #include <casacore/casa/OS/Timer.h>
 #include <askap/parallel/ImagerParallel.h>
@@ -67,15 +51,10 @@
 #include <askap/imageaccess/WeightsLog.h>
 #include <askap/gridding/UVWeightParamsHelper.h>
 
-// CASA Includes
-
 // Local includes
 #include "askap/distributedimager/AdviseDI.h"
 #include "askap/distributedimager/CalcCore.h"
-#include "askap/messages/ContinuumWorkUnit.h"
 #include "askap/messages/ContinuumWorkRequest.h"
-#include "askap/distributedimager/CubeBuilder.h"
-#include "askap/distributedimager/CubeComms.h"
 
 using namespace std;
 using namespace askap::cp;
