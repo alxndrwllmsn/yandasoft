@@ -256,7 +256,6 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
   const casa::uInt nChan = chunk.nChannel();
   const casa::uInt nRow = chunk.nRow();
   casa::RigidVector<casa::Complex,4> vis;
-  //const casa::uInt nVisRow = rwVis.nrow();
   const casa::uInt nVisRow = rwVis.nplane();
   ASKAPDEBUGASSERT(nRow > 0);
   ASKAPCHECK(nVisRow % nRow == 0,"#visibility rows should be multiple of # rows in chunk");
@@ -387,7 +386,6 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
             vis*=mueller;
             // write back to chunk
             for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                //rwVis(row,chan,pol) = vis(pol);
                 rwVis(pol,chan,visRow) = vis(pol);
             }
 

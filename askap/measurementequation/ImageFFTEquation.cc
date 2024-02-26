@@ -30,8 +30,10 @@ ASKAP_LOGGER(logger, ".measurementequation.imagefftequation");
 #include <askap/dataaccess/SharedIter.h>
 #include <askap/dataaccess/MemBufferDataAccessor.h>
 #include <askap/dataaccess/DDCalBufferDataAccessor.h>
+#include <askap/dataaccess/DDCalOnDemandNoiseAndFlagDA.h>
 #include <askap/scimath/fitting/Params.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
+#include <askap/measurementequation/CalibrationIterator.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/gridding/BoxVisGridder.h>
 #include <askap/gridding/SphFuncVisGridder.h>
@@ -327,12 +329,6 @@ namespace askap
       for (itsIdi.init();itsIdi.hasMore();itsIdi.next())
       {
         itsIdi->rwVisibility().set(0.0);
-        /*
-        ASKAPDEBUGASSERT(itsIdi->nPol() == 4);
-        for (casacore::uInt p=1;p<3;++p) {
-             itsIdi->rwVisibility().xyPlane(p).set(0.);
-        }
-        */
         for (std::vector<std::string>::const_iterator it=completions.begin();it!=completions.end();it++)
         {
             string imageName("image"+(*it));
@@ -412,6 +408,7 @@ namespace askap
 
       // We will need to loop over all completions i.e. all sources
       const std::vector<std::string> completions(parameters().completions("image"));
+      const bool ddCal = itsCalDirMap.size() > 0;
 
       // To minimize the number of data passes, we keep copies of the gridders in memory, and
       // switch between these. This optimization may not be sufficient in the long run.
@@ -521,6 +518,20 @@ namespace askap
         /// Now the residual images, dopsf=false, dopcf=false
         itsResidualGridders[imageName]->customiseForContext(*it);
         itsResidualGridders[imageName]->initialiseGrid(axes, imageShape, false);
+        // DDCALTAG
+        if (ddCal) {
+            const boost::shared_ptr<TableVisGridder const> &tmGridder =
+                boost::dynamic_pointer_cast<TableVisGridder const>(itsModelGridders[imageName]);
+            const boost::shared_ptr<TableVisGridder const> &trGridder =
+                boost::dynamic_pointer_cast<TableVisGridder const>(itsResidualGridders[imageName]);
+            ASKAPCHECK(tmGridder!=0 && trGridder!=0,
+                "Wrong gridder type for DDCalibration in ImageFFTEquation::calcImagingEquations()");
+            const int index = itsCalDirMap[ImageParamsHelper(imageName).name()];
+            ASKAPCHECK(index >= 0, "Invalid source index for DDCAL");
+            ASKAPLOG_DEBUG_STR(logger, "Setting DDCal source index for "<<imageName<<" gridders to " << index);
+            tmGridder->setSourceIndex(index);
+            trGridder->setSourceIndex(index);
+        }
         // and PSF gridders, dopsf=true, dopcf=false
         if (!itsReuseGrid[imageName]) {
             itsPSFGridders[imageName]->customiseForContext(*it);
@@ -584,17 +595,33 @@ namespace askap
       }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
+      // Get access to explicit calibration operations (predict/correct)
+      boost::shared_ptr<ICalibrationApplicator> calME;
+      if (ddCal) {
+        auto calIter = itsIdi.dynamicCast<CalibrationIterator>();
+        if (calIter) {
+            calME = calIter->calApplicator();
+        }
+      }
+
       // Now we loop through all the data
-      ASKAPLOG_DEBUG_STR(logger, "Starting degridding model and gridding residuals" );
+      ASKAPLOG_INFO_STR(logger, "Starting degridding model and gridding residuals" );
       size_t counterGrid = 0, counterDegrid = 0;
       bool once = true;
       for (itsIdi.init();itsIdi.hasMore();itsIdi.next())
       {
         // buffer-accessor, used as a replacement for proper buffers held in the subtable
         // effectively, an array with the same shape as the visibility cube is held by this class
-        MemBufferDataAccessor accBuffer(*itsIdi);
+
+        // We need the buffer to have both DDCal and NoiseAndFlag features
+        DDCalOnDemandNoiseAndFlagDA accBuffer(*itsIdi);
+        if (ddCal) {
+            // we need a buffer with space for multiple directions
+            accBuffer.setNDir(itsNDir);
+        }
 
         // Accumulate model visibility for all models
+        // different directions go into separate parts of the buffer
         accBuffer.rwVisibility().set(0.0);
         if (somethingHasToBeDegridded) {
             for (std::vector<std::string>::const_iterator it=completions.begin();it!=completions.end();++it) {
@@ -608,6 +635,10 @@ namespace askap
                      counterDegrid+=accBuffer.nRow();
                  }
             }
+            if (calME) {
+                // corrupt the model in ddcal case - each DD section with its own calibration
+                calME->predict(accBuffer);
+            }
             // optional aggregation of visibilities in the case of distributed model
             // somethingHasToBeDegridded is supposed to have consistent value across all participating ranks
             if (itsVisUpdateObject) {
@@ -615,8 +646,41 @@ namespace askap
             }
             //
         }
-        accBuffer.rwVisibility() -= itsIdi->visibility();
-        accBuffer.rwVisibility() *= float(-1.);
+        if (!ddCal) {
+            // calculate residual visibilities
+            accBuffer.rwVisibility() -= itsIdi->visibility();
+            accBuffer.rwVisibility() *= float(-1.);
+        } else {
+            // calculate residual visibilities - subtract all models and calibrate for each direction
+            DDCalBufferDataAccessor residBuffer(*itsIdi);
+            residBuffer.setNDir(itsNDir);
+            casacore::Cube<casacore::Complex> & vis = residBuffer.rwVisibility();
+            const casacore::Cube<casacore::Complex> & model = accBuffer.visibility();
+            ASKAPCHECK(vis.shape()==model.shape(),"Mismatch in shape between residual and model visibilities");
+            const casacore::Slice all;
+            const auto nrow = residBuffer.nRow();
+            const casacore::Slice row0Slice(0, nrow);
+            casacore::Cube<casacore::Complex> vis0(vis(all,all,row0Slice));
+            vis0 = itsIdi->visibility();
+            // loop over directions - subtract all models from first block of visibilities
+            if (somethingHasToBeDegridded) {
+                for (int dir = 0; dir < itsNDir; dir++) {
+                    const casacore::Slice rowSlice(dir * nrow, nrow);
+                    vis0 -= model(all,all,rowSlice);
+                }
+            }
+            // replicate result to other directions
+            for (int dir = 1; dir < itsNDir; dir++) {
+                const casacore::Slice rowSlice(dir * nrow, nrow);
+                vis(all,all,rowSlice) = vis0;
+            }
+            // Now assign to output buffer
+            accBuffer.rwVisibility() = vis;
+            // and calibrate for each direction if calibrating
+            if (calME) {
+                calME->correct(accBuffer);
+            }
+        }
 
         /// Now we can calculate the residual visibility and image
         size_t tempCounter = 0;
