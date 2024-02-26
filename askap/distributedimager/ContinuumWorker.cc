@@ -252,6 +252,7 @@ void ContinuumWorker::run(void)
   if (localSolver) {
     ASKAPLOG_INFO_STR(logger, "In local solver mode - reprocessing allocations)");
     itsAdvisor->updateComms();
+    itsComms.buildWriterIndex(itsComms.theWorkers());
     int myMinClient = itsComms.rank();
     int myMaxClient = itsComms.rank();
 
@@ -308,6 +309,7 @@ void ContinuumWorker::run(void)
       }
       initialiseBeamLog(nchanTotal);
       initialiseWeightsLog(nchanTotal);
+      itsComms.buildWriterIndex(itsComms.theWorkers());
 
   }
   ASKAPLOG_INFO_STR(logger, "Adding all missing parameters");
@@ -658,7 +660,7 @@ void ContinuumWorker::processChannels()
               itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, pcfgrid_name, true));
               itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, this->nchanCube, f0, freqinc, psfgrid_name, true));
           } else if ((itsGridType == "adios") && (itsParset.getString("imageaccess", "individual") == "collective")) {
-              size_t comm_index = itsComms.theWorkers();
+              size_t comm_index = itsComms.theWriters();
               itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
               itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
               itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, this->nchanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));
