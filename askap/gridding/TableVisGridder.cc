@@ -30,10 +30,9 @@ ASKAP_LOGGER(logger, ".gridding.tablevisgridder");
 
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapUtil.h>
-#include <askap/scimath/fft/FFTWrapper.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 
 #include <casacore/casa/BasicSL/Constants.h>
-#include <casacore/casa/Arrays/ArrayIter.h>
 #include <casacore/casa/Arrays/ArrayMath.h>
 #include <casacore/casa/Arrays/Slicer.h>
 #include <casacore/casa/Arrays/Slice.h>
@@ -721,14 +720,12 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                if (!forward) {
                    if (!isPSFGridder() && !isPCFGridder()) {
                        ASKAPDEBUGASSERT(roVisCube!=0);
-                       //for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(i,chan,pol);
-                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(pol,chan,i);
+                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(pol,chan,iDDOffset+i);
                        itsPolConv.convert(itsImagePolFrameVis,itsPolVector);
                    }
                    // we just don't need this quantity for the forward gridder, although there would be no
                    // harm to always compute it
                    ASKAPDEBUGASSERT(roVisNoise!=0);
-                   //for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(i,chan,pol);
                    for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(pol,chan,i);
                    itsPolConv.noise(itsImagePolFrameNoise,itsPolVector);
                }
@@ -912,7 +909,6 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                    if (forward) {
                        ASKAPDEBUGASSERT(visCube!=0)
                        itsPolConv.convert(itsPolVector,itsImagePolFrameVis);
-                       //for (uint pol=0; pol<nPol; pol++) (*visCube)(iDDOffset+i,chan,pol) += itsPolVector(pol);
                        for (uint pol=0; pol<nPol; pol++) (*visCube)(pol,chan,iDDOffset+i) += itsPolVector(pol);
                        // visibilities with w out of range are left unchanged during prediction
                        // as long as subsequent imaging uses the same wmax this should work ok
@@ -1060,11 +1056,13 @@ void TableVisGridder::addConjugates() {
     const casa::IPosition ipStart(4, 0, 0, pol, imageChan);
     const casa::Slicer slicer(ipStart, onePlane4D);
 
-    casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer).nonDegenerate());
+    casa::Matrix<casa::Complex> aGrid(itsGrid[gInd](slicer).nonDegenerate());
 
 // DAM -- it would be faster to do this all in uv, but testing and don't want to deal with off-by-one issues...
 
 ASKAPLOG_INFO_STR(logger, "DAMDAM before conjugates. sum of grid = " << sum(real(aGrid)) );
+// Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
     fft2d(aGrid, false);
     aGrid += conj(aGrid);
     fft2d(aGrid, true);
@@ -1109,9 +1107,6 @@ void TableVisGridder::setRobustness(const float robustness) {
     }
 
 }
-
-
-
 
 /// @brief correct visibilities, if necessary
 /// @details This method is intended for on-the-fly correction of visibilities (i.e.
@@ -1362,7 +1357,8 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
     casacore::Array<imtype> dBuffer(itsGrid[0].shape());
     ASKAPDEBUGASSERT(dBuffer.shape().nelements()>=2);
     ASKAPDEBUGASSERT(itsShape == scimath::PaddingUtils::paddedShape(out.shape(),paddingFactor()));
-
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     /// Loop over all grids Fourier transforming and accumulating
     for (unsigned int i=0; i<itsGrid.size(); i++) {
         #ifdef ASKAP_FLOAT_IMAGE_PARAMS
@@ -1460,8 +1456,8 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
         }
         // end of debugging code
         */
+        fft2d.transformAllHyperPlanes(scratch, false);
 
-        fft2d(scratch, false);
         if (i==0) {
             toDouble(dBuffer, scratch);
         } else {
@@ -1470,18 +1466,11 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
             dBuffer+=work;
         }
     }
+    clearGrid();
     // Now we can do the convolution correction
     correctConvolution(dBuffer);
     dBuffer*=imtype(double(dBuffer.shape()(0))*double(dBuffer.shape()(1)));
     out = scimath::PaddingUtils::extract(dBuffer,paddingFactor());
-
-    // Free up the grid memory?
-    if (itsClearGrid) {
-        ASKAPLOG_INFO_STR(logger,"Clearing the grid");
-        itsGrid.resize(0);
-        its2dGrid.resize(0,0);
-        itsGridIndex=-1;
-    }
 }
 
 /// @brief store given grid
@@ -1550,7 +1539,8 @@ void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
 
     // Make sure we reinitalise the pol converter
     itsVisPols.resize(0);
-
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     if (casacore::max(casacore::abs(in))>0.0) {
         itsModelIsEmpty=false;
         casacore::Array<imtype> scratch(itsShape,static_cast<imtype>(0.));
@@ -1558,11 +1548,11 @@ void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
         correctConvolution(scratch);
         #ifdef ASKAP_FLOAT_IMAGE_PARAMS
         toComplex(itsGrid[0], scratch);
-        fft2d(itsGrid[0], true);
+        fft2d.transformAllHyperPlanes(itsGrid[0], true);
         #else
         casacore::Array<imtypeComplex> scratch2(itsGrid[0].shape());
         toComplex(scratch2, scratch);
-        fft2d(scratch2, true);
+        fft2d.transformAllHyperPlanes(scratch2), true);
         casacore::convertArray<casacore::Complex,imtypeComplex>(itsGrid[0],scratch2);
         #endif
     } else {
@@ -1617,8 +1607,13 @@ void TableVisGridder::logUnusedSpectralPlanes() const
 /// This is the default implementation
 void TableVisGridder::finaliseDegrid() {
     /// Nothing to do
+    clearGrid();
+}
+
+void TableVisGridder::clearGrid() {
     // Free up the grid memory?
     if (itsClearGrid) {
+        ASKAPLOG_INFO_STR(logger,"Clearing the grid - free "<<its2dGrid.size()*sizeof(casacore::Complex)/1024/1024<<" MB/plane, #gridplanes "<<itsGrid.size());
         itsGrid.resize(0);
         its2dGrid.resize(0,0);
         itsGridIndex=-1;

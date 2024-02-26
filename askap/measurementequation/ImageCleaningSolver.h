@@ -67,6 +67,28 @@ public:
    /// @note Assign 0. to switch this option off.
    void setDeepThreshold(double dThreshold);
 
+   /// @brief access to a noise threshold
+   /// @return current noise threshold
+   double noiseThreshold() const
+   { return itsNoiseThreshold; }
+
+   /// @brief set a new noise threshold
+   /// @param[in] sThreshold new noise threshold
+   /// @note Assign 0. to switch this option off.
+   void setNoiseThreshold(double sThreshold)
+   { itsNoiseThreshold = sThreshold; }
+
+   /// @brief access to a deep noise threshold
+   /// @return current deep noise threshold
+   double deepNoiseThreshold() const
+   { return itsDeepNoiseThreshold; }
+
+   /// @brief set a new deep noise threshold
+   /// @param[in] dsThreshold new deep noise threshold
+   /// @note Assign 0. to switch this option off.
+   void setDeepNoiseThreshold(double dsThreshold)
+   { itsDeepNoiseThreshold = dsThreshold; }
+
    /// @brief access to a masking threshold
    /// @return current masking threshold
    double maskingThreshold() const;
@@ -138,6 +160,16 @@ private:
   /// @details Threshold for a second level of deep cleaning with model as mask
   /// Assign zero (default) if you don't want any deep threshold applied.
   double itsDeepThreshold;
+
+  /// @brief noise cleaning threshold
+  /// @details Threshold defined as multiple of residual rms
+  /// Assign zero (default) if you don't want any noise threshold applied.
+  double itsNoiseThreshold;
+
+  /// @brief Deep noise cleaning threshold
+  /// @details noise threshold for a second level of deep cleaning with model as mask
+  /// Assign zero (default) if you don't want any deep threshold applied.
+  double itsDeepNoiseThreshold;
 
    /// @brief threshold for cleaning mask
    /// @details This value is passed in the setMask call to the LatticeCleaner. Negative

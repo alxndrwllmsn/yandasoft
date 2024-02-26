@@ -338,11 +338,6 @@ namespace askap
         /// @param[in] norm bool true if we want to renormalise the array (e.g., keep psf peak at 1)
         static void downsample(casacore::Array<float> &pixelArrayOS, const float osfactor=1., const bool norm=false);
 
-        /// @brief Find number no smaller than given one, with only factors of 2,3,5,7
-        /// @param[in] int integer number
-        /// @return int smallest number with only factors of 2,3,5,7 >= given number
-        static int nextFactor2357(int n);
-
         /// @brief determine sampling to use for nyquistgridding
         /// @param[in] advice VisMetaDataStats object used to get max U, V, W
         /// @param[in/out] parset to read and modify (setting extraoversampling and changing cellsize and shape/subshape)

@@ -31,6 +31,9 @@
 // System includes
 #include <string>
 
+// boost includes
+#include <boost/noncopyable.hpp>
+
 // ASKAPsoft includes
 #include "boost/shared_ptr.hpp"
 #include <Common/ParameterSet.h>
@@ -45,6 +48,7 @@
 #include "askap/distributedimager/MSSplitter.h"
 #include "askap/distributedimager/CalcCore.h"
 #include "askap/messages/ContinuumWorkUnit.h"
+#include "askap/distributedimager/WorkUnitContainer.h"
 #include "askap/distributedimager/CubeBuilder.h"
 #include "askap/distributedimager/CubeComms.h"
 #include <askap/utils/StatsAndMask.h>
@@ -52,57 +56,120 @@
 namespace askap {
 namespace cp {
 
-class ContinuumWorker
+class ContinuumWorker : public boost::noncopyable
 
     {
     public:
         ContinuumWorker(LOFAR::ParameterSet& parset,
                            CubeComms& comms, StatReporter& stats);
-        ~ContinuumWorker();
 
         void run(void);
 
         void writeCubeStatistics();
 
     private:
+        /// @brief configure allocation in channels
+        /// @details This method sets up channel allocation for cube writing (in local solver mode)
+        /// or combines channels in the global solver mode if configured in the parset.
+        void configureChannelAllocation();
+
+        /// @brief configure reference channel used for the restoring beam
+        /// @details This method populates itsBeamReferenceChannel based on the parset and
+        /// the number of channels allocated to the cube handled by this rank
+        void configureReferenceChannel();
+
+        /// @brief initialise cube writing if in local solver mode
+        /// @details This method encapsulates the code which handles cube writing in the local solver mode
+        /// (i.e. when it is done from the worker). Safe to call in continuum mode too (as itsComms.isWriter
+        /// would return false in this case)
+        void initialiseCubeWritingIfNecessary();
+
+        /// @brief check stopping thresholds in the model 
+        /// @details This method is used at the end of minor cycle deconvolution to check whether to continue iterations.
+        /// @param[in] model shared pointer to the scimath::Params object with the model
+        /// @return true if stopping is required
+        /// @note We do similar checks in both the master and in workers. So this method can be moved somewhere else to be shared.
+        bool checkStoppingThresholds(const boost::shared_ptr<scimath::Params> &model) const;
+
+
+        /// @brief add current image as a model
+        /// @details This method adds fullres (if present) or ordinary image as model.slice in the given params object.
+        /// It is expected that model.slice will be absent and either fullres or Nyquist resolution image should be
+        /// present.
+        /// @param[in] params shared pointer to the params object to work with (should be non-empty)
+        /// @note I (MV) think there could be untidy design here - we probably make an extra copy which could be avoided
+        static void addImageAsModel(const boost::shared_ptr<scimath::Params> &params);
+
+        /// @brief perform one write job for a remote client
+        /// @details This method is expected to be used for cube writing ranks only. It receives a single
+        /// write job and performs it.
+        void performSingleWriteJob(); 
+
+        /// @brief cleanup outstanding write jobs
+        /// @details This method is used for cube writing ranks (does nothing for non-writers), it loops over all outstanding
+        /// work units and performs write operation assigned to this rank.
+        /// @param[in] targetOutstanding desired number of outstanding write jobs at the end of execution
+        ///                              (to spread writing across the iteration), default is all jobs
+        /// @param[in] minOutstanding    minimal number of outstanding jobs to remain (default - none)
+        /// @note (MV) I didn't fully understand the logic behind targetOutstanding and minOutstanding (one should be
+        /// sufficient), the same behaviour as we had prior to refactoring has been implemented.
+        void performOutstandingWriteJobs(int targetOutstanding = 0, int minOutstanding = -1);
+
+        /// @brief perform write job allocated to this rank
+        /// @details unlike performOutstandingWriteJobs or performSingleWriteJob this method deals with the write
+        /// job handled entirely by this rank (i.e. its own write job) and, hence, provided explicitly rather than
+        /// received from another rank.
+        /// @param[in] globalChannel global channel (i.e. channel in the whole cube) to write
+        /// @param[in] params shared pointer to the model with required info (should not be empty)
+        void performOwnWriteJob(unsigned int globalChannel, const boost::shared_ptr<scimath::Params> &params);
+
+        /// @brief send blank image to writer
+        /// @details This method is expected to be used when calculation of a spectral plane is failed for some reason,
+        /// but some other rank is responsible for writing it. Essentially it sends a blank image with parameters 
+        /// (like frequency and channel) filled from the work unit. 
+        /// @param[in] wu work unit to take the information from
+        /// @note (MV:) This doesn't seem like a good design, but the behaviour is left the same as it was prior to
+        /// the refactoring.
+        void sendBlankImageToWriter(const cp::ContinuumWorkUnit &wu) const;
+
+        /// @brief figure out if preconditioning is to be done
+        /// @details This method encapsulates checks of the parset indicating that preconditioning is going to be done.
+        /// It is necessary to configure writing of additional data products, although preconditioning itself 
+        /// is enabled and done by the appropriate solver class.
+        /// @param[in] parset parset to use (this method is expected to be used in the constructor, so it is handy not
+        /// to rely on the itsParset data field).
+        /// @return true if preconditioning is to be done, false otherwise
+        static bool doingPreconditioning(const LOFAR::ParameterSet &parset);
+
+        /// @brief helper method to obtain the number of writers for the cube
+        /// @details This method obtains the number of writers from the parset and adjusts it if necessary.
+        /// It is intended to be used in the constructor to fill itsNumWriters data field and requires 
+        /// itsGridType and itsParset to be valid.
+        /// @return number of writer ranks for grid export
+        int configureNumberOfWriters();
 
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
-         // The work units
-        vector<ContinuumWorkUnit> workUnits;
-        // cached files
-        vector<string> cached_files;
 
-        // Whether preconditioning has been requested
-        bool itsDoingPreconditioning;
+        /// @brief the work units
+        WorkUnitContainer itsWorkUnits;
 
-        // Whether the gridder is a Mosaicking one
-        bool itsGridderCanMosaick;
+        /// @brief whether preconditioning has been requested
+        /// @details It is populated in the constructor based on the parset using doingPreconditioning method
+        const bool itsDoingPreconditioning;
 
-        // Cache a workunit to a different location
-        void cacheWorkUnit(ContinuumWorkUnit& wu);
         // Process a workunit
         void preProcessWorkUnit(ContinuumWorkUnit& wu);
+
         // Compress all continuous channel allocations into individual workunits
         void compressWorkUnits();
 
-        // Delete a workunit from the cache
-        void deleteWorkUnitFromCache(ContinuumWorkUnit& wu);
-        // clear the current cached files
-        void clearWorkUnitCache();
-
         //For all workunits .... process
-
         void processChannels();
-
-        // For a given workunit, just process a single snapshot - the channel is specified
-        // in the parset ...
-        void processSnapshot();
-
 
         // Setup the image specified in parset and add it to the Params instance.
         void setupImage(const askap::scimath::Params::ShPtr& params,
-                    double channelFrequency, bool shapeOveride = false);
+                    double channelFrequency, bool shapeOveride = false) const;
 
         void buildSpectralCube();
 
@@ -115,29 +182,27 @@ class ContinuumWorker
         // statistics
         StatReporter& itsStats;
 
-        // No support for assignment
-        ContinuumWorker& operator=(const ContinuumWorker& rhs);
-
-        // No support for copy constructor
-        ContinuumWorker(const ContinuumWorker& src);
-
         // ID of the master process
         static const int itsMaster = 0;
 
-        // List of measurement sets to work on
-        vector<std::string> datasets;
-
         // the basechannel number assigned to this worker
-        unsigned int baseChannel;
+        unsigned int itsBaseChannel;
 
         // the baseFrequency associated with this channel
-        double baseFrequency;
+        double itsBaseFrequency;
+
         // the baseFrequency associated with the cube if being built
-        double baseCubeFrequency;
+        double itsBaseCubeFrequency;
+
         // the global channel associated with this part of the cube
-        int baseCubeGlobalChannel;
+        int itsBaseCubeGlobalChannel;
+
         // the number of channels in this cube (if writer)
-        int nchanCube;
+        int itsNChanCube;
+
+        /// @brief true if solver is run locally (spectral line mode), 
+        /// false for central solver (continuum). 
+        const bool itsLocalSolver;
 
         boost::shared_ptr<CubeBuilder<casacore::Float> > itsImageCube;
         boost::shared_ptr<CubeBuilder<casacore::Float> > itsPSFCube;
@@ -157,62 +222,58 @@ class ContinuumWorker
         boost::shared_ptr<askap::utils::StatsAndMask> itsRestoredStatsAndMask;
         boost::shared_ptr<askap::utils::StatsAndMask> itsResidualStatsAndMask;
         std::string itsWeightsName;
-        std::string itsGridType;
-
-        // calculate the statistic of the per plane image
-        void calculateImageStats(boost::shared_ptr<askap::utils::StatsAndMask> statsAndMask,
-                                 boost::shared_ptr<CubeBuilder<casacore::Float> > imgCube,
-                                 int channel, const casacore::Array<float>& arr);
 
         void handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan);
 
-        void copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams);
+        void copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams) const;
 
         void initialiseBeamLog(const unsigned int numChannels);
         void recordBeam(const askap::scimath::Axes &axes, const unsigned int globalChannel);
-        //void storeBeam(const unsigned int cubeChannel);
 
         std::map<unsigned int, casacore::Vector<casacore::Quantum<double> > > itsBeamList;
         unsigned int itsBeamReferenceChannel;
-        void logBeamInfo();
+        void logBeamInfo() const;
 
         void initialiseWeightsLog(const unsigned int numChannels);
         void recordWeight(float wt, const unsigned int globalChannel);
         std::map<unsigned int, float> itsWeightsList;
-        void logWeightsInfo();
+        void logWeightsInfo() const;
 
         /// @brief Do we want a restored image?
-        bool itsRestore;
+        const bool itsRestore;
 
         /// @brief Do we want a residual image
-        bool itsWriteResidual;
+        const bool itsWriteResidual;
 
         /// @brief write 'raw', unnormalised, natural weight psf
-        bool itsWritePsfRaw;
+        const bool itsWritePsfRaw;
 
         /// @brief write normalised, preconditioned psf
-        bool itsWritePsfImage;
+        const bool itsWritePsfImage;
 
         /// @brief write weights image
-        bool itsWriteWtImage;
+        const bool itsWriteWtImage;
 
         /// @brief write a weights log
-        bool itsWriteWtLog;
+        const bool itsWriteWtLog;
 
         /// @brief write out the (clean) model image
-        bool itsWriteModelImage;
+        const bool itsWriteModelImage;
 
         /// @brief write out the gridded data, pcf and psf
-        bool itsWriteGrids;
+        const bool itsWriteGrids;
+
+        /// @brief grid image type
+        const std::string itsGridType;
 
         /// @brief write out the grids with UV coordinate grid
-        bool itsGridCoordUV;
+        const bool itsGridCoordUV;
 
         /// @brief write out the FFT of the grids
-        bool itsGridFFT;
+        const bool itsGridFFT;
 
         /// @brief the number of rank that can write to the cube
-        int itsNumWriters;
+        const int itsNumWriters;
 
 };
 

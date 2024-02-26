@@ -500,7 +500,7 @@ void CubeBuilder<T>::writeRigidSlice(const casacore::Array<T>& arr, const casaco
 }
 
 template < class T >
-void CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
+const casacore::Array<float> CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
 {
 
     if (itsExtraOversamplingFactor) {
@@ -509,9 +509,11 @@ void CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const
         scimath::PaddingUtils::fftPad(arr,fullresarr);
         casacore::IPosition where(4, 0, 0, 0, chan);
         itsCube->write(itsFilename, fullresarr, where);
+        return fullresarr;
     }
     else {
         writeRigidSlice(arr, chan);
+        return arr;
     }
 
 }

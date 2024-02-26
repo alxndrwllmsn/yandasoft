@@ -1,4 +1,4 @@
-/// @file SolverCore.cc
+/// @file CalcCore.cc
 ///
 /// @copyright (c) 2009 CSIRO
 /// Australia Telescope National Facility (ATNF)
@@ -52,7 +52,7 @@
 #include <askap/measurementequation/CalibrationIterator.h>
 #include <askap/calibaccess/CalibAccessFactory.h>
 #include <casacore/casa/OS/Timer.h>
-#include <askap/dataaccess/TableDataSource.h>
+#include <askap/dataaccess/IDataSource.h>
 #include <askap/dataaccess/ParsetInterface.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
 #include <askap/parallel/GroupVisAggregator.h>
@@ -60,6 +60,7 @@
 #include <askap/gridding/IVisGridder.h>
 #include <askap/gridding/TableVisGridder.h>
 #include <askap/gridding/VisGridderFactory.h>
+#include <askap/imagemath/linmos/LinmosAccumulator.h>
 
 #include <boost/optional.hpp>
 
@@ -78,7 +79,7 @@ ASKAP_LOGGER(logger, ".CalcCore");
 
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
-                       accessors::TableDataSource ds, int localChannel, double frequency)
+                       accessors::IDataSource& ds, int localChannel, double frequency)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsChannel(localChannel),itsFrequency(frequency)
 {
     /// We need to set the calibration info here
@@ -106,7 +107,7 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
 }
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
-                       accessors::TableDataSource ds, askap::synthesis::IVisGridder::ShPtr gdr,
+                       accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
                        int localChannel, double frequency)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsGridder(gdr), itsChannel(localChannel),
       itsFrequency(frequency)
@@ -159,7 +160,7 @@ accessors::IDataSharedIter CalcCore::makeDataIterator() const
 
 /// @brief iterate over data and accumulate samples for uv weights
 /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
-/// and weight builder class. It expects the builder already setup and accessible via the normal equations 
+/// and weight builder class. It expects the builder already setup and accessible via the normal equations
 /// shared pointer. Unlike the variant from the base class which works with the iterator supplied as a parameter,
 /// this version uses the iterator returned by makeDataIterator (wrapped into the calibration adapter, if needed)
 void CalcCore::accumulateUVWeights() const
@@ -167,14 +168,46 @@ void CalcCore::accumulateUVWeights() const
    // technically, calibration application can alter the flags, so we have to apply calibration
    // but it is a valid short-cut to skip calibration application (and have less than ideal weights) and may be even to ignore flags completely
    // (and we can have an accessor adapter which ignores flags, it would also speed up the first iteration)
-   // 
+   //
    // In principle, we can build different iterators here depending on the parset and make this behaviour configurable
    boost::shared_ptr<accessors::IDataIterator> it = makeCalibratedDataIteratorIfNeeded(makeDataIterator());
    // call version of the base class
    accumulateUVWeights(it);
 }
 
-/// @brief create measurement equation 
+/// @brief configure normal equation for linear mosaicing
+/// @details When linmos is expected to happen during merge of normal equations we need to configure
+/// NEs appropriately to interpret weight correctly. This helper method does it. 
+/// @note Normal equations should already be setup (although could be empty) before this method is called.
+/// Otherwise, an exception will be thrown. Also, we could've do this setup automatically based on the 
+/// gridder type. But at the moment the same approach is followed as we had prior to refactoring.
+void CalcCore::configureNormalEquationsForMosaicing() const
+{
+   const boost::shared_ptr<ImagingNormalEquations> ine = boost::dynamic_pointer_cast<ImagingNormalEquations>(getNE());
+   ASKAPCHECK(ine, "Logic error - normal equations are of the wrong type or uninitialised in CalcCore::configureNormalEquationsForMosaicing");
+   // enums used below are defined in LinmosAccumulator
+   ine->weightType(FROM_WEIGHT_IMAGES);
+   ine->weightState(WEIGHTED);
+}
+
+/// @brief merge normal equations from another CalcCore
+/// @details This is a convenience method to merge in normal equations held by other CalcCore
+/// object. In principle, we can have this method in one of the base classes (and require 
+/// broader type rather than CalcCore as the input) because all of the required functionality is
+/// in the base classes. But we only use it with CalcCore, so keep it in this class as well.
+/// @note Normal equations should be initialised (and with the consistent type) in both
+/// this and other CalcCore instances, but could be empty. The method is const because it doesn't change
+/// this class (only changes normal equations held by pointer).
+/// @param[in] other an instance of CalcCore to merge from
+void CalcCore::mergeNormalEquations(const CalcCore &other) const
+{
+   const boost::shared_ptr<INormalEquations> thisNE = getNE();
+   const boost::shared_ptr<INormalEquations> otherNE = other.getNE();
+   ASKAPCHECK(thisNE && otherNE, "Logic error - either this or other CalcCore object has empty normal equations in merge");
+   thisNE->merge(*otherNE);
+}
+
+/// @brief create measurement equation
 /// @details This method creates measurement equation as appropriate (with calibration application or without) using
 /// internal state of this class and the parset
 void CalcCore::createMeasurementEquation()
@@ -193,17 +226,12 @@ void CalcCore::createMeasurementEquation()
    // Also this is why you cannot get at the grid from outside FFT equation
    const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
    ASKAPDEBUGASSERT(fftEquation);
-// DAM TRADITIONAL
-   if (parset().isDefined("gridder.robustness")) {
-       const float robustness = parset().getFloat("gridder.robustness");
-       ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
-       // also check that it is spectral line? Or do that earlier
-       //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
-       //  - won't work with Taylor terms
-       fftEquation->setRobustness(parset().getFloat("gridder.robustness"));
-   }
-   fftEquation->useAlternativePSF(parset());
+
+   fftEquation->configure(parset());
    fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+   if (calDirMap().size()>0) {
+       fftEquation->setCalDirMap(calDirMap());
+   }
    // MV: it is not great that the code breaks encapsulation here by changing the data member of a base class, leave it as is for now
    itsEquation = fftEquation;
 }
@@ -233,7 +261,7 @@ void CalcCore::doCalc()
 }
 
 /// @brief first image name in the model
-/// @details This is a helper method to obtain the name of the first encountered image parameter in the model. 
+/// @details This is a helper method to obtain the name of the first encountered image parameter in the model.
 /// @note It is written as part of the refactoring of various getGrid methods. However, in principle we could have multiple
 /// image parameters simultaneously. The original approach getting the first one won't work in this case.
 /// @return name of the first encountered image parameter in the model
@@ -246,7 +274,7 @@ std::string CalcCore::getFirstImageName() const
    return "image"+(*it);
 }
 
-casacore::Array<casacore::Complex> CalcCore::getGrid() const 
+casacore::Array<casacore::Complex> CalcCore::getGrid() const
 {
    ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
@@ -257,7 +285,7 @@ casacore::Array<casacore::Complex> CalcCore::getGrid() const
    return tvg->getGrid();
 }
 
-casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const 
+casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
 {
    ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
@@ -277,7 +305,7 @@ casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
    return casacore::Array<casacore::Complex>();
 }
 
-casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const 
+casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 {
    ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
@@ -286,6 +314,28 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
    const boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(fftEquation->getPSFGridder(imageName));
    ASKAPCHECK(tvg, "Incompatible type of PSF gridder is used in FFTEquation");
    return tvg->getGrid();
+}
+
+/// @brief store all complex grids in the model object for future writing
+/// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
+/// returned arrays in the model so they can be exported later.
+void CalcCore::addGridsToModel()
+{
+   ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
+   casacore::Array<casacore::Complex> garr = getGrid();
+   casacore::Vector<casacore::Complex> garrVec(garr.reform(casacore::IPosition(1,garr.nelements())));
+   params()->addComplexVector("grid.slice",garrVec);
+   ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
+   casacore::Array<casacore::Complex> pcfarr = getPCFGrid();
+   if (pcfarr.nelements()) {
+       ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
+       casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(casacore::IPosition(1,pcfarr.nelements())));
+       params()->addComplexVector("pcf.slice",pcfVec);
+   }
+   ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
+   casacore::Array<casacore::Complex> psfarr = getPSFGrid();
+   casacore::Vector<casacore::Complex> psfVec(psfarr.reform(casacore::IPosition(1,psfarr.nelements())));
+   params()->addComplexVector("psfgrid.slice",psfVec);
 }
 
 void CalcCore::calcNE()
@@ -366,7 +416,7 @@ void CalcCore::solveNE()
 
     ASKAPDEBUGASSERT(itsModel);
     itsSolver->solveNormalEquations(*itsModel, q);
-    ASKAPLOG_DEBUG_STR(logger, "Solved normal equations in " << timer.real()
+    ASKAPLOG_INFO_STR(logger, "Solved normal equations in " << timer.real()
                        << " seconds ");
 
     // Extract the largest residual
@@ -388,6 +438,21 @@ void CalcCore::solveNE()
         itsModel->add("peak_residual", peak);
     }
     itsModel->fix("peak_residual");
+
+    // check if all images have reached the noise threshold
+    bool allDone = true;
+    const std::vector<std::string> noiseParams = itsModel->completions("noise_threshold_reached.",true);
+    for (const std::string& name : noiseParams) {
+        if (itsModel->scalarValue("noise_threshold_reached."+name) < 0.0) {
+            allDone = false;
+        }
+    }
+    if (itsModel->has("noise_threshold_reached")) {
+        itsModel->update("noise_threshold_reached", allDone ? 1.0 : -1.0);
+    } else {
+        itsModel->add("noise_threshold_reached", allDone ? 1.0 : -1.0);
+    }
+    itsModel->fix("noise_threshold_reached");
 
 }
 

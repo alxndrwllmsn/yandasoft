@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(VERSION "1.14.0")
+set(VERSION "1.15.0")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
 
@@ -375,4 +375,5 @@ if (BUILD_TESTING)
     add_subdirectory(tests/gridding)
 	add_subdirectory(tests/measurementequation)
 	add_subdirectory(tests/opcal)
+	add_subdirectory(tests/distributedimager)
 endif ()
