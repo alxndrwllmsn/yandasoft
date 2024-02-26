@@ -547,6 +547,96 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
    ASKAPLOG_DEBUG_STR(logger, "Passed the barrier");
 }
 
+// this is a rewrite of processChannel method
+void ContinuumWorker::processChannelsNew()
+{
+   ASKAPTRACE("ContinuumWorker::processChannels");
+
+   ASKAPLOG_INFO_STR(logger, "Processing Channel Allocation");
+
+   if (itsWriteGrids) {
+       ASKAPLOG_INFO_STR(logger,"Will output gridded visibilities");
+   }
+
+   if (itsLocalSolver) {
+       ASKAPLOG_INFO_STR(logger, "Processing channels in local solver mode");
+   } else {
+       ASKAPLOG_INFO_STR(logger, "Processing channels in central solver mode");
+   }
+
+   const bool updateDir = itsParset.getBool("updatedirection",false);
+
+   // MV: not sure if this is still applicable
+   ASKAPCHECK(!(updateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
+
+   configureReferenceChannel();
+
+   initialiseCubeWritingIfNecessary();
+
+   if (itsWorkUnits.size() == 0) {
+      ASKAPLOG_INFO_STR(logger,"No work todo");
+
+      // write out the beam log
+      ASKAPLOG_DEBUG_STR(logger, "About to log the full set of restoring beams");
+
+      logBeamInfo();
+      logWeightsInfo();
+
+      return;
+   }
+
+   /// What are the plans for the deconvolution?
+   ASKAPLOG_DEBUG_STR(logger, "Ascertaining Cleaning Plan");
+   const bool writeAtMajorCycle = itsParset.getBool("Images.writeAtMajorCycle", false);
+   const int nCycles = itsParset.getInt32("ncycles", 0);
+
+   const int uvwMachineCacheSize = itsParset.getInt32("nUVWMachines", 1);
+   ASKAPCHECK(uvwMachineCacheSize > 0 ,
+       "Cache size is supposed to be a positive number, you have "
+       << uvwMachineCacheSize);
+
+   const double uvwMachineCacheTolerance = SynthesisParamsHelper::convertQuantity(itsParset.getString("uvwMachineDirTolerance", "1e-6rad"), "rad");
+
+   ASKAPLOG_DEBUG_STR(logger,
+       "UVWMachine cache will store " << uvwMachineCacheSize << " machines");
+   ASKAPLOG_DEBUG_STR(logger, "Tolerance on the directions is "
+       << uvwMachineCacheTolerance / casacore::C::pi * 180. * 3600. << " arcsec");
+
+   const string colName = itsParset.getString("datacolumn", "DATA");
+   const bool clearcache = itsParset.getBool("clearcache", false);
+
+   DataSourceManager dsm(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance);
+
+   // the itsWorkUnits may include different epochs (for the same channel)
+   // the order is strictly by channel - with multiple work units per channel.
+   // we use appropriately configured iterators to iterate over all work units with the same
+   // frequency if necessary.
+
+   // for continuum process all allocated frequency channels together, so just one block (note - we need to grab the right iterator later on)
+   const size_t numberOfFrequencyBlocks = itsLocalSolver ? itsWorkUnits.numberOfFrequencyBlocks() : 1;
+
+   for (size_t frequencyBlock = 0; frequencyBlock < numberOfFrequencyBlocks; ++frequencyBlock) {
+        ASKAPLOG_DEBUG_STR(logger, "Processing frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks);
+        for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
+             ASKAPLOG_INFO_STR(logger, "Starting major cycle "<<majorCycleNumber + 1<<" out of "<<nCycles<<
+                                       " (frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
+             size_t workUnitCounter = 0u;
+             for (WorkUnitContainer::const_iterator wuIt = (itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin());
+                                                    wuIt != (itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end()); ++wuIt) {
+                  // skip unsupported work unit types (MV: do we need to do this? May be better not to add them to the list. For now do the same as the code prior to refactoring)
+                  if ((wuIt->get_payloadType() == ContinuumWorkUnit::DONE) || (wuIt->get_payloadType() == ContinuumWorkUnit::NA)) {
+                      continue;
+                  }
+                  ++workUnitCounter;
+                  itsStats.logSummary();
+                  ASKAPLOG_DEBUG_STR(logger, "Processing work unit "<<workUnitCounter);
+
+             } // for loop over workunits of the given frequency block (or all of them in continuum mode)
+        } // for loop over major cycles
+   } // for loop over frequency blocks (just one pass for the continuum case)
+
+}
+
 void ContinuumWorker::processChannels()
 {
   ASKAPTRACE("ContinuumWorker::processChannels");

@@ -161,6 +161,8 @@ class ContinuumWorker : public boost::noncopyable
 
         //For all workunits .... process
         void processChannels();
+        // temporary replacement/rewrite
+        void processChannelsNew();
 
         // Setup the image specified in parset and add it to the Params instance.
         void setupImage(const askap::scimath::Params::ShPtr& params,
