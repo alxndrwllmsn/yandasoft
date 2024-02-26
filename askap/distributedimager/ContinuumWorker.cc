@@ -23,6 +23,7 @@
 /// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 ///
 /// @author Ben Humphreys <ben.humphreys@csiro.au>
+/// Refactoring by Max Voronkov
 
 // Include own header file first
 #include "ContinuumWorker.h"
@@ -847,12 +848,9 @@ void ContinuumWorker::processChannels()
 
             ///this loop does the calcNE and the merge of the residual images
 
-
-            bool useSubSizedImages = false;
-
             if (updateDir) {
 
-              useSubSizedImages = true;
+              const bool useSubSizedImages = true;
               setupImage(workingImager.params(), frequency, useSubSizedImages);
 
               // if traditional weighting is enabled compute the weight. The code below assumes local
@@ -1015,7 +1013,7 @@ void ContinuumWorker::processChannels()
           //
           // If we are using updateDir we reprocess all the workunits - so this is not needed.
           ASKAPLOG_INFO_STR(logger, "Continuuing - Reset normal equations");
-          rootImager.getNE()->reset();
+          rootImager.reset();
 
           // we have found that resetting the NE is causing some problems after r10290.
 
@@ -1028,7 +1026,7 @@ void ContinuumWorker::processChannels()
         }
         else if (stopping && !itsLocalSolver) {
           ASKAPLOG_INFO_STR(logger, "Not local solver but last run - Reset normal equations");
-          rootImager.getNE()->reset();
+          rootImager.reset();
 
           if (!updateDir) {
 
