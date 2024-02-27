@@ -720,14 +720,12 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                if (!forward) {
                    if (!isPSFGridder() && !isPCFGridder()) {
                        ASKAPDEBUGASSERT(roVisCube!=0);
-                       //for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(i,chan,pol);
-                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(pol,chan,i);
+                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(pol,chan,iDDOffset+i);
                        itsPolConv.convert(itsImagePolFrameVis,itsPolVector);
                    }
                    // we just don't need this quantity for the forward gridder, although there would be no
                    // harm to always compute it
                    ASKAPDEBUGASSERT(roVisNoise!=0);
-                   //for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(i,chan,pol);
                    for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(pol,chan,i);
                    itsPolConv.noise(itsImagePolFrameNoise,itsPolVector);
                }
@@ -911,7 +909,6 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                    if (forward) {
                        ASKAPDEBUGASSERT(visCube!=0)
                        itsPolConv.convert(itsPolVector,itsImagePolFrameVis);
-                       //for (uint pol=0; pol<nPol; pol++) (*visCube)(iDDOffset+i,chan,pol) += itsPolVector(pol);
                        for (uint pol=0; pol<nPol; pol++) (*visCube)(pol,chan,iDDOffset+i) += itsPolVector(pol);
                        // visibilities with w out of range are left unchanged during prediction
                        // as long as subsequent imaging uses the same wmax this should work ok
@@ -1110,9 +1107,6 @@ void TableVisGridder::setRobustness(const float robustness) {
     }
 
 }
-
-
-
 
 /// @brief correct visibilities, if necessary
 /// @details This method is intended for on-the-fly correction of visibilities (i.e.
@@ -1619,7 +1613,7 @@ void TableVisGridder::finaliseDegrid() {
 void TableVisGridder::clearGrid() {
     // Free up the grid memory?
     if (itsClearGrid) {
-        ASKAPLOG_INFO_STR(logger,"Clearing the grid - free "<<its2dGrid.size()/1024/1024*sizeof(casacore::Complex)<<" MB/plane, #gridplanes "<<itsGrid.size());
+        ASKAPLOG_INFO_STR(logger,"Clearing the grid - free "<<its2dGrid.size()*sizeof(casacore::Complex)/1024/1024<<" MB/plane, #gridplanes "<<itsGrid.size());
         itsGrid.resize(0);
         its2dGrid.resize(0,0);
         itsGridIndex=-1;

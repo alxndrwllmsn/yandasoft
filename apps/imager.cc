@@ -105,12 +105,14 @@ class ImagerApp : public askap::Application
                 } else {
                     ASKAPLOG_INFO_STR(logger, "All workers are treated as identical");
                 }
-                // Instantiate the Distributed Imager
-                // FIXME
-                // ASKAPLOG_WARN_STR(logger,"sleep added for debugging please remove before checkin");
-                // sleep(20);
-                // end sleep
 
+                // sleep to attach debugger / monitoring
+                if (subset.getBool("sleep",false)) {
+                    ASKAPLOG_WARN_STR(logger,"sleep added for debugging");
+                    sleep(20);
+                }
+
+                // Instantiate the Distributed Imager
                 ContinuumImager imager(subset, comms_p, stats);
 
                 // runit

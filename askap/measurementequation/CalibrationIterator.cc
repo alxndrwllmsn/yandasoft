@@ -61,8 +61,9 @@ using namespace askap::accessors;
 /// matter which iterator it has been initialized with. This class always
 /// uses accessor-based methods.
 CalibrationIterator::CalibrationIterator(const IDataSharedIter &iter,
-              const boost::shared_ptr<ICalibrationApplicator> &calME) :
-    itsWrappedIterator(iter), itsCalibrationME(calME), itsBufferFlag(false)
+              const boost::shared_ptr<ICalibrationApplicator> &calME, bool ddCal) :
+    itsWrappedIterator(iter), itsCalibrationME(calME), itsBufferFlag(false),
+    itsDDCal(ddCal)
 {
   ASKAPASSERT(itsWrappedIterator);
   itsWrappedIterator.chooseOriginal();
@@ -96,9 +97,11 @@ IDataAccessor& CalibrationIterator::operator*() const
       // copy perfect data
       itsDataAccessor->rwVisibility() = itsWrappedIterator->visibility();
 
-      // correct data
+      // correct data if not in DDCal mode
       ASKAPDEBUGASSERT(itsCalibrationME);
-      itsCalibrationME->correct(*itsDataAccessor);
+      if (!itsDDCal) {
+          itsCalibrationME->correct(*itsDataAccessor);
+      }
   }
   return *itsDataAccessor;
 }

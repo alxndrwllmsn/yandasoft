@@ -229,6 +229,9 @@ void CalcCore::createMeasurementEquation()
 
    fftEquation->configure(parset());
    fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+   if (calDirMap().size()>0) {
+       fftEquation->setCalDirMap(calDirMap());
+   }
    // MV: it is not great that the code breaks encapsulation here by changing the data member of a base class, leave it as is for now
    itsEquation = fftEquation;
 }

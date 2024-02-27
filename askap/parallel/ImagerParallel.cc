@@ -164,7 +164,7 @@ namespace askap
       }
       if (itsComms.isWorker())
       {
-        bool doCalib = parset.getBool("calibrate",false);
+        const bool doCalib = parset.getBool("calibrate",false);
         if (doCalib) {
             ASKAPCHECK(!parset.isDefined("gainsfile"), "Deprecated 'gainsfile' keyword is found together with calibrate=true, please remove it");
             // setup solution source from the parset directly using the factory
@@ -186,6 +186,16 @@ namespace askap
         }
         if (itsSolutionSource) {
             ASKAPLOG_INFO_STR(logger, "Data will be calibrated before imaging");
+            const std::vector<std::string> names = parset.getStringVector("Images.Names");
+            const bool doDDCal = parset.getBool("calibrate.directiondependent",false) &&
+                (names.size() > 1);
+            if (doDDCal) {
+                // Now map names to directions
+                for (int i=0; i<names.size(); i++) {
+                    itsCalDirMap[names[i]] = i;
+                }
+                ASKAPLOG_INFO_STR(logger, "Using "<<names.size()<< " directions for DDCAL");
+            }
         } else {
             ASKAPLOG_INFO_STR(logger, "No calibration will be performed");
         }
@@ -520,7 +530,7 @@ namespace askap
             calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
 
             // calibration iterator to replace the original one for the purpose of measurement equation creation
-            const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
+            const IDataSharedIter calIter(new CalibrationIterator(origIt,calME,itsCalDirMap.size()>0));
             return calIter;
        }
        ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
@@ -567,6 +577,7 @@ namespace askap
         ASKAPDEBUGASSERT(fftEquation);
         fftEquation->configure(parset());
         fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+        fftEquation->setCalDirMap(itsCalDirMap);
         itsEquation = fftEquation;
       }
       else {

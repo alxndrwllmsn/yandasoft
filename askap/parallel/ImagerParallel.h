@@ -277,6 +277,10 @@ namespace askap
       /// @return shared pointer to the iterator over data
       accessors::IDataSharedIter makeDataIterator(const accessors::IDataSource &ds) const;
 
+      /// @brief map of image names to calibration directions
+      /// @return map  the map of image names to calibration directions
+      std::map<std::string, int> calDirMap() {return itsCalDirMap;}
+
   private:
 
       /// @brief check whether any preProcess advice is needed.
@@ -348,6 +352,12 @@ namespace askap
 
       /// @brief write out multiple (clean) model images if there are more than 1
       bool itsWriteMultipleModels;
+
+      /// @brief number of directions to use for calibration
+      int itsNDir;
+
+      // @brief map of image names to calibration directions
+      std::map<std::string, int> itsCalDirMap;
 
       /// @brief name of first image (after removing image prefix)
       std::string itsFirstImageName;
