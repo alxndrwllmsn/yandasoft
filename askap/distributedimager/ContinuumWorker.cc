@@ -607,7 +607,10 @@ void ContinuumWorker::processChannelsNew()
 
    DataSourceManager dsm(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance);
 
-   // the itsWorkUnits may include different epochs (for the same channel)
+   // this will be used to accumulate normal equations across multiple work units
+   boost::shared_ptr<CalcCore> rootImagerPtr;
+
+   // itsWorkUnits may include different epochs (for the same channel)
    // the order is strictly by channel - with multiple work units per channel.
    // we use appropriately configured iterators to iterate over all work units with the same
    // frequency if necessary.
@@ -621,15 +624,98 @@ void ContinuumWorker::processChannelsNew()
              ASKAPLOG_INFO_STR(logger, "Starting major cycle "<<majorCycleNumber + 1<<" out of "<<nCycles<<
                                        " (frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
              size_t workUnitCounter = 0u;
-             for (WorkUnitContainer::const_iterator wuIt = (itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin());
-                                                    wuIt != (itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end()); ++wuIt) {
+             // begin and end iterators for the part of work units we need (all of them in continuum, given frequency
+             // for the spectral line mode)
+             const WorkUnitContainer::const_iterator wuBeginIt = itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin();
+             const WorkUnitContainer::const_iterator wuEndIt = itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end();
+             for (WorkUnitContainer::const_iterator wuIt = wuBeginIt; wuIt != wuEndIt; ++wuIt) {
                   // skip unsupported work unit types (MV: do we need to do this? May be better not to add them to the list. For now do the same as the code prior to refactoring)
                   if ((wuIt->get_payloadType() == ContinuumWorkUnit::DONE) || (wuIt->get_payloadType() == ContinuumWorkUnit::NA)) {
                       continue;
                   }
+                  // counter just for reporting, we shouldn't need it anywhere else
                   ++workUnitCounter;
                   itsStats.logSummary();
+
                   ASKAPLOG_DEBUG_STR(logger, "Processing work unit "<<workUnitCounter);
+
+                  const int localChannel = wuIt->get_localChannel();
+                  const double globalFrequency = wuIt->get_channelFrequency();
+                  const int globalChannel = wuIt->get_globalChannel();
+                  TableDataSource& ds = dsm.dataSource(wuIt->get_dataset());
+                  if (updateDir) {
+                      itsAdvisor->updateDirectionFromWorkUnit(*wuIt);
+                  }
+                  try {
+                      // to accumulate data from the current work unit
+                      boost::shared_ptr<CalcCore> workingImagerPtr;
+                      if (updateDir || !rootImagerPtr) {
+                          // for updateDir mode gridders cannot be cached as they have a tangent point
+                          // so use the appropriate CalcCore constructor (and same case if the cache is empty
+                          workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency));
+                      } else {
+                          // in this case we can reuse gridder from the rootImager (created previously)
+                          workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency));
+                      }
+                      CalcCore& workingImager = *workingImagerPtr; // just for the semantics
+                      if (updateDir) {
+                          // MV: we could've had more intelligent checking whether we need a new subpatch here
+                          // (i.e. there could be multiple epochs for the same beam). Leave it as it was before
+                          // the refactoring.
+                          const bool useSubSizedImages = true;
+                          setupImage(workingImager.params(), globalFrequency, useSubSizedImages);
+                          if (majorCycleNumber > 0) {
+                              ASKAPDEBUGASSERT(rootImager);
+                              copyModel(rootImagerPtr->params(),workingImager.params());
+                          }
+                      } else {
+                          if (rootImagerPtr) {
+                              workingImager.replaceModel(rootImagerPtr->params());
+                          } else {
+                              // setup full sized image
+                              setupImage(workingImager.params(), globalFrequency, false);
+                          }
+                      }
+                      // grid and image
+                      try {
+                         workingImager.calcNE();
+                      }
+                      catch (const askap::AskapError& e) {
+                             ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE");
+                             // if this failed but the root did not one of two things may have happened
+                             // in continuum mode the gridding fails due to w projection errors - which
+                             // were not apparent in lower frequency observations - we have to just keep throwing
+                             // the exception up the tree in this case because we cannot recover.
+                             // in spectral line mode - this epoch/beam may have failed but other epochs succeeded.
+                             // what to do here. Do we continue with the accumulation or just fail ...
+                             throw;
+                      }
+                      // MV: I'm not sure we want to log the summary again, but this matches the old behaviour
+                      // prior to refactoring as far as I understand it
+                      itsStats.logSummary();
+         
+                      // merge into root image if required.
+                      // this is required if there is more than one workunit per channel
+                      // either in time or by beam.
+                      ASKAPLOG_DEBUG_STR(logger,"About to merge into rootImager");
+                      if (updateDir) {
+                          workingImager.configureNormalEquationsForMosaicing();
+                      }
+
+                      // if rootImager is empty (i.e. this is the first work unit contributing to it) we just copy
+                      // the shared pointer
+                      if (rootImagerPtr) {
+                          rootImagerPtr->mergeNormalEquations(workingImager);
+                      } else {
+                          rootImagerPtr = workingImagerPtr;
+                      }
+                      ASKAPLOG_DEBUG_STR(logger,"Merged");
+                  }
+                  catch(const askap::AskapError& e) {
+                        ASKAPLOG_WARN_STR(logger, "Askap error in imaging - skipping accumulation: carrying on - this will result in a blank channel" << e.what());
+                        std::cerr << "Askap error in: " << e.what() << std::endl;
+                  }
+
 
              } // for loop over workunits of the given frequency block (or all of them in continuum mode)
         } // for loop over major cycles
