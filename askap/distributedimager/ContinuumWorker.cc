@@ -665,7 +665,7 @@ void ContinuumWorker::processChannelsNew()
                           const bool useSubSizedImages = true;
                           setupImage(workingImager.params(), globalFrequency, useSubSizedImages);
                           if (majorCycleNumber > 0) {
-                              ASKAPDEBUGASSERT(rootImager);
+                              ASKAPDEBUGASSERT(rootImagerPtr);
                               copyModel(rootImagerPtr->params(),workingImager.params());
                           }
                       } else {
