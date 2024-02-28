@@ -558,6 +558,7 @@ namespace askap
                 itsCleaners[imageTag]->setBasisFunction(itsBasisFunction);
                 itsCleaners[imageTag]->setSolutionType(itsSolutionType);
                 itsCleaners[imageTag]->setDecoupled(itsDecoupled);
+                itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
                 if (maskArray.nelements()) {
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
@@ -816,6 +817,12 @@ namespace askap
       this->itsDecoupled = parset.getBool("decoupled", true);
       if (this->itsDecoupled) {
           ASKAPLOG_DEBUG_STR(logger, "Using decoupled residuals");
+      }
+      itsUseScaleMask = parset.getBool("usescalebitmask", false);
+      if (itsUseScaleMask) {
+          ASKAPLOG_INFO_STR(logger, "Using bitmask for scale masks");
+      } else {
+          ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
       }
 
     }

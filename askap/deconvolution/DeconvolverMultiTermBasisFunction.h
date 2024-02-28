@@ -153,6 +153,9 @@ namespace askap {
                 /// @brief Get whether to use decoupled residuals
                 const casacore::Bool decoupled();
 
+                /// @brief Set whether to use a bitmask for the scalemask
+                void setUseScaleBitMask(casacore::Bool useScaleMask);
+
                 /// @brief Set the deep cleaning switch for component finding
                 void setDeepCleanMode(casacore::Bool deep);
 
@@ -230,6 +233,9 @@ namespace askap {
                 /// Mask images giving the location of all components per bases
                 casacore::Vector<casacore::Array<T> > itsMask;
 
+                /// BitMask image giving the location of all components per base
+                casacore::Matrix<uint> itsScaleMask;
+
                 /// Point spread functions convolved with cross terms
                 // [nx,ny][nterms,nterms][nbases,nbases]
                 casacore::Matrix<casacore::Matrix<casacore::Array<T> > > itsPSFCrossTerms;
@@ -258,6 +264,8 @@ namespace askap {
                 casa::Bool itsDecoupled;
 
                 casa::Bool itsDeep;
+
+                casa::Bool itsUseScaleMask;
 
       /// @brief Store the MFS inverse coupling matrix
       /// @details needed by the restore solver, but it doesn't have all 2N-1 PSFs needed for generation. So store.
