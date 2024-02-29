@@ -46,6 +46,8 @@
 #include "askap/distributedimager/WorkUnitContainer.h"
 #include "askap/distributedimager/CubeBuilder.h"
 #include "askap/distributedimager/CubeComms.h"
+#include "askap/distributedimager/DataSourceManager.h"
+#include "askap/distributedimager/CalcCore.h"
 #include <askap/utils/StatsAndMask.h>
 
 namespace askap {
@@ -143,6 +145,14 @@ class ContinuumWorker : public boost::noncopyable
         /// @return number of writer ranks for grid export
         int configureNumberOfWriters();
 
+        /// @brief helper method to process a single work unit
+        /// @details This method encapsulates a part of the old processChannel calculating and merging NE for a single work 
+        /// unit. The resulting NE is either added to the root imager passed as the parameter or a new CalcCore object is
+        /// created and returned if the passed shared pointer is empty.
+        /// @param[inout] rootImagerPtr shared pointer to CalcCore object to update or create (if empty shared pointer is passed)
+        /// @param[in] wu work unit to process
+        void processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu) const;
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
 
@@ -178,6 +188,9 @@ class ContinuumWorker : public boost::noncopyable
 
         // statistics
         StatReporter& itsStats;
+
+        /// @brief shared pointer to data source manager reponsible for dealing with measurement sets
+        boost::shared_ptr<DataSourceManager> itsDSM;
 
         // ID of the master process
         static const int itsMaster = 0;
@@ -271,6 +284,9 @@ class ContinuumWorker : public boost::noncopyable
 
         /// @brief the number of rank that can write to the cube
         const int itsNumWriters;
+
+        /// @brief updatedirection option (switching on joint gridding)
+        const bool itsUpdateDir;
 
 };
 
