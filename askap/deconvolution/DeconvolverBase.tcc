@@ -193,10 +193,10 @@ namespace askap {
         template<class T, class FT>
         void DeconvolverBase<T, FT>::updateDirty(const Array<T>& newDirty, const uInt term)
         {
+            ASKAPLOG_DEBUG_STR(decbaselogger,"updateDirty(dirty,term)");
             ASKAPCHECK(term < nTerms(), "Term " << term << " greater than allowed " << nTerms());
-            if (!newDirty.shape().nonDegenerate().conform(dirty(term).shape())) {
-                throw(AskapError("Updated dirty image has different shape"));
-            }
+            ASKAPCHECK(dirty(term).nelements()==0 || newDirty.shape().nonDegenerate()==dirty(term).shape(),
+                "Updated dirty image has different shape from original");
             itsDirty(term) = newDirty.nonDegenerate();
             validateShapes();
         }
@@ -204,14 +204,12 @@ namespace askap {
         template<class T, class FT>
         void DeconvolverBase<T, FT>::updateDirty(const Vector<Array<T> >& dirtyVec)
         {
-            if (dirtyVec.nelements() != itsDirty.nelements()) {
-                throw(AskapError("Updated dirty image has different shape"));
-            }
-            itsDirty.resize(dirtyVec.nelements());
+            ASKAPLOG_DEBUG_STR(decbaselogger,"updateDirty(dirtyVec)");
+            ASKAPCHECK(dirtyVec.nelements() == itsDirty.nelements(),
+                "Number of taylor terms in updated dirty image differs from original");
             for (uInt term = 0; term < dirtyVec.nelements(); term++) {
-                if (!dirtyVec(term).nonDegenerate().shape().conform(itsDirty(term).nonDegenerate().shape())) {
-                    throw(AskapError("Updated dirty image has different shape from original"));
-                }
+                ASKAPCHECK(dirty(term).nelements()==0 || dirtyVec(term).shape().nonDegenerate()==dirty(term).shape(),
+                    "Updated dirty image has different shape from original");
                 itsDirty(term) = dirtyVec(term).nonDegenerate();
             }
             validateShapes();
@@ -490,6 +488,18 @@ namespace askap {
             }
             return subPsfShape;
         }
+
+        template<class T, class FT>
+        void DeconvolverBase<T, FT>::releaseMemory()
+        {
+            uInt memory = 0;
+            for (uInt term = 0; term < nTerms(); term++) {
+                memory += sizeof(T) * itsDirty(term).nelements();
+                itsDirty(term).resize();
+            }
+            ASKAPLOG_DEBUG_STR(decbaselogger,"DeconvolverBase released "<<memory/1024/1024<<" MB");
+        }
+
     } // namespace synthesis
 
 } // namespace askap

@@ -206,6 +206,12 @@ namespace askap {
                 /// @param[in]scaleMask a Matrix<T> with bitmask of scales for each pixel
                 void setScaleMask(const Matrix<T>& scaleMask);
 
+                /// @brief release working memory not needed between major cycles
+                /// @details Deconvolvers can use a lot of memory, try to release as
+                /// much as possible without losing essential state
+                virtual void releaseMemory();
+
+
             private:
 
                 // Perform one iteration
@@ -240,7 +246,7 @@ namespace askap {
                 /// Residual images for the GPU
                 std::vector<std::vector<T *> > GPUResidualBasis;
 
-                /// Mask images giving the location of all components per bases
+                /// Mask images giving the location of all components per basis
                 casacore::Vector<casacore::Array<T> > itsMask;
 
                 /// BitMask image giving the location of all components per base
@@ -248,7 +254,7 @@ namespace askap {
                 casacore::Matrix<uint> itsScaleMask;
 
                 /// Point spread functions convolved with cross terms
-                // [nx,ny][nterms,nterms][nbases,nbases]
+                // [nxsub,nysub][nterms,nterms][nbases,nbases]
                 casacore::Matrix<casacore::Matrix<casacore::Array<T> > > itsPSFCrossTerms;
 
                 /// The coupling between different terms for each basis [nterms,nterms][nbases]

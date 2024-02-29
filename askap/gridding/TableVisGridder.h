@@ -680,7 +680,6 @@ protected:
 
       /// @brief release grid memory after finalise(De)Grid
       bool itsClearGrid;
-
     };
   }
 }

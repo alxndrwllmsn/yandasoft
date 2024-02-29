@@ -143,7 +143,7 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
 
 /// @brief figure out if preconditioning is to be done
 /// @details This method encapsulates checks of the parset indicating that preconditioning is going to be done.
-/// It is necessary to configure writing of additional data products, although preconditioning itself 
+/// It is necessary to configure writing of additional data products, although preconditioning itself
 /// is enabled and done by the appropriate solver class.
 /// @param[in] parset parset to use (this method is expected to be used in the constructor, so it is handy not
 /// to rely on the itsParset data field).
@@ -161,7 +161,7 @@ bool ContinuumWorker::doingPreconditioning(const LOFAR::ParameterSet &parset)
 
 /// @brief helper method to obtain the number of writers for the cube
 /// @details This method obtains the number of writers from the parset and adjusts it if necessary.
-/// It is intended to be used in the constructor to fill itsNumWriters data field and requires 
+/// It is intended to be used in the constructor to fill itsNumWriters data field and requires
 /// itsGridType and itsParset to be valid.
 /// @return number of writer ranks for grid export
 int ContinuumWorker::configureNumberOfWriters()
@@ -549,12 +549,12 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 }
 
 /// @brief helper method to process a single work unit
-/// @details This method encapsulates a part of the old processChannel calculating and merging NE for a single work 
+/// @details This method encapsulates a part of the old processChannel calculating and merging NE for a single work
 /// unit. The resulting NE is either added to the root imager passed as the parameter or a new CalcCore object is
 /// created and returned if the passed shared pointer is empty.
 /// @param[inout] rootImagerPtr shared pointer to CalcCore object to update or create (if empty shared pointer is passed)
 /// @param[in] wu work unit to process
-/// @param[in] lastcycle if this parameter is true and itsWriteGrids is true as well, the grids are extracted into root imager 
+/// @param[in] lastcycle if this parameter is true and itsWriteGrids is true as well, the grids are extracted into root imager
 /// for writing later on. We only do this in the last major cycle, hence the name. In the central solver case this option has
 /// no effect.
 void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const
@@ -618,13 +618,13 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
             }
         } else {
             if (rootImagerPtr) {
-                workingImager.replaceModel(rootImagerPtr->params());
+                workingImager.replaceModelByReference(rootImagerPtr->params());
             } else {
                 if (itsLocalSolver) {
                     // setup full sized image
                     setupImage(workingImager.params(), globalFrequency, false);
                 } else {
-                    // need to receve the model from master 
+                    // need to receve the model from master
                     // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
                     // can receive the model outside of this method
                     ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
@@ -648,7 +648,7 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
                // what to do here. Do we continue with the accumulation or just fail ...
                throw;
         }
-        // MV: I'm not sure we want to log the summary again (it is done just before the processng of this work unit, 
+        // MV: I'm not sure we want to log the summary again (it is done just before the processng of this work unit,
         // but this matches the old behaviour prior to refactoring as far as I understand it
         itsStats.logSummary();
 
@@ -830,7 +830,7 @@ void ContinuumWorker::processChannelsNew()
                      rootImager.restoreImage();
                  }
 
-                 // force cache clearing here to match the code behaviour prior to refactoring. 
+                 // force cache clearing here to match the code behaviour prior to refactoring.
                  // It will be no operation if clearcache is false
                  if (itsDSM) {
                      itsDSM->reset();
@@ -850,8 +850,8 @@ void ContinuumWorker::processChannelsNew()
 
                      /// one per client ... I dont care what order they come in at
 
-                     performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ? 
-                                  itsComms.getOutstanding() - itsComms.getClients().size() : 0, 
+                     performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ?
+                                  itsComms.getOutstanding() - itsComms.getClients().size() : 0,
                              itsWorkUnits.size() - workUnitCounter);
 
                  } else {
@@ -886,17 +886,17 @@ void ContinuumWorker::processChannelsNew()
                    ASKAPDEBUGASSERT(wuLastProcessedIt != wuEndIt);
                    sendBlankImageToWriter(*wuLastProcessedIt);
                }
-        } // catch block bypassing channel write in spectral line mode or passing the exception in continuum   
+        } // catch block bypassing channel write in spectral line mode or passing the exception in continuum
    } // for loop over frequency blocks (just one pass for the continuum case)
-   
+
    ASKAPLOG_INFO_STR(logger,"Finished imaging");
 
-   if (itsLocalSolver) { 
+   if (itsLocalSolver) {
        // cleanup
        performOutstandingWriteJobs();
    }
    // MV: I don't think the barrier is necesary here. If it is needed to ensure all channel write operations are
-   // performed before going further, then we have to move it into performOutstandingWriteJobs. 
+   // performed before going further, then we have to move it into performOutstandingWriteJobs.
    // Anyway, leave it as it was prior to refactoring for now
    ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
    itsComms.barrier(itsComms.theWorkers());
@@ -913,7 +913,7 @@ void ContinuumWorker::processChannelsNew()
 /// associated data transfers, if necessary. It can be viewed at the place where the minor cycle is
 /// performed in the case of the local solver (or the interface part, if the master perofms it as
 /// it happens in the continuum mode).
-/// @param[in] rootImagerPtr shared pointer to the CalcCore object containing the result of the current 
+/// @param[in] rootImagerPtr shared pointer to the CalcCore object containing the result of the current
 ///                          major cycle for the given worker.
 /// @param[in] haveMoreMajorCycles flag that more major cycles are to be done (subject to thresholds). In the
 ///                          central solver mode we expect to receive the new model in this flag is true or
@@ -1116,7 +1116,6 @@ void ContinuumWorker::processChannels()
       /// this will actually build a full image for the first - it is not actually used tho.
       ///
       ASKAPLOG_INFO_STR(logger, "Initialised imager & gridder");
-
       bool stopping = false;
 
       if (!itsUpdateDir) {
@@ -1301,6 +1300,7 @@ void ContinuumWorker::processChannels()
             else {
               workingImager.replaceModel(rootImager.params());
             }
+
             // grid and image
             try {
               workingImager.calcNE();
@@ -1315,6 +1315,7 @@ void ContinuumWorker::processChannels()
               // what to do here. Do we continue with the accumulation or just fail ...
               throw;
             }
+
             itsStats.logSummary();
 
             // merge into root image if required.
@@ -1405,7 +1406,6 @@ void ContinuumWorker::processChannels()
           try {
             rootImager.solveNE();
             itsStats.logSummary();
-
           } catch (const askap::AskapError& e) {
             ASKAPLOG_WARN_STR(logger, "Askap error in solver:" << e.what());
 
@@ -1523,8 +1523,8 @@ void ContinuumWorker::processChannels()
 
         /// one per client ... I dont care what order they come in at
 
-        performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ? 
-                                    itsComms.getOutstanding() - itsComms.getClients().size() : 0, 
+        performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ?
+                                    itsComms.getOutstanding() - itsComms.getClients().size() : 0,
                                     itsWorkUnits.size() - workUnitCount);
 
       } else {
@@ -1582,8 +1582,8 @@ void ContinuumWorker::processChannels()
 
 /// @brief send blank image to writer
 /// @details This method is expected to be used when calculation of a spectral plane is failed for some reason,
-/// but some other rank is responsible for writing it. Essentially it sends a blank image with parameters 
-/// (like frequency and channel) filled from the work unit. 
+/// but some other rank is responsible for writing it. Essentially it sends a blank image with parameters
+/// (like frequency and channel) filled from the work unit.
 /// @param[in] wu work unit to take the information from
 /// @note (MV:) This doesn't seem like a good design, but the behaviour is left the same as it was prior to
 /// the refactoring.
@@ -1674,7 +1674,7 @@ void ContinuumWorker::performOutstandingWriteJobs(int targetOutstanding, int min
    }
 }
 
-/// @brief check stopping thresholds in the model 
+/// @brief check stopping thresholds in the model
 /// @details This method is used at the end of minor cycle deconvolution to check whether to continue iterations.
 /// @param[in] model shared pointer to the scimath::Params object with the model
 /// @return true if stopping is required
@@ -1728,7 +1728,7 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   hlp.copyTo(dest, "slice");
 }
 
-void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan) 
+void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan)
 {
 
   // Pre-conditions
@@ -1923,7 +1923,7 @@ void ContinuumWorker::addImageAsModel(const boost::shared_ptr<scimath::Params> &
 {
    ASKAPLOG_INFO_STR(logger,"Adding model.slice");
    ASKAPDEBUGASSERT(params);
-  
+
    ASKAPCHECK(params->has("image.slice"), "Params are missing image.slice parameter");
    // before archiving "image.slice" as the model, check if a high-resolution "fullres.slice" has been set up
    if (params->has("fullres.slice")) {

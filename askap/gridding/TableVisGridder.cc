@@ -1613,7 +1613,7 @@ void TableVisGridder::finaliseDegrid() {
 void TableVisGridder::clearGrid() {
     // Free up the grid memory?
     if (itsClearGrid) {
-        ASKAPLOG_INFO_STR(logger,"Clearing the grid - free "<<its2dGrid.size()*sizeof(casacore::Complex)/1024/1024<<" MB/plane, #gridplanes "<<itsGrid.size());
+        ASKAPLOG_INFO_STR(logger,"Clearing the grid - free "<<sizeof(casacore::Complex)*its2dGrid.size()/1024/1024<<" MB/plane, #gridplanes "<<itsGrid.size());
         itsGrid.resize(0);
         its2dGrid.resize(0,0);
         itsGridIndex=-1;

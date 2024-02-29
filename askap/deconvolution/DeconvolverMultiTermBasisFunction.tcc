@@ -355,6 +355,8 @@ namespace askap {
             for (uInt base = 0; base < itsTermBaseFlux.nelements(); base++) {
               ASKAPLOG_INFO_STR(decmtbflogger,"Total flux for scale "<<base<<" : "<<itsTermBaseFlux(base)(0));
             }
+
+            // Can we return some memory here?
         }
 
         template<class T, class FT>
@@ -462,7 +464,8 @@ namespace askap {
                                            << ")*Residual(" << term << "): max = " << max(work)
                                            << " min = " << min(work));
 
-                    this->itsResidualBasis(base)(term) = work;
+                    // this->itsResidualBasis(base)(term) = work;
+                    this->itsResidualBasis(base)(term).reference(work);
                 }
             }
             //const double end_time = MPI_Wtime();
@@ -1879,6 +1882,26 @@ namespace askap {
             // we start deep cleaning straight away if scale mask is set
             this->control()->setDeepCleanMode();
             ASKAPLOG_INFO_STR(decmtbflogger, "Starting deep cleaning phase with provided scale mask");
+        }
+
+        template<class T, class FT>
+        void DeconvolverMultiTermBasisFunction<T, FT>::releaseMemory()
+        {
+            DeconvolverBase<T, FT>::releaseMemory();
+            uInt memory = 0;
+            const uInt nBases(itsResidualBasis.nelements());
+            for (uInt base = 0; base < nBases; base++) {
+                for (uInt term = 0; term < this->nTerms(); term++) {
+                    memory += sizeof(imtype) * itsResidualBasis(base)(term).nelements();
+                }
+            }
+            itsResidualBasis.resize();
+            ASKAPLOG_DEBUG_STR(decbaselogger,"DeconvolverMultiTermBasisFunction released "<<memory/1024/1024<<" MB from residualBasis");
+            ASKAPCHECK(itsBasisFunction, "Basis function not initialised");
+            memory = sizeof(imtype) * itsBasisFunction->allBasisFunctions().nelements();
+            itsBasisFunction->allBasisFunctions().resize();
+            ASKAPLOG_DEBUG_STR(decbaselogger,"DeconvolverMultiTermBasisFunction released "<<memory/1024/1024<<" MB from basisfunctions");
+
         }
 
     }
