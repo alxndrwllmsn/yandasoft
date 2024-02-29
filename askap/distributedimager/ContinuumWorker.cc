@@ -587,13 +587,49 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
             if (rootImagerPtr && rootImagerPtr->params()) {
                 ASKAPDEBUGASSERT(rootImagerPtr);
                 copyModel(rootImagerPtr->params(),workingImager.params());
+            } else {
+                // MV: use the same approach with a dummy iteration as in the code prior to refactoring
+                // (this is to setup a full size NE to linmos into. This condition indicates that we have
+                // the first work unit processed. On subsequent major cycles rootImager will contain the new model and
+                // for subsequent work units copyModel shouldn't do any harm
+                // I added the following assert condition as I don't expect rootImager defined without a model. Another
+                // wrapping if-statement will be necessary if this assumption doesn't hold
+                ASKAPASSERT(!rootImagerPtr);
+                // change gridder for initial calcNE in itsUpdateDir mode
+                LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
+                tmpParset.replace("gridder","SphFunc");
+                rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
+                // setup full size image
+                setupImage(rootImagerPtr->params(), globalFrequency, false);
+                try {
+                   rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
+                   rootImagerPtr->configureNormalEquationsForMosaicing();
+                   rootImagerPtr->zero(); // then we delete all our work ....
+                }
+                catch (const askap::AskapError& e) {
+                       ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - dummy run for rootImager in updatedirection mode");
+                       ASKAPLOG_WARN_STR(logger,"Ignoring the current work unit");
+                       // reset rootImagerPtr to ensure we attempt full size NE generation with the next work unit
+                       rootImagerPtr.reset();
+                       throw;
+                }
             }
         } else {
             if (rootImagerPtr) {
                 workingImager.replaceModel(rootImagerPtr->params());
             } else {
-                // setup full sized image
-                setupImage(workingImager.params(), globalFrequency, false);
+                if (itsLocalSolver) {
+                    // setup full sized image
+                    setupImage(workingImager.params(), globalFrequency, false);
+                } else {
+                    // need to receve the model from master 
+                    // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
+                    // can receive the model outside of this method
+                    ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
+                    workingImager.receiveModel();
+                    // MV: the message has been copied as is, need to verify that this condition indeed only happens for cycle 0 in the new structure
+                    ASKAPLOG_INFO_STR(logger, "Worker received initial model for cycle 0");
+                }
             }
         }
         // grid and image
