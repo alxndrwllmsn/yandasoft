@@ -126,7 +126,9 @@ namespace askap
 
       Bool itsDecoupled;
       Bool itsUseScaleMask;
-      
+      Bool itsReadScaleMask;
+      Bool itsWriteScaleMask;
+
       casacore::Array<Float> itsPSFZeroArray;
 
       Float itsPSFZeroCentre;

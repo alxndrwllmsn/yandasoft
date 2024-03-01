@@ -335,13 +335,6 @@ namespace askap {
                 itsSolutionType = "MAXCHISQ";
                 ASKAPLOG_DEBUG_STR(decmtbflogger, "Component search to find maximum in chi-squared");
             }
-            itsUseScaleMask = parset.getBool("usescalebitmask", false);
-            if (itsUseScaleMask) {
-                ASKAPLOG_INFO_STR(decmtbflogger, "Using bitmask for scale masks");
-            } else {
-                ASKAPLOG_INFO_STR(decmtbflogger, "Not using bitmask for scale masks");
-            }
-
         }
 
         template<class T, class FT>
@@ -1127,7 +1120,7 @@ namespace askap {
                             }
                         }
 
-                        // Record location of peak in mask
+                        // Record location of peak in mask - only one of these will be initialised
                         if (this->itsMask.nelements()) this->itsMask(optimumBase)(absPeakPos)=T(1.0);
                         if (this->itsScaleMask.nelements()) this->itsScaleMask(absPeakPos) |= (1<<optimumBase);
 
@@ -1790,7 +1783,6 @@ namespace askap {
                 if (!this->control()->deepCleanMode()) {
                     ASKAPLOG_INFO_STR(decmtbflogger, "Starting deep cleaning phase");
                 }
-                //setDeepCleanMode(True);
                 this->control()->setDeepCleanMode();
             }
 
@@ -1859,6 +1851,34 @@ namespace askap {
             }
 
             return True;
+        }
+
+        /// @brief export the scale mask
+        /// @detail Access the scale mask used during deconvolution, this is a bitmask
+        /// where a bit is set if the corresponding scale was used for that pixel
+        /// @param[in]scaleMask a Matrix<uint> with bitmask of scales for each pixel
+        template<class T, class FT>
+        const Matrix<T> DeconvolverMultiTermBasisFunction<T, FT>::scaleMask()
+        {
+            casacore::Matrix<T> scaleMask(itsScaleMask.shape());
+            casacore::convertArray<T,uint>(scaleMask, itsScaleMask);
+            return scaleMask;
+        }
+
+        /// @brief import initial scale mask
+        /// @detail Load an initial scale mask to use in the deconvolution. It is up to the user
+        /// to make sure the number (<=24 for float) and size of the scales matches between deconvolution runs
+        /// Clean will only look for components on a particular scale at pixels where the corresponding bit is set
+        /// @param[in]scaleMask a Matrix<uint> with bitmask of scales for each pixel
+        template<class T, class FT>
+        void DeconvolverMultiTermBasisFunction<T, FT>::setScaleMask(const Matrix<T>& scaleMask)
+        {
+            ASKAPCHECK(this->dirty(0).shape() == scaleMask.shape(),"Mismatch of dirty image and scale mask");
+            itsScaleMask.resize(scaleMask.shape());
+            casacore::convertArray<uint,T>(itsScaleMask, scaleMask);
+            // we start deep cleaning straight away if scale mask is set
+            this->control()->setDeepCleanMode();
+            ASKAPLOG_INFO_STR(decmtbflogger, "Starting deep cleaning phase with provided scale mask");
         }
 
     }

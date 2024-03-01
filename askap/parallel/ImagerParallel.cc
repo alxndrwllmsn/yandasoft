@@ -128,9 +128,8 @@ namespace askap
         itsWriteGrids = parset.getBool("write.grids",itsWriteGrids); // new name
         itsWriteMultiple = parset.getBool("write.multiple", false); // Only write out the first image by default
         itsWriteMultipleModels = parset.getBool("write.multiplemodels",true); // write all model images
-
+        itsWriteScaleMask = parset.getBool("write.scalemask",false); // write out the scale mask(s)
         itsSensitivityCutoff = parset.getDouble("sensitivityimage.cutoff", 0.01);
-
         bool reuseModel = parset.getBool("Images.reuse", false); // continue solving from existing model
 
         if (itsWriteSensitivityImage) {
@@ -159,7 +158,11 @@ namespace askap
         itsFirstImageName = itsFirstImageName.substr(5);
 
         /// Create the solver from the parameterset definition
-        itsSolver = ImageSolverFactory::make(parset);
+        LOFAR::ParameterSet tmpset = parset.makeSubset("");
+        if (itsWriteScaleMask) {
+            tmpset.replace(LOFAR::KVpair("Solver.Clean.writescalemask",true));
+        }
+        itsSolver = ImageSolverFactory::make(tmpset);
         ASKAPCHECK(itsSolver, "Solver not defined correctly");
       }
       if (itsComms.isWorker())
@@ -1219,6 +1222,10 @@ namespace askap
             if ((it->find("psf") == 0) && itsWritePsfRaw && doWrite) {
                 ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
                 SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor, keywords, historyLines);
+            }
+            if ((it->find("scalemask") == 0) && itsWriteScaleMask && doWrite) {
+                ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
+                SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, boost::none, keywords, historyLines);
             }
         }
 

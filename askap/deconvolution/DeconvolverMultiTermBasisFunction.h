@@ -193,8 +193,18 @@ namespace askap {
                 /// @param[in] dirty Dirty image (vector of arrays)
                 virtual void updateDirty(casacore::Vector<casacore::Array<T> >& dirty);
 
-	void setInverseCouplingMatrix(casa::Matrix<casa::Double> &InverseMatrix);
-	casa::Matrix<casa::Double> getInverseCouplingMatrix();
+	            void setInverseCouplingMatrix(casa::Matrix<casa::Double> &InverseMatrix);
+	            casa::Matrix<casa::Double> getInverseCouplingMatrix();
+
+                /// @brief export the scale mask
+                /// @detail Give access to the scale mask used in the deconvolution
+                /// @return Matrix<T> scale mask (bitmask of scales for each pixel)
+                const casacore::Matrix<T> scaleMask();
+
+                /// @brief import initial scale mask
+                /// @detail Load an initial scale mask to use in the deconvolution
+                /// @param[in]scaleMask a Matrix<T> with bitmask of scales for each pixel
+                void setScaleMask(const Matrix<T>& scaleMask);
 
             private:
 
@@ -234,6 +244,7 @@ namespace askap {
                 casacore::Vector<casacore::Array<T> > itsMask;
 
                 /// BitMask image giving the location of all components per base
+                /// Number of scales is limited to 24 as we write the scale mask out as a float image
                 casacore::Matrix<uint> itsScaleMask;
 
                 /// Point spread functions convolved with cross terms

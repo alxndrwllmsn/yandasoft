@@ -114,7 +114,7 @@ namespace askap
                       boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
                   if (ics) {
                     ics->setNoiseThreshold(cThreshold.getValue());
-                    ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the noise threshold of "<<
+                    ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the noise threshold of "<<
                                       cThreshold.getValue("")<<" sigma");
                   } else {
                     ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
