@@ -153,6 +153,20 @@ class ContinuumWorker : public boost::noncopyable
         /// @param[in] wu work unit to process
         void processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu) const;
 
+        /// @brief helper method to perform minor cycle activities
+        /// @details This method encapsulates running the solver at the conclusion of each major cycle and
+        /// associated data transfers, if necessary. It can be viewed at the place where the minor cycle is
+        /// performed in the case of the local solver (or the interface part, if the master perofms it as
+        /// it happens in the continuum mode).
+        /// @param[in] rootImagerPtr shared pointer to the CalcCore object containing the result of the current 
+        ///                          major cycle for the given worker.
+        /// @param[in] haveMoreMajorCycles flag that more major cycles are to be done (subject to thresholds). In the
+        ///                          central solver mode we expect to receive the new model in this flag is true or
+        ///                          perform new solution ourselves in the case of the local solver.
+        /// @return true if major cycles have to be terminated due to thresholds being reached
+        /// @note empty rootImagerPtr causes an exception. This may happen if no data are processed.
+        bool runMinorCycleSolver(const boost::shared_ptr<CalcCore> &rootImagerPtr, bool haveMoreMajorCycles) const;
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
 

@@ -237,7 +237,7 @@ void ContinuumWorker::run(void)
   itsAdvisor->addMissingParameters(true);
 
   try {
-    processChannels();
+    processChannelsNew();
   } catch (AskapError& e) {
     ASKAPLOG_WARN_STR(logger, "Failure processing the channel allocation");
     ASKAPLOG_WARN_STR(logger, "Exception detail: " << e.what());
@@ -745,33 +745,211 @@ void ContinuumWorker::processChannelsNew()
 
    for (size_t frequencyBlock = 0; frequencyBlock < numberOfFrequencyBlocks; ++frequencyBlock) {
         ASKAPLOG_DEBUG_STR(logger, "Processing frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks);
-        for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
-             ASKAPLOG_INFO_STR(logger, "Starting major cycle "<<majorCycleNumber + 1<<" out of "<<nCycles<<
-                                       " (frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
-             size_t workUnitCounter = 0u;
-             // begin and end iterators for the part of work units we need (all of them in continuum, given frequency
-             // for the spectral line mode)
-             const WorkUnitContainer::const_iterator wuBeginIt = itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin();
-             const WorkUnitContainer::const_iterator wuEndIt = itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end();
-             for (WorkUnitContainer::const_iterator wuIt = wuBeginIt; wuIt != wuEndIt; ++wuIt) {
-                  // skip unsupported work unit types (MV: do we need to do this? May be better not to add them to the list. For now do the same as the code prior to refactoring)
-                  if ((wuIt->get_payloadType() == ContinuumWorkUnit::DONE) || (wuIt->get_payloadType() == ContinuumWorkUnit::NA)) {
-                      continue;
+        // begin and end iterators for the part of work units we need (all of them in continuum, given frequency
+        // for the spectral line mode)
+        const WorkUnitContainer::const_iterator wuBeginIt = itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin();
+        const WorkUnitContainer::const_iterator wuEndIt = itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end();
+        // iterator to the last processed work unit (to use in writing, outside the work unit loop)
+        // initialise it with end iterator to double check that it got updated within the loop and no wrong data
+        // will get through by chance
+        WorkUnitContainer::const_iterator wuLastProcessedIt = wuEndIt;
+
+        // the counter is for reporting and to size the writing job in some circumstances
+        // define it in the frequency loop as opposed to inner loops for that latter cause
+        size_t workUnitCounter = 0u;
+
+        try {
+             for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
+                  ASKAPLOG_INFO_STR(logger, "Starting major cycle "<<majorCycleNumber + 1<<" out of "<<nCycles<<
+                                            " (frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
+                  workUnitCounter = 0u;
+                  for (WorkUnitContainer::const_iterator wuIt = wuBeginIt; wuIt != wuEndIt; ++wuIt) {
+                       // skip unsupported work unit types (MV: do we need to do this? May be better not to add them to the list. For now do the same as the code prior to refactoring)
+                       if ((wuIt->get_payloadType() == ContinuumWorkUnit::DONE) || (wuIt->get_payloadType() == ContinuumWorkUnit::NA)) {
+                           continue;
+                       }
+                       // counter just for reporting and to spread writing jobs more evenly (although this can probably
+                       // be done differently - use the same approach as in the code prior to refactoring for now)
+                       ++workUnitCounter;
+                       wuLastProcessedIt = wuIt;
+                       itsStats.logSummary();
+
+                       ASKAPLOG_DEBUG_STR(logger, "Processing work unit "<<workUnitCounter);
+
+                       processOneWorkUnit(rootImagerPtr, *wuIt);
+
+
+                  } // for loop over workunits of the given frequency block (or all of them in continuum mode)
+
+                  if (runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles)) {
+                      break;
                   }
-                  // counter just for reporting, we shouldn't need it anywhere else
-                  ++workUnitCounter;
-                  itsStats.logSummary();
+             } // for loop over major cycles
 
-                  ASKAPLOG_DEBUG_STR(logger, "Processing work unit "<<workUnitCounter);
+             ASKAPLOG_INFO_STR(logger," Finished the major cycles");
+             // no work is left in the continuum mode except the final logging which is done outside the frequency loop
+             if (itsLocalSolver) {
+                 ASKAPASSERT(rootImagerPtr);
+                 CalcCore& rootImager = *rootImagerPtr; // just for semantics;
+                 rootImager.updateSolver();
 
-                  processOneWorkUnit(rootImagerPtr, *wuIt);
+                 // At this point we have finished our last major cycle. We have the "best" model from the
+                 // last minor cycle. Which should be in the archive - or full coordinate system
+                 // the residual image should be merged into the archive coordinated as well.
+                 addImageAsModel(rootImager.params());
+
+                 if (itsWriteGrids) {
+                     rootImager.addGridsToModel();
+                 }
+
+                 rootImager.check();
 
 
-             } // for loop over workunits of the given frequency block (or all of them in continuum mode)
-        } // for loop over major cycles
+                 if (itsRestore) {
+                     ASKAPLOG_INFO_STR(logger, "Running restore");
+                     rootImager.restoreImage();
+                 }
+
+                 // force cache clearing here to match the code behaviour prior to refactoring. 
+                 // It will be no operation if clearcache is false
+                 itsDSM.reset();
+
+                 itsStats.logSummary();
+
+                 ASKAPLOG_INFO_STR(logger, "writing channel into cube");
+                 ASKAPCHECK(wuLastProcessedIt != wuEndIt, "No work units seem to be processed - logic error or bad configuration?");
+
+                 if (itsComms.isWriter()) {
+
+                     // write own portion first
+                     performOwnWriteJob(wuLastProcessedIt->get_globalChannel(), rootImager.params());
+
+                     /// write everyone elses
+
+                     /// one per client ... I dont care what order they come in at
+
+                     performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ? 
+                                  itsComms.getOutstanding() - itsComms.getClients().size() : 0, 
+                             itsWorkUnits.size() - workUnitCounter);
+
+                 } else {
+                     // this rank is not the writer, send the result elsewhere
+                     ContinuumWorkRequest result;
+                     result.set_params(rootImager.params());
+                     result.set_globalChannel(wuLastProcessedIt->get_globalChannel());
+                     /// send the work to the writer with a blocking send
+                     result.sendRequest(wuLastProcessedIt->get_writer(), itsComms);
+                     itsComms.removeChannelFromWorker(itsComms.rank());
+                 }
+             } // if in the spectral line mode
+        } // try-block to be able to fail processing of the single spectral channel gracefully
+        catch (const std::exception& e) {
+               if (!itsLocalSolver) {
+                   /// this is MFS/continuum mode
+                   /// throw this further up - this avoids a failure in continuum mode generating bogus - or furphy-like
+                   /// error messages
+                   ASKAPLOG_WARN_STR(logger, "Error processing a channel in continuum mode");
+                   throw;
+               }
+               ASKAPLOG_WARN_STR(logger, "Error in channel processing, skipping: " << e.what());
+               std::cerr << "Skipping channel due to error and continuing: " << e.what() << std::endl;
+
+               // Need to either send an empty map - or remove the channel from the list to write
+               if (itsComms.isWriter()) {
+                   ASKAPLOG_DEBUG_STR(logger, "Marking bad channel as processed in count for writer");
+                   itsComms.removeChannelFromWriter(itsComms.rank());
+               } else {
+                   // MV: I am not sure we have to report the counter here as the failure can happen during solve
+                   ASKAPLOG_DEBUG_STR(logger, "Failed on count " << workUnitCounter);
+                   ASKAPDEBUGASSERT(wuLastProcessedIt != wuEndIt);
+                   sendBlankImageToWriter(*wuLastProcessedIt);
+               }
+        } // catch block bypassing channel write in spectral line mode or passing the exception in continuum   
    } // for loop over frequency blocks (just one pass for the continuum case)
+   
+   ASKAPLOG_INFO_STR(logger,"Finished imaging");
 
+   if (itsLocalSolver) { 
+       // cleanup
+       performOutstandingWriteJobs();
+   }
+   // MV: I don't think the barrier is necesary here. If it is needed to ensure all channel write operations are
+   // performed before going further, then we have to move it into performOutstandingWriteJobs. 
+   // Anyway, leave it as it was prior to refactoring for now
+   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+   itsComms.barrier(itsComms.theWorkers());
+   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+
+   // write out the beam log
+   ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
+   logBeamInfo();
+   logWeightsInfo();
 }
+
+/// @brief helper method to perform minor cycle activities
+/// @details This method encapsulates running the solver at the conclusion of each major cycle and
+/// associated data transfers, if necessary. It can be viewed at the place where the minor cycle is
+/// performed in the case of the local solver (or the interface part, if the master perofms it as
+/// it happens in the continuum mode).
+/// @param[in] rootImagerPtr shared pointer to the CalcCore object containing the result of the current 
+///                          major cycle for the given worker.
+/// @param[in] haveMoreMajorCycles flag that more major cycles are to be done (subject to thresholds). In the
+///                          central solver mode we expect to receive the new model in this flag is true or
+///                          perform new solution ourselves in the case of the local solver.
+/// @return true if major cycles have to be terminated due to thresholds being reached
+/// @note empty rootImagerPtr causes an exception. This may happen if no data are processed.
+bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &rootImagerPtr, bool haveMoreMajorCycles) const
+{
+   ASKAPCHECK(rootImagerPtr, "Root imager is empty - no data processed?");
+   if (!itsLocalSolver) {
+       // we run through the whole allocation
+       // lets send it to the master for processing.
+       rootImagerPtr->sendNE();
+
+       // MV: for now leave the original barrier in place although it is not required
+       ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+       itsComms.barrier(itsComms.theWorkers());
+       ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+
+       // now we have to wait for the model (solution) to come back.
+       // MV: except on the very last major cycle
+       if (haveMoreMajorCycles) {
+           ASKAPLOG_DEBUG_STR(logger, "Worker waiting to receive new model");
+           rootImagerPtr->receiveModel();
+           ASKAPLOG_DEBUG_STR(logger, "Worker received model for use in the next major cycle");
+       }
+   }
+   const bool forcedStopping = checkStoppingThresholds(rootImagerPtr->params());
+   // MV: I am not sure this matches the old behaviour in the non-local solver case
+   if (forcedStopping) {
+       return true;
+   }
+   const bool lastCycle = forcedStopping || !haveMoreMajorCycles;
+   if (itsLocalSolver && !lastCycle) {
+       try {
+          rootImagerPtr->solveNE();
+          itsStats.logSummary();
+       }
+       catch (const askap::AskapError& e) {
+              ASKAPLOG_WARN_STR(logger, "Askap error in solver:" << e.what());
+              throw;
+       }
+   }
+   if (!lastCycle) {
+       ASKAPLOG_DEBUG_STR(logger, "Continuing - Reset normal equations");
+       if (itsUpdateDir) {
+           // MV: the original code has the following comment:
+           // Actually I've found that I cannot completely empty the NE. As I need the full size PSF and this is stored in the NE
+           // So this method pretty much only zeros the weights and the datavector(image)
+           rootImagerPtr->zero();
+       } else {
+           rootImagerPtr->reset();
+       }
+   }
+   itsStats.logSummary();
+   return false;
+}
+
 
 void ContinuumWorker::processChannels()
 {
