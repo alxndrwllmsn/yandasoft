@@ -745,10 +745,12 @@ void ContinuumWorker::processChannelsNew()
 
    for (size_t frequencyBlock = 0; frequencyBlock < numberOfFrequencyBlocks; ++frequencyBlock) {
         ASKAPLOG_DEBUG_STR(logger, "Processing frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks);
+
         // begin and end iterators for the part of work units we need (all of them in continuum, given frequency
         // for the spectral line mode)
         const WorkUnitContainer::const_iterator wuBeginIt = itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin();
         const WorkUnitContainer::const_iterator wuEndIt = itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end();
+
         // iterator to the last processed work unit (to use in writing, outside the work unit loop)
         // initialise it with end iterator to double check that it got updated within the loop and no wrong data
         // will get through by chance
@@ -812,7 +814,9 @@ void ContinuumWorker::processChannelsNew()
 
                  // force cache clearing here to match the code behaviour prior to refactoring. 
                  // It will be no operation if clearcache is false
-                 itsDSM.reset();
+                 if (itsDSM) {
+                     itsDSM->reset();
+                 }
 
                  itsStats.logSummary();
 
