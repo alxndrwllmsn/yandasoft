@@ -732,9 +732,6 @@ void ContinuumWorker::processChannelsNew()
    // setup data source manager
    itsDSM.reset(new DataSourceManager(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance));
 
-   // this will be used to accumulate normal equations across multiple work units
-   boost::shared_ptr<CalcCore> rootImagerPtr;
-
    // itsWorkUnits may include different epochs (for the same channel)
    // the order is strictly by channel - with multiple work units per channel.
    // we use appropriately configured iterators to iterate over all work units with the same
@@ -745,6 +742,11 @@ void ContinuumWorker::processChannelsNew()
 
    for (size_t frequencyBlock = 0; frequencyBlock < numberOfFrequencyBlocks; ++frequencyBlock) {
         ASKAPLOG_DEBUG_STR(logger, "Processing frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks);
+
+        // this will be used to accumulate normal equations across multiple work units
+        // define it inside the frequency block loop because each frequency block is considered to be independent
+        // (for the continuum case there is only one frequency block comprising all data)
+        boost::shared_ptr<CalcCore> rootImagerPtr;
 
         // begin and end iterators for the part of work units we need (all of them in continuum, given frequency
         // for the spectral line mode)
@@ -762,8 +764,12 @@ void ContinuumWorker::processChannelsNew()
 
         try {
              for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
-                  ASKAPLOG_INFO_STR(logger, "Starting major cycle "<<majorCycleNumber + 1<<" out of "<<nCycles<<
+                  if (majorCycleNumber != nCycles) {
+                      ASKAPLOG_INFO_STR(logger, "Starting major cycle "<<majorCycleNumber + 1<<" out of "<<nCycles<<
                                             " (frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
+                  } else {
+                      ASKAPLOG_INFO_STR(logger, "Concluding major cycles (last pass over data, frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
+                  }
                   workUnitCounter = 0u;
                   for (WorkUnitContainer::const_iterator wuIt = wuBeginIt; wuIt != wuEndIt; ++wuIt) {
                        // skip unsupported work unit types (MV: do we need to do this? May be better not to add them to the list. For now do the same as the code prior to refactoring)
