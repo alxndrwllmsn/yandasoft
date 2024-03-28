@@ -118,6 +118,19 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
   itsRestore = parset.getBool("restore", false);
 }
 
+/// @brief reset measurement equation
+/// @details We create measurement equation (i.e. ImageFFTEquation) on demand. However, it 
+/// has grids which are heavy objects. This method resets the appropriate shared pointer which
+/// should free up the memory.
+void CalcCore::resetMeasurementEquation()
+{
+   // MV: it breaks encapsulation accessing the data member of the base class but the whole code was written this way
+   // One day we should clean up this technical debt.
+   // In principle, I could've put this method with the appropriate base class. But leave it here for now as it is only used
+   // in the new imager at the moment
+   itsEquation.reset();
+}
+
 /// @brief make data iterator
 /// @details This helper method makes an iterator based on the configuration in the current parset and
 /// data fields of this class such as itsChannel and itsFrequency
@@ -276,7 +289,7 @@ std::string CalcCore::getFirstImageName() const
 
 casacore::Array<casacore::Complex> CalcCore::getGrid() const
 {
-   ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
+   ASKAPLOG_INFO_STR(logger,"Extracting vis grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
    const string imageName = getFirstImageName();
    // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
@@ -287,7 +300,7 @@ casacore::Array<casacore::Complex> CalcCore::getGrid() const
 
 casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
 {
-   ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
+   ASKAPLOG_INFO_STR(logger,"Extracting pcf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
    const string imageName = getFirstImageName();
    // in principle, we can pass the shared pointer on interface straight to dynamic cast and test the result only
@@ -307,7 +320,7 @@ casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
 
 casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 {
-   ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
+   ASKAPLOG_INFO_STR(logger,"Extracting psf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
    const string imageName = getFirstImageName();
    // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
@@ -318,24 +331,44 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 
 /// @brief store all complex grids in the model object for future writing
 /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
-/// returned arrays in the model so they can be exported later.
-void CalcCore::addGridsToModel()
+/// returned arrays in the model so they can be exported later. If the model 
+/// object already has grids, the new values are added. Shape must conform.
+/// @param[in] storage shared pointer to the model where grids will be stored
+void CalcCore::addGridsToModel(const boost::shared_ptr<scimath::Params> &storage)
 {
    ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
+   ASKAPASSERT(storage);
    casacore::Array<casacore::Complex> garr = getGrid();
    casacore::Vector<casacore::Complex> garrVec(garr.reform(casacore::IPosition(1,garr.nelements())));
-   params()->addComplexVector("grid.slice",garrVec);
+   if (storage->has("grid.slice")) {
+       // MV: probably unnecessary complex <-> two floats conversion underneath. Leave as is for now
+       // but in general we seem to be doing unnecessary copy a lot with the current Params class
+       garrVec += storage->complexVectorValue("grid.slice");
+       storage->updateComplexVector("grid.slice",garrVec);
+   } else {
+      storage->addComplexVector("grid.slice",garrVec);
+   }
    ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
    casacore::Array<casacore::Complex> pcfarr = getPCFGrid();
    if (pcfarr.nelements()) {
        ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
        casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(casacore::IPosition(1,pcfarr.nelements())));
-       params()->addComplexVector("pcf.slice",pcfVec);
+       if (storage->has("pcf.slice")) {
+           pcfVec += storage->complexVectorValue("pcf.slice");
+           storage->updateComplexVector("pcf.slice",pcfVec);
+       } else {
+         storage->addComplexVector("pcf.slice",pcfVec);
+       }
    }
    ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
    casacore::Array<casacore::Complex> psfarr = getPSFGrid();
    casacore::Vector<casacore::Complex> psfVec(psfarr.reform(casacore::IPosition(1,psfarr.nelements())));
-   params()->addComplexVector("psfgrid.slice",psfVec);
+   if (storage->has("psfgrid.slice")) {
+      psfVec += storage->complexVectorValue("psfgrid.slice");
+      storage->updateComplexVector("psfgrid.slice",psfVec);
+   } else {
+      storage->addComplexVector("psfgrid.slice",psfVec);
+   }
 }
 
 void CalcCore::calcNE()

@@ -151,7 +151,10 @@ class ContinuumWorker : public boost::noncopyable
         /// created and returned if the passed shared pointer is empty.
         /// @param[inout] rootImagerPtr shared pointer to CalcCore object to update or create (if empty shared pointer is passed)
         /// @param[in] wu work unit to process
-        void processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu) const;
+        /// @param[in] lastcycle if this parameter is true and itsWriteGrids is true as well, the grids are extracted into root imager 
+        /// for writing later on. We only do this in the last major cycle, hence the name. In the central solver case this option has
+        /// no effect.
+        void processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const;
 
         /// @brief helper method to perform minor cycle activities
         /// @details This method encapsulates running the solver at the conclusion of each major cycle and

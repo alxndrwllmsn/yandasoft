@@ -66,16 +66,16 @@ def analyseResult(spr, checkWeights=True):
 
    stats = spr.complexImageStats('visgrid.cont')
    print("Statistics for vis grid: ", stats)
-   #if abs(stats['peak'] - 5.22346) > 0.1:
-   #   raise RuntimeError("vis grid peak value is wrong, please verify")
+   if abs(stats['peak'] - 5.22346) > 0.1:
+      raise RuntimeError("vis grid peak value is wrong, please verify")
    if stats['x']!=65 or stats['y']!=67:
       raise RuntimeError("vis grid peak location is wrong, please verify")
-   #if abs(stats['rms-real'] - 0.1794) > 0.001:
-   #   raise RuntimeError("vis grid rms real value is wrong, please verify")
+   if abs(stats['rms-real'] - 0.1794) > 0.001:
+      raise RuntimeError("vis grid rms real value is wrong, please verify")
    if abs(stats['median-real'] - 0) > 1e-5:
       raise RuntimeError("vis grid median value is wrong, please verify")
-   #if abs(stats['rms-imag'] - 0.2038) > 0.001:
-   #   raise RuntimeError("vis grid rms imag value is wrong, please verify")
+   if abs(stats['rms-imag'] - 0.2038) > 0.001:
+      raise RuntimeError("vis grid rms imag value is wrong, please verify")
    if abs(stats['median-imag'] - 0) > 1e-5:
       raise RuntimeError("vis grid median value is wrong, please verify")
 

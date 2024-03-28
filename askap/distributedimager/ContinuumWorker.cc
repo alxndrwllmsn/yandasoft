@@ -554,7 +554,10 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 /// created and returned if the passed shared pointer is empty.
 /// @param[inout] rootImagerPtr shared pointer to CalcCore object to update or create (if empty shared pointer is passed)
 /// @param[in] wu work unit to process
-void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu) const
+/// @param[in] lastcycle if this parameter is true and itsWriteGrids is true as well, the grids are extracted into root imager 
+/// for writing later on. We only do this in the last major cycle, hence the name. In the central solver case this option has
+/// no effect.
+void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const
 {
    ASKAPASSERT(itsDSM);
    const int localChannel = wu.get_localChannel();
@@ -585,7 +588,6 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
             // Note, the original code prior to refactoring had "if (majorCycleNumber > 0)" condition for model copy
             // the following may need to be adjusted if I (MV) didn't understand the logic correctly
             if (rootImagerPtr && rootImagerPtr->params()) {
-                ASKAPDEBUGASSERT(rootImagerPtr);
                 copyModel(rootImagerPtr->params(),workingImager.params());
             } else {
                 // MV: use the same approach with a dummy iteration as in the code prior to refactoring
@@ -649,7 +651,7 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
         // MV: I'm not sure we want to log the summary again (it is done just before the processng of this work unit, 
         // but this matches the old behaviour prior to refactoring as far as I understand it
         itsStats.logSummary();
-         
+
         // merge into root image if required.
         // this is required if there is more than one workunit per channel
         // either in time or by beam.
@@ -666,6 +668,17 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
             rootImagerPtr = workingImagerPtr;
         }
         ASKAPLOG_DEBUG_STR(logger,"Merged");
+
+        ASKAPDEBUGASSERT(rootImagerPtr);
+        if (itsWriteGrids && lastcycle && itsLocalSolver) {
+            ASKAPLOG_INFO_STR(logger, "Extracting grids and summing them in the root imager");
+            // the following would work regarless whether root imager and working imager are the same object or not
+            workingImager.addGridsToModel(rootImagerPtr->params());
+        }
+        // MV: it would be nice to think about proper reuse of measurement equation (and associated gridders), currently they are recreated
+        // for every work unit which may not be ideal. For now we can dispose the measurement equation now in the root imager as it is not
+        // needed there. If it doesn't exist there the following call is very cheap.
+        rootImagerPtr->resetMeasurementEquation();
    }
    catch(const askap::AskapError& e) {
          ASKAPLOG_WARN_STR(logger, "Askap error in imaging - skipping accumulation: carrying on - this will result in a blank channel" << e.what());
@@ -712,6 +725,9 @@ void ContinuumWorker::processChannelsNew()
    /// What are the plans for the deconvolution?
    ASKAPLOG_DEBUG_STR(logger, "Ascertaining Cleaning Plan");
    const bool writeAtMajorCycle = itsParset.getBool("Images.writeAtMajorCycle", false);
+   if (writeAtMajorCycle && itsLocalSolver) {
+       ASKAPLOG_WARN_STR(logger, "Images.writeAtMajorCycle is not supported in the local solver case - ignoring");
+   }
    const int nCycles = itsParset.getInt32("ncycles", 0);
 
    const int uvwMachineCacheSize = itsParset.getInt32("nUVWMachines", 1);
@@ -784,12 +800,12 @@ void ContinuumWorker::processChannelsNew()
 
                        ASKAPLOG_DEBUG_STR(logger, "Processing work unit "<<workUnitCounter);
 
-                       processOneWorkUnit(rootImagerPtr, *wuIt);
-
+                       processOneWorkUnit(rootImagerPtr, *wuIt, majorCycleNumber == nCycles);
 
                   } // for loop over workunits of the given frequency block (or all of them in continuum mode)
 
                   if (runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles)) {
+                      // we're here if the early termination condition has been triggered (i.e. on thresholds)
                       break;
                   }
              } // for loop over major cycles
@@ -805,10 +821,6 @@ void ContinuumWorker::processChannelsNew()
                  // last minor cycle. Which should be in the archive - or full coordinate system
                  // the residual image should be merged into the archive coordinated as well.
                  addImageAsModel(rootImager.params());
-
-                 if (itsWriteGrids) {
-                     rootImager.addGridsToModel();
-                 }
 
                  rootImager.check();
 
@@ -945,6 +957,8 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
               throw;
        }
    }
+   // MV: although fine for now, the following if-statement conceptually is not a part of the minor cycle. It may be better to have it
+   // in a separate method making this clean up action it more explicit.
    if (!lastCycle) {
        ASKAPLOG_DEBUG_STR(logger, "Continuing - Reset normal equations");
        if (itsUpdateDir) {
@@ -1481,7 +1495,7 @@ void ContinuumWorker::processChannels()
       addImageAsModel(rootImager.params());
 
       if (itsWriteGrids) {
-          rootImager.addGridsToModel();
+          rootImager.addGridsToModel(rootImager.params());
       }
 
       rootImager.check();
@@ -1607,6 +1621,7 @@ void ContinuumWorker::performOwnWriteJob(unsigned int globalChannel, const boost
    handleImageParams(params, cubeChannel);
    ASKAPLOG_INFO_STR(logger, "Written channel " << cubeChannel);
 
+   // MV: I'm not sure why we remove the channel from the list twice, but it has been copied from the original code prior to refactoring
    itsComms.removeChannelFromWriter(itsComms.rank());
 
    itsComms.removeChannelFromWorker(itsComms.rank());

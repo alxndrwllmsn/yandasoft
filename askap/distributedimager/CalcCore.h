@@ -97,6 +97,12 @@ namespace cp {
 
         void writeLocalModel(const std::string& postfix) const;
 
+        /// @brief reset measurement equation
+        /// @details We create measurement equation (i.e. ImageFFTEquation) on demand. However, it 
+        /// has grids which are heavy objects. This method resets the appropriate shared pointer which
+        /// should free up the memory.
+        void resetMeasurementEquation();
+
         /// @brief obtain the current gridder template
         /// @return shared pointer to the gridder which can be cloned
         askap::synthesis::IVisGridder::ShPtr gridder() const { return itsGridder;};
@@ -110,8 +116,10 @@ namespace cp {
 
         /// @brief store all complex grids in the model object for future writing
         /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
-        /// returned arrays in the model so they can be exported later.
-        void addGridsToModel();
+        /// returned arrays in the model so they can be exported later. If the model 
+        /// object already has grids, the new values are added. Shape must conform.
+        /// @param[in] storage shared pointer to the model where grids will be stored
+        void addGridsToModel(const boost::shared_ptr<scimath::Params>& storage);
 
         /// @brief iterate over data and accumulate samples for uv weights
         /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
