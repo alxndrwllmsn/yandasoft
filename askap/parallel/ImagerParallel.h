@@ -330,6 +330,9 @@ namespace askap
       /// @brief write out the mask image
       bool itsWriteMaskImage;
 
+      /// @brief write out the scalemask image
+      bool itsWriteScaleMask;
+
       /// @brief write out the (clean) model image
       bool itsWriteModelImage;
 

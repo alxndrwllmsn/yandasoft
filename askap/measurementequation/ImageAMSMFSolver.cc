@@ -558,9 +558,16 @@ namespace askap
                 itsCleaners[imageTag]->setBasisFunction(itsBasisFunction);
                 itsCleaners[imageTag]->setSolutionType(itsSolutionType);
                 itsCleaners[imageTag]->setDecoupled(itsDecoupled);
+                itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
+
                 if (maskArray.nelements()) {
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
+                }
+                if (itsReadScaleMask) {
+                    const std::string name = "scalemask"+imageTag.substr(5);
+                    ASKAPLOG_INFO_STR(logger, "Read scale mask from image: "<<name);
+                    itsCleaners[imageTag]->setScaleMask(SynthesisParamsHelper::imageHandler().read(name).nonDegenerate());
                 }
             } else {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._updatedeconvolver");
@@ -692,6 +699,19 @@ namespace askap
                   ASKAPLOG_INFO_STR(logger, "No Taylor terms were solved");
                 }
                 const std::string thisOrderParam = iph.paramName();
+                if (order == 0 && itsWriteScaleMask) {
+                    string fullResName = thisOrderParam;
+                    if (itsExtraOversamplingFactor) {
+                        const size_t index = fullResName.find("image");
+                        ASKAPCHECK(index == 0, "Swapping to full-resolution param name but something is wrong");
+                        fullResName.replace(index,5,"fullres");
+                    }
+                    Array<float> tmpImg = itsCleaners[imageTag]->scaleMask();
+                    const uInt numDegenerate = ip.shape(fullResName).size() - tmpImg.ndim();
+
+                    saveArrayIntoParameter(ip, fullResName, ip.shape(fullResName),
+                        "scalemask", tmpImg.addDegenerate(numDegenerate), planeIter.position());
+                }
 
                 ASKAPLOG_INFO_STR(logger, "About to get model for plane="<<plane<<" Taylor order="<<order<<
                     " for image "<<tmIt->first);
@@ -817,6 +837,22 @@ namespace askap
       if (this->itsDecoupled) {
           ASKAPLOG_DEBUG_STR(logger, "Using decoupled residuals");
       }
+      // Find out if we are reading or writing the scalemask, or just using it
+      itsReadScaleMask = parset.getBool("readscalemask",false);
+      itsWriteScaleMask = !itsReadScaleMask && parset.getBool("writescalemask",false);
+      itsUseScaleMask = parset.getBool("usescalemask",true) || itsReadScaleMask || itsWriteScaleMask;
+      if (itsUseScaleMask) {
+          ASKAPLOG_INFO_STR(logger, "Using bitmask for scale masks");
+          if (itsReadScaleMask) {
+              ASKAPLOG_INFO_STR(logger, "Will read scale mask image");
+          }
+          if (itsWriteScaleMask) {
+              ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
+          }
+      } else {
+          ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
+      }
+
 
     }
   }
