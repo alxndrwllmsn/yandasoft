@@ -16,6 +16,8 @@ def argInit():
   parser.add_argument('-f','--footprint',default=None,help="Footprint file (use builtin if None)")
   parser.add_argument('-b','--sbatch',action='store_true', help="Submit as sbatch job")
   parser.add_argument('-c','--clean',action='store_true', help="Clean up work directory afterwards")
+  parser.add_argument('-P','--parallel',action='store_true', help="Write output in parallel (default=serial)")
+  parser.add_argument('-C','--collective',action='store_true', help="Write output using collective IO (default=individual)")
   parser.add_argument('-t','--time',default='1:0:0', help="sbatch max run time")
 
   return parser
@@ -34,47 +36,50 @@ time = args.time
 nchanpercore = args.nchanpercore
 nodes = args.nodes
 clean = args.clean
-
-print("tLinmos called with imsize=",imsize,", nchan=",nchan,", nchanpercore=",nchanpercore,", nodes=",nodes)
+parallel = args.parallel
+collective = args.collective
+if (collective):
+    parallel = True
+    print("Setting parallel true, since collective is selected")
+print("tLinmos called with imsize=",imsize,", nchan=",nchan,", nchanpercore=",nchanpercore,", nodes=",nodes,
+ ", clean=",clean,", parallel=",parallel,", collective=",collective)
 
 ncores = 6 # Mac
 if sbatch:
     ncores = 128
 else:
     nodes = 1
-ntask = nchan // nchanpercore
-ntaskspernode = ntask // nodes
-ompnumthreads = ncores*nodes//ntask # needs to be <= 128*nodes/ntask
+ntasks = nchan // nchanpercore
+ntaskspernode = ntasks // nodes
+ompnumthreads = ncores*nodes//ntasks # needs to be <= 128*nodes/ntasks
 if ompnumthreads < 1:
     ompnumthreads = 1
-if nchan != ntask * nchanpercore:
+if nchan != ntasks * nchanpercore:
     print("nchanpercore should divide evenly into nchan")
 if ntaskspernode*ompnumthreads > ncores:
     print("not enough cores for requested nchanpercore and nchan")
     exit(1)
-    
+
 modules = "module load singularity/3.11.4-askap askapsoft/1.16.1-lustrefix askappy/2.7"
 name = "tLinmos"
-runid = "imsize%s_nchan%s_n%s_N%s_c%s" % (imsize,nchan,ntask,nodes,ompnumthreads)
+runid = "imsize%s_nchan%s_n%s_N%s_c%s_%s_%s" % (imsize,nchan,ntasks,nodes,ompnumthreads,"SP"[parallel],"IC"[collective])
 workDir = "./tLinmos-"+runid # directory to use
 batch = "#!/bin/bash\n"
 if (sbatch):
     batch += """#SBATCH --time=%s
 #SBATCH --partition=askaprt
 #SBATCH --threads-per-core=1
-#SBATCH --tasks-per-node=%i
 #SBATCH --nodes=%i
-#SBATCH --cpus-per-task=%i
 #SBATCH --mem=0
 #SBATCH --job-name=%s
 #SBATCH --export=NONE
-""" % (time,ntaskspernode,nodes,ompnumthreads,name)
+""" % (time,nodes,name)
     batch += "#SBATCH --output=tLinmos.%j.out\n\n"
     batch += modules+"\n"
-    myRunner="srun --export=ALL --ntasks=%i --nodes=%i --cpus-per-task=%i "%(ntask,nodes,ompnumthreads)
+    myRunner="srun --export=ALL --ntasks=%i --nodes=%i --cpus-per-task=%i "%(ntasks,nodes,ompnumthreads)
 else:
     batch += "export TMPDIR=/tmp\n"
-    myRunner="mpirun -np %i" % ntask
+    myRunner="mpirun -np %i" % ntasks
 if ompnumthreads>0:
     batch += "export OMP_NUM_THREADS=%d\n" % ompnumthreads
 
@@ -108,9 +113,11 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 from subprocess import call
 
-footprintFile=%s
+footprintFile="%s"
 imsize=%s
-"""  % (footprintFile, imsize))
+imageaccess="%s"
+writemode="%s"
+"""  % (footprintFile, imsize, ["individual","collective"][collective], ["serial","parallel"][parallel]))
 
     f.write("""
 #get beam coordinates from footprint file
@@ -122,7 +129,7 @@ def decodeFootprint(footprintFile):
             beams.append(radec)
     return beams
 
-if footprintFile == None:
+if footprintFile == "None":
     footprintFile = "footprint.txt"
     with open(footprintFile,"w") as f:
         f.write(\"\"\" 0  (-2.467 -1.959)  05:06:21.014,-71:55:04.22
@@ -197,7 +204,10 @@ linmos.weighttype=FromPrimaryBeamModel
 linmos.weightstate=Inherent
 linmos.cutoff=0.1
 linmos.primarybeam=GaussianPB
-\"\"\" % (", ".join(files)))
+linmos.imageaccess=%s
+linmos.imageaccess.axis=3
+linmos.imageaccess.write=%s
+\"\"\" % (", ".join(files),imageaccess,writemode))
 """)
 
 batch += """
@@ -218,6 +228,7 @@ with open(batch_name,"w") as b:
     b.write(batch)
 
 if sbatch:
-    call(["sbatch",batch_name]) # need to use native python module on setonix
+    # need to use native python module on setonix for sbatch command to work
+    call(["sbatch",batch_name])
 else:
     call(["/bin/bash","tLinmos.sbatch"])
