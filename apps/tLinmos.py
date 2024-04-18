@@ -101,9 +101,18 @@ imageaccess=collective
 imageaccess.axis=3
 imageaccess.write=parallel""" % (imsize,nchan))
 
-batch += """
-%s tImageWrite -c tImageWrite.in > tImageWrite.log
-""" % (myRunner)
+batch += "for i in {1..35}; do\n"
+batch += "   %s tImageWrite -c tImageWrite.in > tImageWrite_$i.log\n" % myRunner
+batch += "   mv image.beam00.fits \"image.beam$(printf \"%02d\" $i).fits\"\n"
+batch += "done\n"
+batch += "%s tImageWrite -c tImageWrite.in > tImageWrite_0.log\n" % myRunner
+# batch += """
+# for i in {1..35}; do
+#   %s tImageWrite -c tImageWrite.in > tImageWrite_$i.log
+#   mv image.beam00.fits "image.beam$(printf "\%02d" $i).fits"
+# done
+# %s tImageWrite -c tImageWrite.in > tImageWrite_0.log
+# """ % (myRunner, myRunner)
 
 with open("createImages.py","w") as f:
     f.write("""#!/usr/bin/env python
@@ -179,8 +188,6 @@ for beam in beams:
     file = "image.beam%2.2d.fits"%i
     print(file," ",)
     files.append(file[:-5])
-    if i>0:
-        call(["cp",oldfile,file])
     c = SkyCoord(beam[0]+' '+beam[1], unit=(u.hourangle, u.deg))
     #print("%.16E" %c.ra.deg,c.dec.deg)
     with fits.open(file, 'update') as hdul:
@@ -188,11 +195,9 @@ for beam in beams:
         #print(repr(header))
         header['CRVAL1']=c.ra.deg
         header['CRVAL2']=c.dec.deg
-        if i==0:
-            header['CDELT1']=header['CDELT1']/imsize*2048
-            header['CDELT2']=header['CDELT2']/imsize*2048
+        header['CDELT1']=header['CDELT1']/imsize*2048*5/3 # 6" pixels for 2048 image
+        header['CDELT2']=header['CDELT2']/imsize*2048*5/3
     i = i + 1
-    oldfile = file
 
 # linmos files together
 with open("linmos.in","w") as f:
