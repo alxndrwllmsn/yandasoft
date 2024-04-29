@@ -63,15 +63,34 @@ namespace cp {
     {
     public:
         /// @brief Constructor
+        /// @param[in] parset general configuration parameters
+        /// @param[in] comms communication object
+        /// @param[in] ds data source object to use for data access
+        /// @param[in] localChannel channel number in the given dataset to work with
+        /// @param[in] frequency frequency in Hz of the channel to work with
+        /// @param[in] initialiseSolver if true, itsSolver will be initialised based on the parset
+        ///                             Note, this class is expected to be used in worker only (in the
+        ///                             case of master the solver always gets initialised but there is some
+        ///                             technical debt in the way how we handle it)
         CalcCore(LOFAR::ParameterSet& parset,
                    askap::askapparallel::AskapParallel& comms,
-                   accessors::IDataSource& ds, int localChannel=1, double frequency=0);
+                   accessors::IDataSource& ds, int localChannel=1, double frequency=0, bool initialiseSolver = true);
 
         /// @brief Constructor that maintains the gridder
+        /// @param[in] parset general configuration parameters
+        /// @param[in] comms communication object
+        /// @param[in] ds data source object to use for data access
+        /// @oaram[in] gdr gridder (template) to use
+        /// @param[in] localChannel channel number in the given dataset to work with
+        /// @param[in] frequency frequency in Hz of the channel to work with
+        /// @param[in] initialiseSolver if true, itsSolver will be initialised based on the parset
+        ///                             Note, this class is expected to be used in worker only (in the
+        ///                             case of master the solver always gets initialised but there is some
+        ///                             technical debt in the way how we handle it)
         CalcCore(LOFAR::ParameterSet& parset,
                 askap::askapparallel::AskapParallel& comms,
                 accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
-                 int localChannel=1, double frequency=0);
+                 int localChannel=1, double frequency=0, bool initialiseSolver = true);
 
         /// @brief Calc the normal equations
         /// @detail Overrides the virtual function in the ImagerParallel base
@@ -177,9 +196,11 @@ namespace cp {
         askap::askapparallel::AskapParallel& itsComms;
 
         /// @brief shared pointer to the solver
+        /// @note (MV) it is hacky / untidy to shadow the data member of the base class this way, leave as it is for now
         askap::scimath::Solver::ShPtr itsSolver;
 
         /// @brief run restore solver?
+        /// @note (MV) it is hacky / untidy to shadow the data member of the base class this way, leave as it is for now
         bool itsRestore;
 
         /// @brief data source to work with (essentially a measurement set)
@@ -187,6 +208,7 @@ namespace cp {
 
         /// @brief shared pointer to the gridder prototype
         /// @details WARNING this is cloned by the Equation - so you get little from specifying it
+        /// @note (MV) it is hacky / untidy to shadow the data member of the base class this way, leave as it is for now
         askap::synthesis::IVisGridder::ShPtr itsGridder;
 
         // Its channel in the dataset
