@@ -748,7 +748,7 @@ namespace askap
                 parametersToBeFixed.insert(thisOrderParam);
             }
 
-            //itsCleaners[imageTag]->releaseMemory();
+            itsCleaners[imageTag]->releaseMemory();
 
         } // end of polarisation (i.e. plane) loop
 

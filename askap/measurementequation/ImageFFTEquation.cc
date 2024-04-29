@@ -95,7 +95,17 @@ namespace askap
     {
       init();
     }
-    ;
+
+    ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params::ShPtr& ip,
+      accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder):
+    scimath::Equation(ip), askap::scimath::ImagingEquation(ip),
+    itsGridder(gridder), itsIdi(idi), itsSphFuncPSFGridder(false),
+    itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1),
+    itsReuseGrids(false)
+    {
+      init();
+    }
+
 
     ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params& ip,
         IDataSharedIter& idi, IVisGridder::ShPtr gridder,

@@ -119,7 +119,7 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
 }
 
 /// @brief reset measurement equation
-/// @details We create measurement equation (i.e. ImageFFTEquation) on demand. However, it 
+/// @details We create measurement equation (i.e. ImageFFTEquation) on demand. However, it
 /// has grids which are heavy objects. This method resets the appropriate shared pointer which
 /// should free up the memory.
 void CalcCore::resetMeasurementEquation()
@@ -190,9 +190,9 @@ void CalcCore::accumulateUVWeights() const
 
 /// @brief configure normal equation for linear mosaicing
 /// @details When linmos is expected to happen during merge of normal equations we need to configure
-/// NEs appropriately to interpret weight correctly. This helper method does it. 
+/// NEs appropriately to interpret weight correctly. This helper method does it.
 /// @note Normal equations should already be setup (although could be empty) before this method is called.
-/// Otherwise, an exception will be thrown. Also, we could've do this setup automatically based on the 
+/// Otherwise, an exception will be thrown. Also, we could've do this setup automatically based on the
 /// gridder type. But at the moment the same approach is followed as we had prior to refactoring.
 void CalcCore::configureNormalEquationsForMosaicing() const
 {
@@ -205,7 +205,7 @@ void CalcCore::configureNormalEquationsForMosaicing() const
 
 /// @brief merge normal equations from another CalcCore
 /// @details This is a convenience method to merge in normal equations held by other CalcCore
-/// object. In principle, we can have this method in one of the base classes (and require 
+/// object. In principle, we can have this method in one of the base classes (and require
 /// broader type rather than CalcCore as the input) because all of the required functionality is
 /// in the base classes. But we only use it with CalcCore, so keep it in this class as well.
 /// @note Normal equations should be initialised (and with the consistent type) in both
@@ -237,7 +237,8 @@ void CalcCore::createMeasurementEquation()
    // this gridder is the one that is being used - unfortunately it is not.
    // You therefore get no benefit from initialising the gridder.
    // Also this is why you cannot get at the grid from outside FFT equation
-   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
+   // Changed itsModel argument to reference (like in doCalc)
+   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (itsModel, it, gridder()));
    ASKAPDEBUGASSERT(fftEquation);
 
    fftEquation->configure(parset());
@@ -261,12 +262,11 @@ void CalcCore::doCalc()
         createMeasurementEquation();
     } else {
         ASKAPLOG_INFO_STR(logger, "Reusing measurement equation and updating with latest model images" );
-        // Try changing this to reference instead of copy - passes tests
-        //itsEquation->setParameters(*itsModel);
         itsEquation->reference(itsModel);
     }
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPCHECK(itsNe, "NormalEquations not defined");
+
     itsEquation->calcEquations(*itsNe);
 
     ASKAPLOG_INFO_STR(logger,"Calculated normal equations in "<< timer.real()
@@ -331,7 +331,7 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 
 /// @brief store all complex grids in the model object for future writing
 /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
-/// returned arrays in the model so they can be exported later. If the model 
+/// returned arrays in the model so they can be exported later. If the model
 /// object already has grids, the new values are added. Shape must conform.
 /// @param[in] storage shared pointer to the model where grids will be stored
 void CalcCore::addGridsToModel(const boost::shared_ptr<scimath::Params> &storage)
