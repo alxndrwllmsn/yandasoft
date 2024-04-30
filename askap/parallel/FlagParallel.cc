@@ -108,7 +108,6 @@ void FlagParallel::flagOne(const std::string &ms, bool distributeByTile)
     while (passRequired) {
         for (dataIt.init(); dataIt.hasMore(); dataIt.next()) {
             const Cube<Bool>& flag = dataIt->flag();
-            //rownr_t nRow = flag.nrow();
             rownr_t nRow = flag.nplane();
 
             // Count flagged rows and keep a list

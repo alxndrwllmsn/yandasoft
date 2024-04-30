@@ -60,6 +60,7 @@ tstuvw2
 statsAndMaskChanApp
 tWeightsLogGather
 tMajorCycleComms
+tClearMSCache
 )
 
 

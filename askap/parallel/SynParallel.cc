@@ -244,12 +244,19 @@ namespace askap
     void SynParallel::replaceModel(scimath::Params::ShPtr Model)
     {
         ASKAPTRACE("SynParallel::replaceModel");
-        if (itsComms.isParallel() && itsComms.isWorker())
-        {
-            ASKAPCHECK(itsModel, "Model not defined prior to receiving")
-            // copy over the model - not just the reference
-            *itsModel = *Model;
-        }
+        ASKAPCHECK(itsComms.isParallel() && itsComms.isWorker(),
+            "replaceModel should only be used from worker ranks");
+        ASKAPCHECK(itsModel, "Model not defined prior to copy");
+        // copy over the model - not just the reference
+        *itsModel = *Model;
+    }
+    // drop a new model in place (by reference)
+    void SynParallel::replaceModelByReference(const scimath::Params::ShPtr& Model)
+    {
+        ASKAPTRACE("SynParallel::replaceModelByReference");
+        ASKAPCHECK(itsComms.isParallel() && itsComms.isWorker(),
+            "replaceModelByReference should only be used from worker ranks");
+        itsModel = Model;
     }
     // Receive the model from the master
     void SynParallel::receiveModel()

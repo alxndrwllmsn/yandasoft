@@ -207,7 +207,7 @@ namespace askap {
                 Vector<Array<T> >& psf,
                 Vector<Array<T> >& psfLong)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
-                itsSolutionType("MAXCHISQ"), itsDecoupled(false)
+                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false)
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There are " << this->nTerms() << " terms to be solved");
 
@@ -225,7 +225,7 @@ namespace askap {
         DeconvolverMultiTermBasisFunction<T, FT>::DeconvolverMultiTermBasisFunction(Array<T>& dirty,
                 Array<T>& psf)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
-                itsSolutionType("MAXCHISQ"), itsDecoupled(false)
+                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false)
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There is only one term to be solved");
             this->itsPsfLongVec.resize(1);
@@ -259,6 +259,13 @@ namespace askap {
         {
             return itsDecoupled;
         };
+
+        template<class T, class FT>
+        void DeconvolverMultiTermBasisFunction<T, FT>::setUseScaleBitMask(Bool useScaleBitmask)
+        {
+            itsUseScaleMask=useScaleBitmask;
+        };
+
 
         template<class T, class FT>
         void DeconvolverMultiTermBasisFunction<T, FT>::setBasisFunction(boost::shared_ptr<BasisFunction<T> > bf)
@@ -348,6 +355,8 @@ namespace askap {
             for (uInt base = 0; base < itsTermBaseFlux.nelements(); base++) {
               ASKAPLOG_INFO_STR(decmtbflogger,"Total flux for scale "<<base<<" : "<<itsTermBaseFlux(base)(0));
             }
+
+            // Can we return some memory here?
         }
 
         template<class T, class FT>
@@ -455,7 +464,8 @@ namespace askap {
                                            << ")*Residual(" << term << "): max = " << max(work)
                                            << " min = " << min(work));
 
-                    this->itsResidualBasis(base)(term) = work;
+                    // this->itsResidualBasis(base)(term) = work;
+                    this->itsResidualBasis(base)(term).reference(work);
                 }
             }
             //const double end_time = MPI_Wtime();
@@ -496,7 +506,7 @@ namespace askap {
                 return;
             }
             // check if we've already done this
-            if (this->itsMask.nelements()>0) {
+            if (this->itsMask.nelements()>0 || itsScaleMask.nelements()>0) {
                 return;
             }
             ASKAPLOG_DEBUG_STR(decmtbflogger, "Initialising deep clean masks");
@@ -505,6 +515,11 @@ namespace askap {
 
             uInt nBases(this->itsBasisFunction->numberBases());
 
+            if (itsUseScaleMask) {
+                itsScaleMask.resize(this->dirty(0).shape().nonDegenerate());
+                itsScaleMask.set(0);
+                return;
+            }
             this->itsMask.resize(nBases);
 
 #ifdef USE_OPENACC
@@ -771,24 +786,23 @@ namespace askap {
                     #pragma omp single
                     weights = this->itsWeight(0).nonDegenerate();
 
-                    uInt ncol = weights.ncolumn();
-                    uInt nrow = weights.nrow();
-                    // Declare private versions of these
-                    uInt i, j;
-
                     // Check weights for contiguity
                     if (!weights.contiguousStorage()) {
                         ASKAPLOG_WARN_STR(decmtbflogger, "weights (sec 0) is not contiguous\n");
                     }
 
                     if  (this->itsSolutionType == "MAXCHISQ") {
+                        uInt ncol = weights.ncolumn();
+                        uInt nrow = weights.nrow();
+                        // Declare private versions of these
+                        uInt i, j;
                         // square weights for MAXCHISQ
                         #pragma omp for schedule(static)
                         for (j = 0; j < ncol; j++ ) {
                             Vector<T> weightscol = weights.column(j);
                             T* pWeights = weightscol.getStorage(IsNotCont);
                             for (i = 0; i < nrow; i++ ) {
-                                pWeights[i] = abs(*(pWeights+i) * (*(pWeights+i)));
+                                pWeights[i] = abs(pWeights[i] * pWeights[i]);
                             }
                         }
                     }
@@ -828,20 +842,32 @@ namespace askap {
                                 #pragma omp single
                                 maskref.reference(mask);
                             } else {
-                                // only a single base, so multiple weights and mask now.
+                                // only a single base, so multiply weights and mask now.
                                 // reference the mask to the mask for base 0
-                                #pragma omp single
-                                maskref.reference(this->itsMask(0));
-                                // multiply weights by the base 0 mask
-                                #pragma omp for schedule(static)
-                                for (uInt j = 0; j < ncol; j++ ) {
-                                    Vector<T> weightscol = weights.column(j);
-                                    T* pWeights = weightscol.getStorage(IsNotCont);
-                                    Vector<T> maskcol = maskref.column(j);
-                                    T* pMask = maskcol.getStorage(IsNotCont);
-                                    for (uInt i = 0; i < nrow; i++ ) {
-                                        T val = *(pWeights+i) * (*(pMask+i));
-                                        pWeights[i] = val;
+                                if (itsUseScaleMask) {
+                                    // multiply weights by the base 0 mask
+                                    const uint scaleBit = 1;
+                                    #pragma omp for schedule(static)
+                                    for (uInt j = 0; j < ncol; j++ ) {
+                                        T* pWeights = &weights(0,j);
+                                        const uint* pMask = &itsScaleMask(0,j);
+                                        for (uInt i = 0; i < nrow; i++ ) {
+                                            T val = pWeights[i] * T(pMask[i] & scaleBit);
+                                            pWeights[i] = val;
+                                        }
+                                    }
+                                } else {
+                                    #pragma omp single
+                                    maskref.reference(this->itsMask(0));
+                                    // multiply weights by the base 0 mask
+                                    #pragma omp for schedule(static)
+                                    for (uInt j = 0; j < ncol; j++ ) {
+                                        T* pWeights = &weights(0,j);
+                                        const T* pMask = &maskref(0,j);
+                                        for (uInt i = 0; i < nrow; i++ ) {
+                                            T val = pWeights[i] * pMask[i];
+                                            pWeights[i] = val;
+                                        }
                                     }
                                 }
                                 // now reference the mask to the updated weigths
@@ -875,25 +901,57 @@ namespace askap {
                                 if (nBases>1) {
                                     uInt ncol = maskref.ncolumn();
                                     uInt nrow = maskref.nrow();
-                                    Matrix<T> maskbase;
-                                    maskbase.reference(this->itsMask(base));
-                                    #pragma omp for schedule(static)
-                                    for (uInt j = 0; j < ncol; j++ ) {
-                                        Vector<T> weightscol = weights.column(j);
-                                        T* pWeights = weightscol.getStorage(IsNotCont);
-                                        Vector<T> maskbasecol = maskbase.column(j);
-                                        T* pMaskBase = maskbasecol.getStorage(IsNotCont);
-                                        Vector<T> maskcol = maskref.column(j);
-                                        T* pMask = maskcol.getStorage(IsNotCont);
-                                        for (uInt i = 0; i < nrow; i++ ) {
-                                            pMask[i] = *(pWeights+i) * (*(pMaskBase+i));
+                                    if (itsUseScaleMask) {
+                                        const uint scaleBit = (1<<base);
+                                        #pragma omp for schedule(static)
+                                        for (uInt j = 0; j < ncol; j++ ) {
+                                            const T* pWeights = &weights(0,j);
+                                            const uint* pMaskBase = &itsScaleMask(0,j);
+                                            T* pMask = &maskref(0,j);
+                                            for (uInt i = 0; i < nrow; i++ ) {
+                                                if (pMaskBase[i] & scaleBit) {
+                                                    pMask[i] = pWeights[i];
+                                                } else {
+                                                    pMask[i] = T(0);
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        Matrix<T> maskbase;
+                                        maskbase.reference(this->itsMask(base));
+                                        #pragma omp for schedule(static)
+                                        for (uInt j = 0; j < ncol; j++ ) {
+                                            const T* pWeights = &weights(0,j);
+                                            const T* pMaskBase = &maskbase(0,j);
+                                            T* pMask = &maskref(0,j);
+                                            for (uInt i = 0; i < nrow; i++ ) {
+                                                pMask[i] = pWeights[i] * (pMaskBase[i]);
+                                            }
                                         }
                                     }
                                 }
 
                             } else {
-                                #pragma omp single
-                                maskref.reference(this->itsMask(base));
+                                if (itsUseScaleMask) {
+                                    // need to fill maskref with rel scale mask from itsScaleMask
+                                    //(this code is probably never used, because we always use the weights)
+                                    #pragma omp single
+                                    maskref.resize(itsScaleMask.shape());
+                                    uInt ncol = maskref.ncolumn();
+                                    uInt nrow = maskref.nrow();
+                                    const uint scaleBit = (1<<base);
+                                    #pragma omp for schedule(static)
+                                    for (uInt j = 0; j < ncol; j++ ) {
+                                        const uint* pMaskBase = &itsScaleMask(0,j);
+                                        T* pMask = &maskref(0,j);
+                                        for (uInt i = 0; i < nrow; i++ ) {
+                                            pMask[i] = ((pMaskBase[i] & scaleBit) != 0);
+                                        }
+                                    }
+                                } else {
+                                    #pragma omp single
+                                    maskref.reference(this->itsMask(base));
+                                }
                             }
 
                             #pragma omp single
@@ -1065,8 +1123,9 @@ namespace askap {
                             }
                         }
 
-                        // Record location of peak in mask
+                        // Record location of peak in mask - only one of these will be initialised
                         if (this->itsMask.nelements()) this->itsMask(optimumBase)(absPeakPos)=T(1.0);
+                        if (this->itsScaleMask.nelements()) this->itsScaleMask(absPeakPos) |= (1<<optimumBase);
 
                         // Take square root to get value comparable to peak residual
                         if (this->itsSolutionType == "MAXCHISQ") {
@@ -1198,8 +1257,8 @@ namespace askap {
                     #pragma omp single
                     TimerStart[9] = MPI_Wtime();
 
-                    casa::IPosition residualStart(2, 0), residualEnd(2, 0), residualStride(2, 1);
-                    casa::IPosition psfStart(2, 0), psfEnd(2, 0), psfStride(2, 1);
+                    casa::IPosition residualStart(2, 0), residualEnd(2, 0);
+                    casa::IPosition psfStart(2, 0), psfEnd(2, 0);
 
                     const casacore::IPosition peakPSFPos = this->getPeakPSFPosition();
                     ASKAPDEBUGASSERT(peakPSFPos.nelements() >= 2);
@@ -1235,7 +1294,7 @@ namespace askap {
                             #pragma omp for schedule(static)
                             for (uInt j = 0; j < nj; j++ ) {
                                 T* pMdl = &mat1(ri0, rj0 + j);
-                                T* pBfn = &mat2(pi0, pj0 + j);
+                                const T* pBfn = &mat2(pi0, pj0 + j);
                                 for (uInt i = 0; i < ni; i++ ) {
                                     pMdl[i] += amp * pBfn[i];
                                 }
@@ -1263,7 +1322,7 @@ namespace askap {
                                     #pragma omp for schedule(static)
                                     for (uInt j = 0; j < nj; j++) {
                                         T* pRes = &mat1(ri0, rj0 + j);
-                                        T* pPsf = &mat2(pi0, pj0 + j);
+                                        const T* pPsf = &mat2(pi0, pj0 + j);
                                         for (uInt i = 0; i < ni; i++) {
                                             pRes[i] -= amp * pPsf[i];
                                         }
@@ -1727,7 +1786,6 @@ namespace askap {
                 if (!this->control()->deepCleanMode()) {
                     ASKAPLOG_INFO_STR(decmtbflogger, "Starting deep cleaning phase");
                 }
-                //setDeepCleanMode(True);
                 this->control()->setDeepCleanMode();
             }
 
@@ -1796,6 +1854,54 @@ namespace askap {
             }
 
             return True;
+        }
+
+        /// @brief export the scale mask
+        /// @detail Access the scale mask used during deconvolution, this is a bitmask
+        /// where a bit is set if the corresponding scale was used for that pixel
+        /// @param[in]scaleMask a Matrix<uint> with bitmask of scales for each pixel
+        template<class T, class FT>
+        const Matrix<T> DeconvolverMultiTermBasisFunction<T, FT>::scaleMask()
+        {
+            casacore::Matrix<T> scaleMask(itsScaleMask.shape());
+            casacore::convertArray<T,uint>(scaleMask, itsScaleMask);
+            return scaleMask;
+        }
+
+        /// @brief import initial scale mask
+        /// @detail Load an initial scale mask to use in the deconvolution. It is up to the user
+        /// to make sure the number (<=24 for float) and size of the scales matches between deconvolution runs
+        /// Clean will only look for components on a particular scale at pixels where the corresponding bit is set
+        /// @param[in]scaleMask a Matrix<uint> with bitmask of scales for each pixel
+        template<class T, class FT>
+        void DeconvolverMultiTermBasisFunction<T, FT>::setScaleMask(const Matrix<T>& scaleMask)
+        {
+            ASKAPCHECK(this->dirty(0).shape() == scaleMask.shape(),"Mismatch of dirty image and scale mask");
+            itsScaleMask.resize(scaleMask.shape());
+            casacore::convertArray<uint,T>(itsScaleMask, scaleMask);
+            // we start deep cleaning straight away if scale mask is set
+            this->control()->setDeepCleanMode();
+            ASKAPLOG_INFO_STR(decmtbflogger, "Starting deep cleaning phase with provided scale mask");
+        }
+
+        template<class T, class FT>
+        void DeconvolverMultiTermBasisFunction<T, FT>::releaseMemory()
+        {
+            DeconvolverBase<T, FT>::releaseMemory();
+            uInt memory = 0;
+            const uInt nBases(itsResidualBasis.nelements());
+            for (uInt base = 0; base < nBases; base++) {
+                for (uInt term = 0; term < this->nTerms(); term++) {
+                    memory += sizeof(imtype) * itsResidualBasis(base)(term).nelements();
+                }
+            }
+            itsResidualBasis.resize();
+            ASKAPLOG_DEBUG_STR(decbaselogger,"DeconvolverMultiTermBasisFunction released "<<memory/1024/1024<<" MB from residualBasis");
+            ASKAPCHECK(itsBasisFunction, "Basis function not initialised");
+            memory = sizeof(imtype) * itsBasisFunction->allBasisFunctions().nelements();
+            itsBasisFunction->allBasisFunctions().resize();
+            ASKAPLOG_DEBUG_STR(decbaselogger,"DeconvolverMultiTermBasisFunction released "<<memory/1024/1024<<" MB from basisfunctions");
+
         }
 
     }

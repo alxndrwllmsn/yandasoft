@@ -114,7 +114,7 @@ namespace askap
                       boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
                   if (ics) {
                     ics->setNoiseThreshold(cThreshold.getValue());
-                    ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the noise threshold of "<<
+                    ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the noise threshold of "<<
                                       cThreshold.getValue("")<<" sigma");
                   } else {
                     ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
@@ -201,9 +201,9 @@ namespace askap
       const vector<string> preconditioners=parset.getStringVector("preconditioner.Names",std::vector<std::string>());
       for (vector<string>::const_iterator pc = preconditioners.begin(); pc != preconditioners.end(); ++pc) {
         if ( (*pc)=="Wiener" ) {
-          // if this is the restore solver, use the cached preconditioner function (if it exists).
+          // Use the cached preconditioner function (if it exists & size matches).
           solver->addPreconditioner(WienerPreconditioner::createPreconditioner(
-          parset.makeSubset("preconditioner.Wiener."), solver->getIsRestoreSolver()));
+              parset.makeSubset("preconditioner.Wiener."), true));
         } else if ( (*pc)=="NormWiener" ) {
           const float robustness = parset.getFloat("preconditioner.NormWiener.robustness",0.0);
           solver->addPreconditioner(IImagePreconditioner::ShPtr(new NormWienerPreconditioner(robustness)));

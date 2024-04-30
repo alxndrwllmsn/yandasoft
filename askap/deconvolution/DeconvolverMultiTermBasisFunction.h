@@ -153,6 +153,9 @@ namespace askap {
                 /// @brief Get whether to use decoupled residuals
                 const casacore::Bool decoupled();
 
+                /// @brief Set whether to use a bitmask for the scalemask
+                void setUseScaleBitMask(casacore::Bool useScaleMask);
+
                 /// @brief Set the deep cleaning switch for component finding
                 void setDeepCleanMode(casacore::Bool deep);
 
@@ -190,8 +193,24 @@ namespace askap {
                 /// @param[in] dirty Dirty image (vector of arrays)
                 virtual void updateDirty(casacore::Vector<casacore::Array<T> >& dirty);
 
-	void setInverseCouplingMatrix(casa::Matrix<casa::Double> &InverseMatrix);
-	casa::Matrix<casa::Double> getInverseCouplingMatrix();
+	            void setInverseCouplingMatrix(casa::Matrix<casa::Double> &InverseMatrix);
+	            casa::Matrix<casa::Double> getInverseCouplingMatrix();
+
+                /// @brief export the scale mask
+                /// @detail Give access to the scale mask used in the deconvolution
+                /// @return Matrix<T> scale mask (bitmask of scales for each pixel)
+                const casacore::Matrix<T> scaleMask();
+
+                /// @brief import initial scale mask
+                /// @detail Load an initial scale mask to use in the deconvolution
+                /// @param[in]scaleMask a Matrix<T> with bitmask of scales for each pixel
+                void setScaleMask(const Matrix<T>& scaleMask);
+
+                /// @brief release working memory not needed between major cycles
+                /// @details Deconvolvers can use a lot of memory, try to release as
+                /// much as possible without losing essential state
+                virtual void releaseMemory();
+
 
             private:
 
@@ -227,11 +246,15 @@ namespace askap {
                 /// Residual images for the GPU
                 std::vector<std::vector<T *> > GPUResidualBasis;
 
-                /// Mask images giving the location of all components per bases
+                /// Mask images giving the location of all components per basis
                 casacore::Vector<casacore::Array<T> > itsMask;
 
+                /// BitMask image giving the location of all components per base
+                /// Number of scales is limited to 24 as we write the scale mask out as a float image
+                casacore::Matrix<uint> itsScaleMask;
+
                 /// Point spread functions convolved with cross terms
-                // [nx,ny][nterms,nterms][nbases,nbases]
+                // [nxsub,nysub][nterms,nterms][nbases,nbases]
                 casacore::Matrix<casacore::Matrix<casacore::Array<T> > > itsPSFCrossTerms;
 
                 /// The coupling between different terms for each basis [nterms,nterms][nbases]
@@ -258,6 +281,8 @@ namespace askap {
                 casa::Bool itsDecoupled;
 
                 casa::Bool itsDeep;
+
+                casa::Bool itsUseScaleMask;
 
       /// @brief Store the MFS inverse coupling matrix
       /// @details needed by the restore solver, but it doesn't have all 2N-1 PSFs needed for generation. So store.

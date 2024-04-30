@@ -85,6 +85,13 @@ namespace askap
         ImageFFTEquation(const askap::scimath::Params& ip,
           accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder);
 
+          /// Standard constructor with specified gridder
+          /// @param ip Parameters - shared
+          /// @param idi Data iterator
+          /// @param gridder Shared pointer to a gridder
+        ImageFFTEquation(const askap::scimath::Params::ShPtr& ip,
+          accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder);
+
         /// Standard constructor with specified gridder
         /// @param ip Parameters
         /// @param idi Data iterator

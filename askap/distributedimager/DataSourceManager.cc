@@ -79,9 +79,6 @@ void DataSourceManager::forceNewDataSourceNextTime()
 /// rather than reused (as the overheads are small).
 void DataSourceManager::reset()
 {
-   // this will call the normal destructor of the data source if it has been previously created
-   forceNewDataSourceNextTime();
-
    // MV: this code was moved pretty much as it was from ContinuumWorker during refactoring. I am not sure why we need
    // to do this cleanup in the first place (i.e. it should've been done by destructors of the appropriate classes). If 
    // there is something fundamental, perhaps we need to think moving this into the data source class.
@@ -89,12 +86,13 @@ void DataSourceManager::reset()
    // clear the hypercube caches (with 1 channel tiles we won't use it again)
    static int count = 0;
    for (string fileName : itsFilesForCleanup) {
-        casacore::ROTiledStManAccessor tsm(casacore::Table(fileName),itsDataColumn,casacore::True);
-        ASKAPLOG_INFO_STR(logger, "Clearing Table cache for " << itsDataColumn << " column");
+        casacore::Table tab(fileName);
+        casacore::ROTiledStManAccessor tsm(tab,itsDataColumn,casacore::True);
+        ASKAPLOG_INFO_STR(logger, "Clearing Table cache for " << itsDataColumn << " column in "<<fileName);
         tsm.clearCaches();
         // Not sure we should clear the FLAG cache everytime, flags are normally stored in tile with 8 channels
         if (count == 16) {
-            casacore::ROTiledStManAccessor tsm2(casacore::Table(fileName),"FLAG",casacore::True);
+            casacore::ROTiledStManAccessor tsm2(tab,"FLAG",casacore::True);
             ASKAPLOG_INFO_STR(logger, "Clearing Table cache for FLAG column");
             tsm2.clearCaches();
         }
@@ -103,6 +101,11 @@ void DataSourceManager::reset()
     if (++count > 16) {
         count = 0;
     }
+    
+    // MV: doing the following after the cleanup, this ensures the dataset object still exists
+    // this will call the normal destructor of the data source if it has been previously created
+    forceNewDataSourceNextTime();
+    ASKAPLOG_INFO_STR(logger, "Cleared caches and data source objects (if existed)");
 }
 
 /// @brief get datasource for the given file name
