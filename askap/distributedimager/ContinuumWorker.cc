@@ -237,7 +237,7 @@ void ContinuumWorker::run(void)
   itsAdvisor->addMissingParameters(true);
 
   try {
-    processChannelsNew();
+    processChannels();
   } catch (AskapError& e) {
     ASKAPLOG_WARN_STR(logger, "Failure processing the channel allocation");
     ASKAPLOG_WARN_STR(logger, "Exception detail: " << e.what());
@@ -573,10 +573,13 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
         if (itsUpdateDir || !rootImagerPtr) {
             // for itsUpdateDir mode gridders cannot be cached as they have a tangent point
             // so use the appropriate CalcCore constructor (and same case if the cache is empty
-            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency));
+            // solver is initialised if root imager has not yet been defined and it is not joint deconvolution mode
+            // (i.e. this working imager will be returned as the root imager for future data accumulation)
+            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency, !rootImagerPtr && !itsUpdateDir));
         } else {
             // in this case we can reuse gridder from the rootImager (created previously)
-            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency));
+            // also, inhibit solver initialisation because we only run solver in the root imager
+            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency,false));
         }
         CalcCore& workingImager = *workingImagerPtr; // just for the semantics
         if (itsUpdateDir) {
@@ -600,6 +603,7 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
                 // change gridder for initial calcNE in itsUpdateDir mode
                 LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
                 tmpParset.replace("gridder","SphFunc");
+                // the following will initialise the solver (i.e. default parameter)
                 rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
                 // setup full size image
                 setupImage(rootImagerPtr->params(), globalFrequency, false);
@@ -687,7 +691,7 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
 }
 
 // this is a rewrite of processChannel method
-void ContinuumWorker::processChannelsNew()
+void ContinuumWorker::processChannels()
 {
    ASKAPTRACE("ContinuumWorker::processChannels");
 
@@ -975,7 +979,9 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
 }
 
 
-void ContinuumWorker::processChannels()
+// this is the old version of processChannels method prior to refactoring. Kept in place for now just in case we need to flip between the
+// old and new versions quickly for debugging. It is no longer used.
+void ContinuumWorker::processChannelsOld()
 {
   ASKAPTRACE("ContinuumWorker::processChannels");
 

@@ -79,16 +79,12 @@ ASKAP_LOGGER(logger, ".CalcCore");
 
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
-                       accessors::IDataSource& ds, int localChannel, double frequency)
+                       accessors::IDataSource& ds, int localChannel, double frequency, bool initialiseSolver)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsChannel(localChannel),itsFrequency(frequency)
 {
-    /// We need to set the calibration info here
-    /// the ImagerParallel constructor will do the work to
-    /// obtain the itsSolutionSource - but that is a private member of
-    /// the parent class.
-    /// Not sure whether to use it directly or copy it.
-    const std::string solver_par = parset.getString("solver");
-    const std::string algorithm_par = parset.getString("solver.Clean.algorithm", "BasisfunctionMFS");
+    // MV: it is untidy to update the parset and get defaults logic implemented that way
+    // in particular, the second constructor doesn't do it which could lead to bugs. Leave as is for now.
+
     // tell gridder it can throw the grids away if we don't need to write them out
     bool writeGrids = parset.getBool("dumpgrids",false);
     writeGrids = parset.getBool("write.grids",writeGrids); // new name
@@ -96,25 +92,30 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
     // tell restore solver to save the raw (unnormalised, unpreconditioned) psf
     parset.replace(LOFAR::KVpair("restore.saverawpsf",writeGrids));
     // only switch on updateResiduals if we want the residuals written out
-    bool writeResiduals = parset.getBool("write.residualimage",false);
+    const bool writeResiduals = parset.getBool("write.residualimage",false);
     parset.replace(LOFAR::KVpair("restore.updateresiduals",writeResiduals));
     // only switch on savepsfimage if we want the preconditioned psf written out
-    bool writePsfImage = parset.getBool("write.psfimage",false);
+    const bool writePsfImage = parset.getBool("write.psfimage",false);
     parset.replace(LOFAR::KVpair("restore.savepsfimage",writePsfImage));
-    itsSolver = ImageSolverFactory::make(parset);
+    //
+    // MV: it's very hacky and untidy to shadow data members in the base class(es). Although using the data member in
+    // the base class is also ugly. Leave as is for now
+    if (initialiseSolver) {
+        itsSolver = ImageSolverFactory::make(parset);
+    }
     itsGridder = VisGridderFactory::make(parset); // this is private to an inherited class so have to make a new one
     itsRestore = parset.getBool("restore", false);
 }
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
-                       int localChannel, double frequency)
+                       int localChannel, double frequency, bool initialiseSolver)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsGridder(gdr), itsChannel(localChannel),
       itsFrequency(frequency)
 {
-  const std::string solver_par = parset.getString("solver");
-  const std::string algorithm_par = parset.getString("solver.Clean.algorithm", "BasisfunctionMFS");
-  itsSolver = ImageSolverFactory::make(parset);
+  if (initialiseSolver) {
+      itsSolver = ImageSolverFactory::make(parset);
+  }
   itsRestore = parset.getBool("restore", false);
 }
 
