@@ -37,7 +37,6 @@
 #include <casacore/casa/Arrays/Array.h>
 #include <casacore/casa/Arrays/ArrayMath.h>
 #include <casacore/casa/BasicSL/Constants.h>
-#include <askap/scimath/fft/FFTWrapper.h>
 #include <askap/profile/AskapProfiler.h>
 
 // Local package includes
@@ -48,7 +47,7 @@ ASKAP_LOGGER(logger, ".gridding.mpiwprojectvisgridder");
 
 namespace askap {
 namespace synthesis {
-
+#ifdef HAVE_MPI
 // Initialise of class static variables
 MPI_Aint MPIWProjectVisGridder::itsWindowSize;
 int      MPIWProjectVisGridder::itsWindowDisp;
@@ -57,6 +56,7 @@ MPI_Comm MPIWProjectVisGridder::itsNodeComms;
 MPI_Comm MPIWProjectVisGridder::itsNonRankZeroComms;
 MPI_Group MPIWProjectVisGridder::itsWorldGroup = MPI_GROUP_NULL;
 MPI_Group MPIWProjectVisGridder::itsGridderGroup = MPI_GROUP_NULL;
+#endif
 int MPIWProjectVisGridder::itsNodeSize;
 int MPIWProjectVisGridder::itsNodeRank;
 int MPIWProjectVisGridder::itsWorldRank;
@@ -80,17 +80,20 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const double wmax,
         WProjectVisGridder(wmax, nwplanes, cutoff,overSample,maxSupport,limitSupport,name,alpha,shareCF),
         itsMpiMemPreSetup(mpipresetup), itsCFRank(cfRank), itsSerial(false), itsMasterDoesWork(masterDoesWork)
 {
-    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::constructor");
+#ifdef HAVE_MPI
     ASKAPCHECK(overSample > 0, "Oversampling must be greater than 0");
     ASKAPCHECK(maxSupport > 0, "Maximum support must be greater than 0")
-    
+
     std::lock_guard<std::mutex> lk(ObjCountMutex);
     ObjCount += 1;
+#else
+    ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library");
+#endif
 }
 
 MPIWProjectVisGridder::~MPIWProjectVisGridder()
 {
-    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::destructor");
+#ifdef HAVE_MPI
     std::lock_guard<std::mutex> lk(ObjCountMutex);
     ObjCount -= 1;
 
@@ -113,7 +116,7 @@ MPIWProjectVisGridder::~MPIWProjectVisGridder()
 
         itsMpiMemSetup = false;
     }
-
+#endif
 }
 
 /// @brief copy constructor
@@ -127,23 +130,33 @@ MPIWProjectVisGridder::MPIWProjectVisGridder(const MPIWProjectVisGridder &other)
         itsSerial(other.itsSerial),
         itsMasterDoesWork(other.itsMasterDoesWork)
 {
-    ASKAPLOG_DEBUG_STR(logger,"MPIWProjectVisGridder::copy");
+// the ifdef here is just for completeness and is not needed because the MPIWProjectVisGridder
+// object cant be created without having MPI in the first place
+#ifdef HAVE_MPI
 	std::lock_guard<std::mutex> lk(ObjCountMutex);
 	ObjCount += 1;
+#else
+    ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library");
+#endif
 }
 
 
 /// Clone a copy of this Gridder
 IVisGridder::ShPtr MPIWProjectVisGridder::clone()
 {
-    ASKAPLOG_INFO_STR(logger,"MPIWProjectVisGridder::clone");
+#ifdef HAVE_MPI
     return IVisGridder::ShPtr(new MPIWProjectVisGridder(*this));
+#else
+    ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library");
+    return IVisGridder::ShPtr(new MPIWProjectVisGridder(*this));
+#endif
 }
 
 /// Initialize the convolution function into the cube. If necessary this
 /// could be optimized by using symmetries.
 void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAccessor& acc)
 {
+#ifdef HAVE_MPI
     ASKAPTRACE("MPIWProjectVisGridder::initConvolutionFunction");
 
     if ( itsSerial ) {
@@ -210,7 +223,7 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
                 }
             }
 
-            ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank 
+            ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank
                             << ", itsCFRank: " << itsCFRank
                             << ", startPlane: " << startPlane
                             << ", endPlane: " << endPlane);
@@ -270,6 +283,9 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
             }
         }
     }
+#else
+    ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library");
+#endif
 }
 
 /// @brief static method to create gridder
@@ -305,7 +321,7 @@ IVisGridder::ShPtr MPIWProjectVisGridder::createGridder(const LOFAR::ParameterSe
     if ( cfRank > 1 ) {
         ASKAPCHECK(variablesupport, "Can only do CF calculation among ranks if variablesupport = true");
     }
-    
+
 
     ASKAPLOG_INFO_STR(logger, "Gridding using maxsupport: " << maxSupport );
     ASKAPLOG_INFO_STR(logger, "Using " << (useDouble ? "double":"single")<<
@@ -325,6 +341,7 @@ IVisGridder::ShPtr MPIWProjectVisGridder::createGridder(const LOFAR::ParameterSe
 /// @param[in] parset input parset file
 void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
 {
+#ifdef HAVE_MPI
     std::lock_guard<std::mutex> lk(ObjCountMutex);
     //ASKAPLOG_INFO_STR(logger, "configureGridder");
     const bool planeDependentSupport = parset.getBool("variablesupport", false);
@@ -353,8 +370,8 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
 
     itsShareCF = parset.getBool("sharecf",false);
 
-    // use the MPI_Initialized() function to test if the gridder is running in parallel or serial 
-    // assuming that all multi ranks MPI task must first call MPI_init() and so if the MPI_Initialized() 
+    // use the MPI_Initialized() function to test if the gridder is running in parallel or serial
+    // assuming that all multi ranks MPI task must first call MPI_init() and so if the MPI_Initialized()
     // function returns false (0) then the task is not an MPI task
     itsSerial = false;
     int mpiInitalised = 0;
@@ -376,7 +393,7 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
 
         ASKAPLOG_INFO_STR(logger, "Setup MPI subgroup communicator for MPI Shared Memory");
 
-        // The code below setup a MPI communicator for each node where the 
+        // The code below setup a MPI communicator for each node where the
         // rank 0 (in the COMM_WORLD) of the first node is not included.
         int r;
         r = MPI_Comm_group(MPI_COMM_WORLD, &itsWorldGroup);
@@ -391,7 +408,7 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
             const int exclude_ranks[1] = {0};
             r = MPI_Group_excl(itsWorldGroup, 1, exclude_ranks, &itsGridderGroup);
         }
-        
+
         ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Group_excl() failed");
         r = MPI_Comm_create_group(MPI_COMM_WORLD, itsGridderGroup, 0, &itsNonRankZeroComms);
         ASKAPCHECK(r == MPI_SUCCESS,"rank: " << itsWorldRank << " - MPI_Comm_create_group() failed");
@@ -411,13 +428,15 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
             ASKAPCHECK(mpiMem != "", "mpipresetmemory option is not set");
             unsigned long memoryInBytes = std::stoul(mpiMem);;
             ASKAPLOG_INFO_STR(logger,"Presetup the shared memory. " << memoryInBytes);
-            setupMpiMemory(memoryInBytes); 
+            setupMpiMemory(memoryInBytes);
         }
     } else {
         // The gridder is running in serial so it should behave as if it is a WProject gridder object
         ASKAPLOG_INFO_STR(logger,"MPI gridder is running in serial so it should behave as if it is a WProject gridder");
     }
-    
+#else
+    ASKAPTHROW(AskapError, "Cant use MPI WProject gridder without MPI library");
+#endif
 }
 
 
@@ -427,14 +446,15 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
 /// copy constructor
 /// @param[in] other input object
 /// @return reference to itself
-MPIWProjectVisGridder& MPIWProjectVisGridder::operator=(const MPIWProjectVisGridder &)
-{
-    ASKAPTHROW(AskapError, "This method is not supposed to be called!");
-    return *this;
-}
+//MPIWProjectVisGridder& MPIWProjectVisGridder::operator=(const MPIWProjectVisGridder &)
+//{
+//    ASKAPTHROW(AskapError, "This method is not supposed to be called!");
+//    return *this;
+//}
 
 void  MPIWProjectVisGridder::setupMpiMemory(size_t bufferSize /* in bytes */)
 {
+#ifdef HAVE_MPI
     //std::lock_guard<std::mutex> lk(ObjCountMutex);
     if ( itsMpiMemSetup  ) {
 	    ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << " - mpi shared memory already setup. ObjCount: " << ObjCount);
@@ -459,7 +479,7 @@ void  MPIWProjectVisGridder::setupMpiMemory(size_t bufferSize /* in bytes */)
                                 &itsWindowTable);
     if ( r != MPI_SUCCESS ) {
         MPI_Error_string(r, estring, &elen);
-        ASKAPLOG_INFO_STR(logger,"MPI_Win_allocate_shared - " << estring);    
+        ASKAPLOG_INFO_STR(logger,"MPI_Win_allocate_shared - " << estring);
     }
     ASKAPCHECK(r == MPI_SUCCESS, "itsNodeRank: " << itsNodeRank << " - MPI_Win_allocate_shared() failed.");
     // For itsNodeRanks != 0, get their itsMpiSharedMemory pointer variable to point the
@@ -468,18 +488,22 @@ void  MPIWProjectVisGridder::setupMpiMemory(size_t bufferSize /* in bytes */)
         int r = MPI_Win_shared_query(itsWindowTable, 0, &itsWindowSize, &itsWindowDisp, &itsMpiSharedMemory);
         ASKAPCHECK(r == MPI_SUCCESS, "MPI_Win_shared_query failed.");
     }
-        
+
     MPI_Barrier(itsNodeComms);
+#else
+    ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library" );
+#endif
 }
 
 void MPIWProjectVisGridder::copyToSharedMemory(std::vector<std::pair<int,int>>& itsConvFuncMatSize)
 {
+#ifdef HAVE_MPI
     // itsConvFuncMatSize keeps an array of pairs whose values are number of rows and columns
     // of the matrixes of the itsConvFunc vector.
     unsigned int numberOfElements = itsConvFunc.size();;
     itsConvFuncMatSize.resize(numberOfElements);
 
-    ASKAPLOG_INFO_STR(logger, "copyToSharedMemory itsNodeRank: " << itsNodeRank 
+    ASKAPLOG_INFO_STR(logger, "copyToSharedMemory itsNodeRank: " << itsNodeRank
                             << ", number of planes: " << numberOfElements);
     // the itsConvFunc vector of each rank only has a portion of the data
     // matrixSizeVect variable stores the planes and shapes of the matrices.
@@ -487,7 +511,7 @@ void MPIWProjectVisGridder::copyToSharedMemory(std::vector<std::pair<int,int>>& 
     for (unsigned int iw = 0; iw < numberOfElements; iw++) {
         if (itsConvFunc[iw].nelements() != 0) {
             matrixSizeVect.push_back(std::make_tuple(iw,itsConvFunc[iw].nrow(),itsConvFunc[iw].ncolumn()));
-        } 
+        }
     }
     unsigned long howmany = matrixSizeVect.size();
     ASKAPLOG_DEBUG_STR(logger, "copyToSharedMemory itsNodeRank: " << itsNodeRank <<
@@ -503,7 +527,7 @@ void MPIWProjectVisGridder::copyToSharedMemory(std::vector<std::pair<int,int>>& 
         if ( rank == itsNodeRank ) {
             len = howmany;
         }
-    
+
         MPI_Bcast(&len,1,MPI_UNSIGNED_LONG,rank,itsNodeComms);
         if ( len != 0 ) {
             unsigned long* buffer = new unsigned long[len * 3];
@@ -518,14 +542,14 @@ void MPIWProjectVisGridder::copyToSharedMemory(std::vector<std::pair<int,int>>& 
             }
             MPI_Bcast(buffer,len*3,MPI_UNSIGNED_LONG,rank,itsNodeComms);
             for (unsigned long i = 0; i < len*3; i += 3) {
-                itsConvFuncMatSize[buffer[i]] = std::make_pair(buffer[i+1],buffer[i+2]);    
+                itsConvFuncMatSize[buffer[i]] = std::make_pair(buffer[i+1],buffer[i+2]);
             }
-    
+
             delete []buffer;
         }
-    }        
+    }
     // if we get here, the itsConvFuncMatSize variable contains the shapes of all the matrices
-    // from 0 to (nwplane*oversample^2 - 1)        
+    // from 0 to (nwplane*oversample^2 - 1)
     ASKAPLOG_DEBUG_STR(logger, "copyToSharedMemory itsNodeRank: " << itsNodeRank <<
                         " writes/saves itsConvFunc data to shared memory");
     //MPI_Barrier(itsNodeComms);
@@ -539,11 +563,14 @@ void MPIWProjectVisGridder::copyToSharedMemory(std::vector<std::pair<int,int>>& 
         shareMemPtr += itsConvFuncMatSize[iw].first *  itsConvFuncMatSize[iw].second;;
     }
     ASKAPLOG_INFO_STR(logger, "copyToSharedMemory itsNodeRank: " << itsNodeRank << " - DONE");
+#else
+    ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library" );
+#endif
 }
 
 void MPIWProjectVisGridder::copyFromSharedMemory(const std::vector<std::pair<int,int>>& itsConvFuncMatSize)
 {
-    ASKAPLOG_DEBUG_STR(logger, "itsNodeRank: " << itsNodeRank << 
+    ASKAPLOG_DEBUG_STR(logger, "itsNodeRank: " << itsNodeRank <<
                                 " - copy shared memory back to itsConvFunc. number of CFs = " << itsConvFuncMatSize.size());
     unsigned int numOfElems = itsConvFuncMatSize.size();
     imtypeComplex* shareMemPtr = itsMpiSharedMemory;
@@ -552,7 +579,7 @@ void MPIWProjectVisGridder::copyFromSharedMemory(const std::vector<std::pair<int
         pos(0) = itsConvFuncMatSize[elem].first;
         pos(1) = itsConvFuncMatSize[elem].second;
         ASKAPCHECK(itsConvFuncMatSize[elem].first != 0 || itsConvFuncMatSize[elem].second != 0, "shape of CF is zero");
-        
+
         casacore::Matrix<imtypeComplex> m(pos,shareMemPtr,casacore::SHARE);
         itsConvFunc[elem].reference(m);
         shareMemPtr += m.nelements();
@@ -561,6 +588,7 @@ void MPIWProjectVisGridder::copyFromSharedMemory(const std::vector<std::pair<int
 
 void MPIWProjectVisGridder::copyConvFuncOffset()
 {
+#ifdef HAVE_MPI
     for (int nw=0; nw<nWPlanes(); nw++) {
         std::pair<int,int> offset = getConvFuncOffset(nw);
         if ( offset.first != 0 || offset.second != 0 ) {
@@ -574,6 +602,9 @@ void MPIWProjectVisGridder::copyConvFuncOffset()
             }
         }
     }
+#else
+    ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library");
+#endif
 }
 
 } // namespace askap

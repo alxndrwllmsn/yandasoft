@@ -430,30 +430,30 @@ void ContSubtractParallel::modelSpectrum(casacore::Vector<casacore::Float> & mod
 
 void ContSubtractParallel::subtractContFit(casacore::Cube<casacore::Complex>& vis,
         const casacore::Cube<casacore::Bool>& flag, const casacore::Matrix<casacore::Complex>& phasor) {
-    const int nPol = vis.shape()(2);
+    const int nPol = vis.shape()(0);
     const int nChan = vis.shape()(1);
-    const int nRow = vis.shape()(0);
+    const int nRow = vis.shape()(2);
     casacore::Vector<casacore::Float> visreal(nChan), visimag(nChan), modelreal(nChan), modelimag(nChan);
     casacore::Vector<casacore::Bool> mask(nChan);
     const bool rotate = phasor.nelements() > 0;
-    ASKAPDEBUGASSERT(!rotate || (phasor.nrow()==nRow && phasor.ncolumn()==nChan));
+    ASKAPDEBUGASSERT(!rotate || (phasor.ncolumn()==nRow && phasor.nrow()==nChan));
     for (int row=0; row<nRow; row++) {
         for (int pol=0; pol<nPol; pol++) {
             for (int chan=0; chan<nChan; chan++) {
-                casacore::Complex v = vis(row,chan,pol);
+                casacore::Complex v = vis(pol,chan,row);
                 if (rotate) {
-                    v *= phasor(row,chan);
+                    v *= phasor(chan,row);
                 }
                 visreal(chan) = casacore::real(v);
                 visimag(chan) = casacore::imag(v);
-                mask(chan) = !flag(row,chan,pol);
+                mask(chan) = !flag(pol,chan,row);
             }
             modelSpectrum(modelreal,visreal,mask);
             modelSpectrum(modelimag,visimag,mask);
             for (int chan=0; chan<nChan; chan++) {
-                vis(row,chan,pol) -= casacore::Complex(modelreal(chan),modelimag(chan));
+                vis(pol,chan,row) -= casacore::Complex(modelreal(chan),modelimag(chan));
                 if (rotate) {
-                    vis(row,chan,pol) *= conj(phasor(row,chan));
+                    vis(pol,chan,row) *= conj(phasor(row,chan));
                 }
             }
         }
@@ -492,12 +492,12 @@ void ContSubtractParallel::computePhasor(const accessors::IDataSharedIter& it,
     const uint nRow = it->nRow();
     const uint nChan = it->nChannel();
     const casacore::Vector<casacore::Double>& freq = it->frequency();
-    phasor.resize(nRow, nChan);
+    phasor.resize(nChan, nRow);
     for (uint row = 0; row < nRow; row++) {
         for (uint chan = 0; chan < nChan; chan++) {
             // Calculate the delay phasor - note delay is in meters
             const double phase = casacore::C::_2pi / casacore::C::c * freq[chan] * delay(row);
-            phasor(row, chan) = casacore::Complex(cos(phase), sin(phase));
+            phasor(chan, row) = casacore::Complex(cos(phase), sin(phase));
         }
     }
 }
@@ -573,9 +573,9 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
                 const casacore::Slice all;
                 // loop over directions
                 for (int dir = 0; dir < itsNDir; dir++) {
-                    const auto nrow = vis.nrow();
+                    const auto nrow = vis.nplane();
                     const casacore::Slice rowSlice(nrow * dir, nrow);
-                    vis -= model(rowSlice,all,all);
+                    vis -= model(all,all,rowSlice);
                 }
             }
         }

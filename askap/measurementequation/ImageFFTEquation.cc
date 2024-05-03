@@ -26,13 +26,14 @@
 ASKAP_LOGGER(logger, ".measurementequation.imagefftequation");
 
 #include <askap/askap/AskapError.h>
-//#include <fft/FFTWrapper.h>
 
 #include <askap/dataaccess/SharedIter.h>
 #include <askap/dataaccess/MemBufferDataAccessor.h>
 #include <askap/dataaccess/DDCalBufferDataAccessor.h>
+#include <askap/dataaccess/DDCalOnDemandNoiseAndFlagDA.h>
 #include <askap/scimath/fitting/Params.h>
 #include <askap/measurementequation/ImageFFTEquation.h>
+#include <askap/measurementequation/CalibrationIterator.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/gridding/BoxVisGridder.h>
 #include <askap/gridding/SphFuncVisGridder.h>
@@ -69,7 +70,7 @@ namespace askap
         IDataSharedIter& idi) : scimath::Equation(ip),
       askap::scimath::ImagingEquation(ip), itsIdi(idi),
       itsSphFuncPSFGridder(false), itsBoxPSFGridder(false),
-      itsUsePreconGridder(false), itsNDir(1)
+      itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
       itsGridder = IVisGridder::ShPtr(new SphFuncVisGridder());
       init();
@@ -78,7 +79,7 @@ namespace askap
 
     ImageFFTEquation::ImageFFTEquation(IDataSharedIter& idi) :
       itsIdi(idi), itsSphFuncPSFGridder(false), itsBoxPSFGridder(false),
-      itsUsePreconGridder(false), itsNDir(1)
+      itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
       itsGridder = IVisGridder::ShPtr(new SphFuncVisGridder());
       reference(defaultParameters().clone());
@@ -89,27 +90,38 @@ namespace askap
         IDataSharedIter& idi, IVisGridder::ShPtr gridder) :
       scimath::Equation(ip), askap::scimath::ImagingEquation(ip),
       itsGridder(gridder), itsIdi(idi), itsSphFuncPSFGridder(false),
-      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1)
+      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1),
+      itsReuseGrids(false)
     {
       init();
     }
-    ;
+
+    ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params::ShPtr& ip,
+      accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder):
+    scimath::Equation(ip), askap::scimath::ImagingEquation(ip),
+    itsGridder(gridder), itsIdi(idi), itsSphFuncPSFGridder(false),
+    itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1),
+    itsReuseGrids(false)
+    {
+      init();
+    }
+
 
     ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params& ip,
         IDataSharedIter& idi, IVisGridder::ShPtr gridder,
         const LOFAR::ParameterSet& parset) : scimath::Equation(ip),
       askap::scimath::ImagingEquation(ip), itsGridder(gridder), itsIdi(idi),
       itsSphFuncPSFGridder(false), itsBoxPSFGridder(false),
-      itsUsePreconGridder(false), itsNDir(1)
+      itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
-      useAlternativePSF(parset);
+      configure(parset);
       init();
     }
 
     ImageFFTEquation::ImageFFTEquation(IDataSharedIter& idi,
         IVisGridder::ShPtr gridder) :
       itsGridder(gridder), itsIdi(idi), itsSphFuncPSFGridder(false),
-      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1)
+      itsBoxPSFGridder(false), itsUsePreconGridder(false), itsNDir(1), itsReuseGrids(false)
     {
       reference(defaultParameters().clone());
       init();
@@ -117,6 +129,24 @@ namespace askap
 
     ImageFFTEquation::~ImageFFTEquation()
     {
+    }
+
+    void ImageFFTEquation::configure(const LOFAR::ParameterSet& parset)
+    {
+    // DAM TRADITIONAL
+       if (parset.isDefined("gridder.robustness")) {
+           const float robustness = parset.getFloat("gridder.robustness");
+           ASKAPCHECK((robustness>=-2) && (robustness<=2), "gridder.robustness should be in the range [-2,2]");
+           // also check that it is spectral line? Or do that earlier
+           //  - won't work in continuum imaging, unless combo is done with combinechannels on a single worker
+           //  - won't work with Taylor terms
+           setRobustness(robustness);
+       }
+       useAlternativePSF(parset);
+       itsReuseGrids = parset.getBool("reusegrids",false);
+       if (itsReuseGrids) {
+           ASKAPLOG_INFO_STR(logger, "Will reuse the PSF/PCF grids each major cycle");
+       }
     }
 
     /// @brief define whether to use an alternative gridder for the PSF
@@ -309,12 +339,6 @@ namespace askap
       for (itsIdi.init();itsIdi.hasMore();itsIdi.next())
       {
         itsIdi->rwVisibility().set(0.0);
-        /*
-        ASKAPDEBUGASSERT(itsIdi->nPol() == 4);
-        for (casacore::uInt p=1;p<3;++p) {
-             itsIdi->rwVisibility().xyPlane(p).set(0.);
-        }
-        */
         for (std::vector<std::string>::const_iterator it=completions.begin();it!=completions.end();it++)
         {
             string imageName("image"+(*it));
@@ -394,6 +418,7 @@ namespace askap
 
       // We will need to loop over all completions i.e. all sources
       const std::vector<std::string> completions(parameters().completions("image"));
+      const bool ddCal = itsCalDirMap.size() > 0;
 
       // To minimize the number of data passes, we keep copies of the gridders in memory, and
       // switch between these. This optimization may not be sufficient in the long run.
@@ -422,6 +447,7 @@ namespace askap
           itsResidualGridders[imageName]=itsGridder->clone();
           assignUVWeightAccessorIfNecessary(itsResidualGridders[imageName], wtAcc);
         }
+
         if(itsPSFGridders.count(imageName)==0) {
           if (itsBoxPSFGridder) {
              boost::shared_ptr<BoxVisGridder> psfGridder(new BoxVisGridder);
@@ -433,7 +459,21 @@ namespace askap
              itsPSFGridders[imageName] = itsGridder->clone();
           }
           assignUVWeightAccessorIfNecessary(itsPSFGridders[imageName], wtAcc);
+          itsReuseGrid[imageName] = false;
+          boost::shared_ptr<TableVisGridder> tvgPSF = boost::dynamic_pointer_cast<TableVisGridder>(itsPSFGridders[imageName]);
+          if (tvgPSF && itsReuseGrids) {
+              tvgPSF->doClearGrid(false);
+              ASKAPLOG_DEBUG_STR(logger, "Setting clear grid to false, reuse PSF grid for "<<imageName);
+          }
+        } else {
+          // reuse the grid if gridder has been configured to allow this
+          if (itsReuseGrids) {
+              itsReuseGrid[imageName] = true;
+              ASKAPLOG_DEBUG_STR(logger, "Will reuse PSF grid for "<<imageName);
+          }
+
         }
+
         if(itsUsePreconGridder && itsPreconGridders.count(imageName)==0) {
            // preconditioning of higher order terms is set from term 0
            bool isMFS = (imageName.find(".taylor.") != std::string::npos);
@@ -443,8 +483,19 @@ namespace askap
              //itsPreconGridders[imageName] = itsGridder->clone();
              itsPreconGridders[imageName] = itsPSFGridders[imageName]->clone();
              // technically, cloning of the PSF gridder should copy the weight accessor (by reference) if set
+             boost::shared_ptr<TableVisGridder> tvgPrecon = boost::dynamic_pointer_cast<TableVisGridder>(itsPreconGridders[imageName]);
+             if (tvgPrecon && itsReuseGrids) {
+                 tvgPrecon->doClearGrid(false);
+                 ASKAPLOG_DEBUG_STR(logger, "Setting clear grid to false, reuse PCF grid for "<<imageName);
+             }
            }
+        } else {
+            // reuse the grid if gridder has been configured to allow this
+            if (itsReuseGrids) {
+                ASKAPLOG_DEBUG_STR(logger, "Will reuse PCF grid for "<<imageName);
+            }
         }
+
         if (itsCoordSystems.count(imageName) == 0) {
           itsCoordSystems[imageName] = SynthesisParamsHelper::coordinateSystem(parameters(),imageName);
         }
@@ -477,13 +528,29 @@ namespace askap
         /// Now the residual images, dopsf=false, dopcf=false
         itsResidualGridders[imageName]->customiseForContext(*it);
         itsResidualGridders[imageName]->initialiseGrid(axes, imageShape, false);
+        // DDCALTAG
+        if (ddCal) {
+            const boost::shared_ptr<TableVisGridder const> &tmGridder =
+                boost::dynamic_pointer_cast<TableVisGridder const>(itsModelGridders[imageName]);
+            const boost::shared_ptr<TableVisGridder const> &trGridder =
+                boost::dynamic_pointer_cast<TableVisGridder const>(itsResidualGridders[imageName]);
+            ASKAPCHECK(tmGridder!=0 && trGridder!=0,
+                "Wrong gridder type for DDCalibration in ImageFFTEquation::calcImagingEquations()");
+            const int index = itsCalDirMap[ImageParamsHelper(imageName).name()];
+            ASKAPCHECK(index >= 0, "Invalid source index for DDCAL");
+            ASKAPLOG_DEBUG_STR(logger, "Setting DDCal source index for "<<imageName<<" gridders to " << index);
+            tmGridder->setSourceIndex(index);
+            trGridder->setSourceIndex(index);
+        }
         // and PSF gridders, dopsf=true, dopcf=false
-        itsPSFGridders[imageName]->customiseForContext(*it);
-        itsPSFGridders[imageName]->initialiseGrid(axes, imageShape, true);
-        // and PCF gridders, dopsf=false, dopcf=true
-        if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
-            itsPreconGridders[imageName]->customiseForContext(*it);
-            itsPreconGridders[imageName]->initialiseGrid(axes, imageShape, false, true);
+        if (!itsReuseGrid[imageName]) {
+            itsPSFGridders[imageName]->customiseForContext(*it);
+            itsPSFGridders[imageName]->initialiseGrid(axes, imageShape, true);
+            // and PCF gridders, dopsf=false, dopcf=true
+            if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
+                itsPreconGridders[imageName]->customiseForContext(*it);
+                itsPreconGridders[imageName]->initialiseGrid(axes, imageShape, false, true);
+            }
         }
       }
       // synchronise emtpy flag across multiple ranks if necessary
@@ -538,16 +605,33 @@ namespace askap
       }
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
+      // Get access to explicit calibration operations (predict/correct)
+      boost::shared_ptr<ICalibrationApplicator> calME;
+      if (ddCal) {
+        auto calIter = itsIdi.dynamicCast<CalibrationIterator>();
+        if (calIter) {
+            calME = calIter->calApplicator();
+        }
+      }
+
       // Now we loop through all the data
-      ASKAPLOG_DEBUG_STR(logger, "Starting degridding model and gridding residuals" );
+      ASKAPLOG_INFO_STR(logger, "Starting degridding model and gridding residuals" );
       size_t counterGrid = 0, counterDegrid = 0;
+      bool once = true;
       for (itsIdi.init();itsIdi.hasMore();itsIdi.next())
       {
         // buffer-accessor, used as a replacement for proper buffers held in the subtable
         // effectively, an array with the same shape as the visibility cube is held by this class
-        MemBufferDataAccessor accBuffer(*itsIdi);
+
+        // We need the buffer to have both DDCal and NoiseAndFlag features
+        DDCalOnDemandNoiseAndFlagDA accBuffer(*itsIdi);
+        if (ddCal) {
+            // we need a buffer with space for multiple directions
+            accBuffer.setNDir(itsNDir);
+        }
 
         // Accumulate model visibility for all models
+        // different directions go into separate parts of the buffer
         accBuffer.rwVisibility().set(0.0);
         if (somethingHasToBeDegridded) {
             for (std::vector<std::string>::const_iterator it=completions.begin();it!=completions.end();++it) {
@@ -561,6 +645,10 @@ namespace askap
                      counterDegrid+=accBuffer.nRow();
                  }
             }
+            if (calME) {
+                // corrupt the model in ddcal case - each DD section with its own calibration
+                calME->predict(accBuffer);
+            }
             // optional aggregation of visibilities in the case of distributed model
             // somethingHasToBeDegridded is supposed to have consistent value across all participating ranks
             if (itsVisUpdateObject) {
@@ -568,8 +656,41 @@ namespace askap
             }
             //
         }
-        accBuffer.rwVisibility() -= itsIdi->visibility();
-        accBuffer.rwVisibility() *= float(-1.);
+        if (!ddCal) {
+            // calculate residual visibilities
+            accBuffer.rwVisibility() -= itsIdi->visibility();
+            accBuffer.rwVisibility() *= float(-1.);
+        } else {
+            // calculate residual visibilities - subtract all models and calibrate for each direction
+            DDCalBufferDataAccessor residBuffer(*itsIdi);
+            residBuffer.setNDir(itsNDir);
+            casacore::Cube<casacore::Complex> & vis = residBuffer.rwVisibility();
+            const casacore::Cube<casacore::Complex> & model = accBuffer.visibility();
+            ASKAPCHECK(vis.shape()==model.shape(),"Mismatch in shape between residual and model visibilities");
+            const casacore::Slice all;
+            const auto nrow = residBuffer.nRow();
+            const casacore::Slice row0Slice(0, nrow);
+            casacore::Cube<casacore::Complex> vis0(vis(all,all,row0Slice));
+            vis0 = itsIdi->visibility();
+            // loop over directions - subtract all models from first block of visibilities
+            if (somethingHasToBeDegridded) {
+                for (int dir = 0; dir < itsNDir; dir++) {
+                    const casacore::Slice rowSlice(dir * nrow, nrow);
+                    vis0 -= model(all,all,rowSlice);
+                }
+            }
+            // replicate result to other directions
+            for (int dir = 1; dir < itsNDir; dir++) {
+                const casacore::Slice rowSlice(dir * nrow, nrow);
+                vis(all,all,rowSlice) = vis0;
+            }
+            // Now assign to output buffer
+            accBuffer.rwVisibility() = vis;
+            // and calibrate for each direction if calibrating
+            if (calME) {
+                calME->correct(accBuffer);
+            }
+        }
 
         /// Now we can calculate the residual visibility and image
         size_t tempCounter = 0;
@@ -585,9 +706,14 @@ namespace askap
             const string imageName("image"+completions[i]);
             if (parameters().isFree(imageName)) {
                 itsResidualGridders[imageName]->grid(accBuffer);
-                itsPSFGridders[imageName]->grid(accBuffer);
-                if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
-                    itsPreconGridders[imageName]->grid(accBuffer);
+                if (!itsReuseGrid[imageName]) {
+                    itsPSFGridders[imageName]->grid(accBuffer);
+                    if (itsUsePreconGridder && (itsPreconGridders.count(imageName)>0)) {
+                        itsPreconGridders[imageName]->grid(accBuffer);
+                    }
+                } else if (once) {
+                    ASKAPLOG_DEBUG_STR(logger, "Skipped gridding for PSF/PCF: reuse grid for "<<imageName);
+                    once = false;
                 }
                 tempCounter += accBuffer.nRow();
             }
@@ -628,7 +754,6 @@ namespace askap
         itsPSFGridders[imageName]->finaliseGrid(imagePSF);
         itsResidualGridders[imageName]->finaliseWeights(imageWeight);
 
-        // just to deallocate the grid memory
         itsModelGridders[imageName]->finaliseDegrid();
 
         /*{

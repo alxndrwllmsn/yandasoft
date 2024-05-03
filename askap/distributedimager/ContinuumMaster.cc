@@ -42,6 +42,7 @@
 #include <Common/ParameterSet.h>
 #include <askap/scimath/fitting/Params.h>
 #include <askap/scimath/fitting/Axes.h>
+/*
 #include <askap/dataaccess/IConstDataSource.h>
 #include <askap/dataaccess/TableConstDataSource.h>
 #include <askap/dataaccess/IConstDataIterator.h>
@@ -50,6 +51,7 @@
 #include <askap/dataaccess/IDataIterator.h>
 #include <askap/dataaccess/SharedIter.h>
 #include <askap/dataaccess/TableInfoAccessor.h>
+*/
 #include <casacore/casa/Quanta.h>
 #include <askap/imageaccess/BeamLogger.h>
 #include <askap/parallel/ImagerParallel.h>
@@ -179,18 +181,18 @@ void ContinuumMaster::run(void)
         // what we need is just the appropriate image names, their coordinate systems and shapes. Perhaps, in the future another communication
         // pattern can be added to send just the required information and don't bother with broadcasting the pixel array
         ASKAPLOG_DEBUG_STR(logger, "Master is about to broadcast initial model for uv-weight calculation");
-        imager.broadcastModel(); 
+        imager.broadcastModel();
         ASKAPLOG_DEBUG_STR(logger, "Master will merge weight grids from workers and compute final weights");
         imager.setupUVWeightBuilder();
         // cannot use receiveNE below, because it automatically assigns NE to the solver and this causes issues later
-        // (wrong type of NE will be stuck inside the solver - caused by some technical debt in the design, we should've 
+        // (wrong type of NE will be stuck inside the solver - caused by some technical debt in the design, we should've
         //  separated receiving NE and assigning it to the solver)
         imager.reduceNE(imager.getNE());
         // this will compute weights and add them to the model (which is distributed back to workers later on)
         imager.computeUVWeights();
         ASKAPLOG_DEBUG_STR(logger, "uv-weight has been added to the model");
         // reset normal equations back to the state suitable for imaging
-        // (this is actually redundant in the case of the master, because calcNE later on would do this, but the code is 
+        // (this is actually redundant in the case of the master, because calcNE later on would do this, but the code is
         // cleaner this way when we do it explicitly)
         imager.recreateNormalEquations();
     }
@@ -246,8 +248,17 @@ void ContinuumMaster::run(void)
                     if (targetPeakResidual < 0) {
                         ASKAPLOG_INFO_STR(logger, "Major cycle flux threshold is not used.");
                     } else {
+                        if (imager.params()->has("noise_threshold_reached") &&
+                            imager.params()->scalarValue("noise_threshold_reached")>0) {
+                            ASKAPLOG_INFO_STR(logger, "It is below the noise threshold. Stopping.");
+                            ASKAPLOG_INFO_STR(logger, "Broadcasting final model");
+                            imager.broadcastModel();
+                            ASKAPLOG_INFO_STR(logger, "Broadcasting final model - done");
+                            break;
+                        } else {
                         ASKAPLOG_INFO_STR(logger, "It is above the major cycle threshold of "
                                           << targetPeakResidual << " Jy. Continuing.");
+                        }
                     }
                 }
             }

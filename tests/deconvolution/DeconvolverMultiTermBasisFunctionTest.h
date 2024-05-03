@@ -47,12 +47,12 @@ class DeconvolverMultiTermBasisFunctionTest : public CppUnit::TestFixture
   CPPUNIT_TEST_SUITE(DeconvolverMultiTermBasisFunctionTest);
   CPPUNIT_TEST(testCreate);
   CPPUNIT_TEST(testDeconvolveCenter);
-  CPPUNIT_TEST_EXCEPTION(testWrongShape, casa::ArrayShapeError);
+  CPPUNIT_TEST_EXCEPTION(testWrongShape, AskapError);
   CPPUNIT_TEST_EXCEPTION(testDeconvolveOffsetPSF, AskapError);
   CPPUNIT_TEST(testDeconvolvePSFSubset);
   CPPUNIT_TEST_SUITE_END();
 public:
-   
+
   void setUp() {
     IPosition dimensions(2,100,100);
     itsDirty.reset(new Array<Float>(dimensions));
@@ -84,7 +84,7 @@ public:
     itsDB->state()->setCurrentIter(0);
     itsDB->control()->setTargetIter(10);
     itsDB->control()->setGain(1.0);
-    itsDB->control()->setTargetObjectiveFunction(0.001); 
+    itsDB->control()->setTargetObjectiveFunction(0.001);
   }
 
   void tearDown() {
@@ -113,7 +113,7 @@ public:
     CPPUNIT_ASSERT(itsDB->deconvolve());
     CPPUNIT_ASSERT(itsDB->control()->terminationCause()==DeconvolverControl<Float>::CONVERGED);
   }
-   
+
   void testDeconvolveCenter() {
     itsDB->dirty().set(0.0);
     itsDB->dirty()(IPosition(2,50,50))=1.0;
@@ -148,8 +148,7 @@ private:
 
   boost::shared_ptr<BasisFunction<Float> > itsBasisFunction;
 };
-    
+
 } // namespace synthesis
 
 } // namespace askap
-

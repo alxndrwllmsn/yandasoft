@@ -58,6 +58,7 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/measurementequation/ImageParamsHelper.h>
 #include <askap/scimath/fitting/Params.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
+#include <askap/scimath/fft/FFTUtils.h>
 
 #include <askap/measurementequation/ImageSolverFactory.h>
 #include <askap/measurementequation/ImageCleaningSolver.h>
@@ -127,9 +128,8 @@ namespace askap
         itsWriteGrids = parset.getBool("write.grids",itsWriteGrids); // new name
         itsWriteMultiple = parset.getBool("write.multiple", false); // Only write out the first image by default
         itsWriteMultipleModels = parset.getBool("write.multiplemodels",true); // write all model images
-
+        itsWriteScaleMask = parset.getBool("write.scalemask",false); // write out the scale mask(s)
         itsSensitivityCutoff = parset.getDouble("sensitivityimage.cutoff", 0.01);
-
         bool reuseModel = parset.getBool("Images.reuse", false); // continue solving from existing model
 
         if (itsWriteSensitivityImage) {
@@ -158,12 +158,16 @@ namespace askap
         itsFirstImageName = itsFirstImageName.substr(5);
 
         /// Create the solver from the parameterset definition
-        itsSolver = ImageSolverFactory::make(parset);
+        LOFAR::ParameterSet tmpset = parset.makeSubset("");
+        if (itsWriteScaleMask) {
+            tmpset.replace(LOFAR::KVpair("Solver.Clean.writescalemask",true));
+        }
+        itsSolver = ImageSolverFactory::make(tmpset);
         ASKAPCHECK(itsSolver, "Solver not defined correctly");
       }
       if (itsComms.isWorker())
       {
-        bool doCalib = parset.getBool("calibrate",false);
+        const bool doCalib = parset.getBool("calibrate",false);
         if (doCalib) {
             ASKAPCHECK(!parset.isDefined("gainsfile"), "Deprecated 'gainsfile' keyword is found together with calibrate=true, please remove it");
             // setup solution source from the parset directly using the factory
@@ -185,6 +189,16 @@ namespace askap
         }
         if (itsSolutionSource) {
             ASKAPLOG_INFO_STR(logger, "Data will be calibrated before imaging");
+            const std::vector<std::string> names = parset.getStringVector("Images.Names");
+            const bool doDDCal = parset.getBool("calibrate.directiondependent",false) &&
+                (names.size() > 1);
+            if (doDDCal) {
+                // Now map names to directions
+                for (int i=0; i<names.size(); i++) {
+                    itsCalDirMap[names[i]] = i;
+                }
+                ASKAPLOG_INFO_STR(logger, "Using "<<names.size()<< " directions for DDCAL");
+            }
         } else {
             ASKAPLOG_INFO_STR(logger, "No calibration will be performed");
         }
@@ -465,8 +479,8 @@ namespace askap
       if (shapeNeeded && !parset.isDefined(param)) {
           std::ostringstream pstr;
           const double fieldSize = advice.squareFieldSize(1); // in deg
-          const int lSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[0]) + 1);
-          const int mSize = SynthesisParamsHelper::nextFactor2357(int(fieldSize * 3600 / cellSize[1]) + 1);
+          const int lSize = scimath::goodFFTSize(int(fieldSize * 3600 / cellSize[0]) + 1);
+          const int mSize = scimath::goodFFTSize(int(fieldSize * 3600 / cellSize[1]) + 1);
           pstr<<"["<<lSize<<","<<mSize<<"]";
           ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param <<": " << pstr.str().c_str());
           parset.add(param, pstr.str().c_str());
@@ -519,7 +533,7 @@ namespace askap
             calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
 
             // calibration iterator to replace the original one for the purpose of measurement equation creation
-            const IDataSharedIter calIter(new CalibrationIterator(origIt,calME));
+            const IDataSharedIter calIter(new CalibrationIterator(origIt,calME,itsCalDirMap.size()>0));
             return calIter;
        }
        ASKAPLOG_DEBUG_STR(logger,"Not applying calibration");
@@ -564,8 +578,9 @@ namespace askap
         ASKAPCHECK(gridder(), "Gridder not defined");
         boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
         ASKAPDEBUGASSERT(fftEquation);
-        fftEquation->useAlternativePSF(parset());
+        fftEquation->configure(parset());
         fftEquation->setVisUpdateObject(GroupVisAggregator::create(itsComms));
+        fftEquation->setCalDirMap(itsCalDirMap);
         itsEquation = fftEquation;
       }
       else {
@@ -641,7 +656,8 @@ namespace askap
        std::vector<std::string> result;
        result.reserve(names.size());
        for (std::vector<std::string>::const_iterator ci=names.begin(); ci!=names.end(); ++ci) {
-            if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) || (ci->find("uvweight") == 0)) {
+            if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) ||
+                (ci->find("uvweight") == 0) || (ci->find("noise_threshold_reached") == 0)) {
                 result.push_back(*ci);
             }
        }
@@ -691,6 +707,22 @@ namespace askap
         }
         itsModel->fix("peak_residual");
       }
+
+      // check if all images have reached the noise threshold
+      bool allDone = true;
+      const std::vector<std::string> noiseParams = itsModel->completions("noise_threshold_reached.",true);
+      for (const std::string& name : noiseParams) {
+          if (itsModel->scalarValue("noise_threshold_reached."+name) < 0.0) {
+              allDone = false;
+          }
+      }
+      if (itsModel->has("noise_threshold_reached")) {
+          itsModel->update("noise_threshold_reached", allDone ? 1.0 : -1.0);
+      } else {
+          itsModel->add("noise_threshold_reached", allDone ? 1.0 : -1.0);
+      }
+      itsModel->fix("noise_threshold_reached");
+
     }
 
     /// @brief Helper method to zero all model images
@@ -1207,6 +1239,10 @@ namespace askap
                 ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
                 SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor, keywords, historyLines);
             }
+            if ((it->find("scalemask") == 0) && itsWriteScaleMask && doWrite) {
+                ASKAPLOG_INFO_STR(logger, "Saving " << *it << " with name " << *it+postfix );
+                SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, boost::none, keywords, historyLines);
+            }
         }
 
         if (itsRestore && postfix == "") {
@@ -1325,7 +1361,7 @@ namespace askap
                                     SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, tmpname+restore_suffix+".restored", boost::none, keywords, historyLines);
                                     // write the image stats to the image table
                                     accessors::IImageAccess<>& imageAccessor = SynthesisParamsHelper::imageHandler();
-                                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,*ci+restore_suffix+".restored",parset());
+                                    askap::utils::StatsAndMask::writeStatsToImageTable(itsComms,imageAccessor,tmpname+restore_suffix+".restored",parset());
                                 }
                             } else {
                                 if (!iph.isFacet() && ((ci->find("image") == 0)))  {
