@@ -622,12 +622,13 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
         oCoordSys.setReferencePixel(refPix);
         oCoordSys.replaceCoordinate(newDC, dcPos);
         trimmedShape[3] = 1; // must set this to 1 as iacc.write write one plane at a time
-        accumulator.setOutputParameters(trimmedShape,oCoordSys);
         if ( comms.isMaster() ) {
             ASKAPLOG_INFO_STR(logger,"set output parameter using trimmed shape: " << trimmedShape
                                 << "; blc: " << blcTrcPair.first
                                 << ", trc: " << blcTrcPair.second);
         }
+        accumulator.setOutputParameters(trimmedShape,oCoordSys);
+        accumulator.adjustOutputImageMap(blcTrcPair.first,trimmedShape);
       }
 
       
@@ -1042,11 +1043,11 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
           if ( regridRequired ) {
             // call regrid for any buffered images
-            accumulator.regrid();
+            accumulator.regrid(img);
           }
 
           // update the accumulation arrays for this plane
-          accumulator.accumulatePlane(outPix, outWgtPix, outSenPix, curpos);
+          accumulator.accumulatePlane(outPix, outWgtPix, outSenPix, curpos,img);
 
         } // over the input images for this
       } // iterated over the polarisation - the accumulator is FULL for this CHANNEL
