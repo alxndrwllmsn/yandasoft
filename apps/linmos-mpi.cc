@@ -1048,7 +1048,6 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
           // update the accumulation arrays for this plane
           accumulator.accumulatePlane(outPix, outWgtPix, outSenPix, curpos,img);
-
         } // over the input images for this
       } // iterated over the polarisation - the accumulator is FULL for this CHANNEL
 
