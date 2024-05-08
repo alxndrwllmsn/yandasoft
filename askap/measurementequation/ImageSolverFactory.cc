@@ -170,6 +170,7 @@ namespace askap
           } // if - noise threshold
         } // for - parameter loop
       } // if - parameter defined
+
       const std::string parName2 = "threshold.masking";
       if (parset.isDefined(parName2)) {
         boost::shared_ptr<ImageCleaningSolver> ics =
@@ -181,6 +182,19 @@ namespace askap
                             "masking threshold, ignoring "<<parName2);
         }
       } // if - parameter defined
+
+      const std::string parName3 = "threshold.usefirstimage";
+      if (parset.isDefined(parName3)) {
+        boost::shared_ptr<ImageCleaningSolver> ics =
+                boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
+        if (ics) {
+            ics->setUseFirstImageForThresholds(parset.getBool(parName3, false));
+        } else {
+            ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
+                "to use thresholds from first image, ignoring "<<parName3);
+        } // if - parameter defined
+      }
+
     } // method
 
 
