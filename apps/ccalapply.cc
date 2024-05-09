@@ -249,7 +249,7 @@ class CcalApplyApp : public askap::Application
             }
             const string ms = itsDistribute ? subset.getString("dataset") : comms.substitute(subset.getString("dataset"));
 
-            TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS);
+            TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS | TableDataSource::WRITE_DATA_ONLY);
             IDataSelectorPtr sel=ds.createSelector();
             sel << subset;
             IDataConverterPtr conv=ds.createConverter();

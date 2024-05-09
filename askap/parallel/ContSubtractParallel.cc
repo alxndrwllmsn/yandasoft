@@ -517,7 +517,8 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
     ASKAPLOG_INFO_STR(logger, "Performing continuum model subtraction for " << ms );
 
     // Open readonly, accessor will reopen table r/w when needed
-    TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
+    TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS | TableDataSource::WRITE_DATA_ONLY,
+         dataColumn());
     ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
     IDataSelectorPtr sel=ds.createSelector();
     if (distributeByTile) {
@@ -541,10 +542,6 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
 
     uint niter = 0;
     casacore::Matrix<casacore::Complex> phasor;
-
-    // computePhasor and calibration access subtables, load them now (before the first
-    // rwVisibility call) to avoid having the subtables opened r/w in parallel
-    loadSubtables(it);
 
     for (; it.hasMore(); it.next()) {
         // iteration over the dataset
@@ -615,21 +612,5 @@ void ContSubtractParallel::doSubtraction()
         for (size_t iMs=0; iMs<measurementSets().size(); ++iMs) {
             calcOne(measurementSets()[iMs]);
         }
-    }
-}
-
-void ContSubtractParallel::loadSubtables(const accessors::IDataSharedIter& it)
-{
-    auto ti = it.dynamicCast<TableConstDataIterator>();
-    if (ti) {
-        ti->subtableInfo().getAntenna();
-        ti->subtableInfo().getDataDescription();
-        ti->subtableInfo().getFeed();
-        ti->subtableInfo().getField();
-        ti->subtableInfo().getSpWindow();
-        ti->subtableInfo().getPolarisation();
-    } else {
-        ASKAPTHROW(AskapError, "Bad cast in ContSubtractParallel::loadSubtables, most likely this means "
-               "there is a logical error");
     }
 }

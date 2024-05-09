@@ -88,7 +88,8 @@ void FlagParallel::flagOne(const std::string &ms, bool distributeByTile)
 
 
     // Open readonly, accessor will reopen table r/w when needed
-    TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
+    TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS | TableDataSource::WRITE_DATA_ONLY,
+         dataColumn());
     ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
     IDataSelectorPtr sel=ds.createSelector();
     if (distributeByTile) {
