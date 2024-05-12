@@ -63,15 +63,34 @@ namespace cp {
     {
     public:
         /// @brief Constructor
+        /// @param[in] parset general configuration parameters
+        /// @param[in] comms communication object
+        /// @param[in] ds data source object to use for data access
+        /// @param[in] localChannel channel number in the given dataset to work with
+        /// @param[in] frequency frequency in Hz of the channel to work with
+        /// @param[in] initialiseSolver if true, itsSolver will be initialised based on the parset
+        ///                             Note, this class is expected to be used in worker only (in the
+        ///                             case of master the solver always gets initialised but there is some
+        ///                             technical debt in the way how we handle it)
         CalcCore(LOFAR::ParameterSet& parset,
                    askap::askapparallel::AskapParallel& comms,
-                   accessors::IDataSource& ds, int localChannel=1, double frequency=0);
+                   accessors::IDataSource& ds, int localChannel=1, double frequency=0, bool initialiseSolver = true);
 
         /// @brief Constructor that maintains the gridder
+        /// @param[in] parset general configuration parameters
+        /// @param[in] comms communication object
+        /// @param[in] ds data source object to use for data access
+        /// @oaram[in] gdr gridder (template) to use
+        /// @param[in] localChannel channel number in the given dataset to work with
+        /// @param[in] frequency frequency in Hz of the channel to work with
+        /// @param[in] initialiseSolver if true, itsSolver will be initialised based on the parset
+        ///                             Note, this class is expected to be used in worker only (in the
+        ///                             case of master the solver always gets initialised but there is some
+        ///                             technical debt in the way how we handle it)
         CalcCore(LOFAR::ParameterSet& parset,
                 askap::askapparallel::AskapParallel& comms,
                 accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
-                 int localChannel=1, double frequency=0);
+                 int localChannel=1, double frequency=0, bool initialiseSolver = true);
 
         /// @brief Calc the normal equations
         /// @detail Overrides the virtual function in the ImagerParallel base
@@ -97,6 +116,12 @@ namespace cp {
 
         void writeLocalModel(const std::string& postfix) const;
 
+        /// @brief reset measurement equation
+        /// @details We create measurement equation (i.e. ImageFFTEquation) on demand. However, it 
+        /// has grids which are heavy objects. This method resets the appropriate shared pointer which
+        /// should free up the memory.
+        void resetMeasurementEquation();
+
         /// @brief obtain the current gridder template
         /// @return shared pointer to the gridder which can be cloned
         askap::synthesis::IVisGridder::ShPtr gridder() const { return itsGridder;};
@@ -110,8 +135,10 @@ namespace cp {
 
         /// @brief store all complex grids in the model object for future writing
         /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
-        /// returned arrays in the model so they can be exported later.
-        void addGridsToModel();
+        /// returned arrays in the model so they can be exported later. If the model 
+        /// object already has grids, the new values are added. Shape must conform.
+        /// @param[in] storage shared pointer to the model where grids will be stored
+        void addGridsToModel(const boost::shared_ptr<scimath::Params>& storage);
 
         /// @brief iterate over data and accumulate samples for uv weights
         /// @details This method is used to build the sample density in the uv-plane via the appropriate gridder
@@ -169,9 +196,11 @@ namespace cp {
         askap::askapparallel::AskapParallel& itsComms;
 
         /// @brief shared pointer to the solver
+        /// @note (MV) it is hacky / untidy to shadow the data member of the base class this way, leave as it is for now
         askap::scimath::Solver::ShPtr itsSolver;
 
         /// @brief run restore solver?
+        /// @note (MV) it is hacky / untidy to shadow the data member of the base class this way, leave as it is for now
         bool itsRestore;
 
         /// @brief data source to work with (essentially a measurement set)
@@ -179,6 +208,7 @@ namespace cp {
 
         /// @brief shared pointer to the gridder prototype
         /// @details WARNING this is cloned by the Equation - so you get little from specifying it
+        /// @note (MV) it is hacky / untidy to shadow the data member of the base class this way, leave as it is for now
         askap::synthesis::IVisGridder::ShPtr itsGridder;
 
         // Its channel in the dataset

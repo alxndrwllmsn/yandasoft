@@ -389,11 +389,12 @@ namespace askap
               const casacore::IPosition &pos)
     {
       ASKAPDEBUGTRACE("ImageSolver::saveArrayIntoParameter");
-
-      ASKAPDEBUGASSERT(imgName.find("image")==0);
-      ASKAPCHECK(imgName.size()>5,
-                 "Image parameter name should have something appended to word image")
-	  const string parName = prefix + imgName.substr(5);
+      const bool image = (imgName.find("image")==0);
+      const bool fullres = (imgName.find("fullres")==0);
+      ASKAPASSERT(image||fullres);
+      ASKAPCHECK((image && imgName.size()>5)||(fullres && imgName.size()>7),
+                 "Image parameter name should have something appended to word "<<(image ? "image" : "fullres"));
+	  const string parName = prefix + imgName.substr(image ? 5 : 7);
       #ifdef ASKAP_FLOAT_IMAGE_PARAMS
       casacore::Array<float> tmpArr(arr.shape());
       casacore::convertArray<float,double>(tmpArr,arr);
@@ -424,11 +425,12 @@ namespace askap
               const casacore::IPosition &pos)
     {
       ASKAPDEBUGTRACE("ImageSolver::saveArrayIntoParameter");
-
-      ASKAPDEBUGASSERT(imgName.find("image")==0);
-      ASKAPCHECK(imgName.size()>5,
-                 "Image parameter name should have something appended to word image")
-  	  const string parName = prefix + imgName.substr(5);
+      const bool image = (imgName.find("image")==0);
+      const bool fullres = (imgName.find("fullres")==0);
+      ASKAPASSERT(image||fullres);
+      ASKAPCHECK((image && imgName.size()>5)||(fullres && imgName.size()>7),
+                 "Image parameter name should have something appended to word "<<(image ? "image" : "fullres"));
+	  const string parName = prefix + imgName.substr(image ? 5 : 7);
       #ifdef ASKAP_FLOAT_IMAGE_PARAMS
   	  if (!ip.has(parName)) {
   	      // create an empty parameter with the full shape

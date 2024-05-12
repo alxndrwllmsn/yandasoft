@@ -61,8 +61,12 @@ vector<shared_ptr<IFlagger> > StokesVFlagger::build(
         const float spectraThreshold = subset.getFloat("integrateSpectra.threshold", 5.0);
         const bool integrateTimes = subset.getBool("integrateTimes", false);
         const float timesThreshold = subset.getFloat("integrateTimes.threshold", 5.0);
+        const float highLimit = subset.getFloat("high", 0.0);
 
         ASKAPLOG_INFO_STR(logger, "Parameter Summary:");
+        if (highLimit > 0) {
+            ASKAPLOG_INFO_STR(logger, "Searching for outliers with absolute value > "<<highLimit<<" Jy");
+        }
         ASKAPLOG_INFO_STR(logger, "Searching for outliers with a "<<threshold<<"-sigma cutoff");
         if (robustStatistics) {
             ASKAPLOG_INFO_STR(logger, "Using robust statistics");
@@ -80,19 +84,21 @@ vector<shared_ptr<IFlagger> > StokesVFlagger::build(
 
         flaggers.push_back(shared_ptr<IFlagger>
             (new StokesVFlagger(threshold,robustStatistics,integrateSpectra,
-                                spectraThreshold,integrateTimes,timesThreshold)));
+                                spectraThreshold,integrateTimes,timesThreshold,
+                                highLimit)));
     }
     return flaggers;
 }
 
-StokesVFlagger:: StokesVFlagger(float threshold, bool robustStatistics,
+StokesVFlagger::StokesVFlagger(float threshold, bool robustStatistics,
                                 bool integrateSpectra, float spectraThreshold,
-                                bool integrateTimes, float timesThreshold)
+                                bool integrateTimes, float timesThreshold,
+                                float highLimit)
     : itsStats("StokesVFlagger"),
       itsThreshold(threshold), itsRobustStatistics(robustStatistics),
       itsIntegrateSpectra(integrateSpectra), itsSpectraThreshold(spectraThreshold),
       itsIntegrateTimes(integrateTimes), itsTimesThreshold(timesThreshold),
-      itsAverageFlagsAreReady(true)
+      itsAverageFlagsAreReady(true), itsHighLimit(highLimit)
 {
     ASKAPCHECK(itsThreshold > 0.0, "Threshold must be greater than zero");
 }
@@ -115,6 +121,7 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
     const casacore::Vector<bool>& rowFlag,
     const casacore::uInt pass, const bool dryRun)
 {
+    // Convert data to Stokes V (imag(data(2,i))-imag(data(3,i)))
     const casacore::Vector<casacore::Stokes::StokesTypes> target(1, Stokes::V);
     scimath::PolConverter polConv(di->stokes(),target);
     const Cube<casacore::Complex>& data = di->visibility();
@@ -122,10 +129,8 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
     const casacore::uInt nRow = di->nRow();
     const casacore::uInt nPol = di->nPol();
     const casacore::uInt nChan = di->nChannel();
-    // Convert data to Stokes V (imag(data(2,i))-imag(data(3,i)))
     // does it help to keep this around?
-    static casacore::Matrix<casacore::Complex> vdata;
-    vdata.resize(nRow, nChan);
+    casacore::Matrix<casacore::Complex> vdata(nChan, nRow, 0);
     casacore::Vector<casacore::Complex> in(nPol);
     casacore::Vector<casacore::Complex> out(1);
 
@@ -134,33 +139,52 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
 
     for (casacore::uInt row = 0; row < nRow;  row++) {
 
-        // Build a vector with the amplitudes
+        //do the conversion to Stokes V using PolConverter
         bool allFlagged = true;
         std::vector<casacore::Float> tmpamps;
         for (size_t chan = 0; chan < nChan; ++chan) {
             bool anyFlagged = false;
             for (casacore::uInt pol=0; pol < nPol; pol++) {
-                //if (flags(row, chan, pol)) anyFlagged = true;
                 if (flags(pol, chan, row)) anyFlagged = true;
             }
             if (!anyFlagged) {
-                //do the conversion using PolConverter
                 if (pass == 0) {
-                    //in(0) = data(row,chan,0);
                     in(0) = data(0,chan,row);
-                    //in(1) = data(row,chan,1);
                     in(1) = data(1,chan,row);
-                    //in(2) = data(row,chan,2);
                     in(2) = data(2,chan,row);
-                    //in(3) = data(row,chan,3);
                     in(3) = data(3,chan,row);
                     polConv.convert(out,in);
-                    vdata(row, chan) = out(0);
-                    tmpamps.push_back(abs(out(0)));
+                    vdata(chan, row) = out(0);
                 }
                 allFlagged = false;
             }
         }
+
+        // Now go through and flag based on absolute levels
+        // also build a vector with the remaining amplitudes
+        if (pass == 0) {
+            for (size_t chan = 0; chan < nChan; ++chan) {
+                const casacore::Float amp = abs(vdata(chan,row));
+                // Apply threshold based flagging
+                if (itsHighLimit > 0 && amp > itsHighLimit) {
+                    for (casacore::uInt pol = 0; pol < flags.nrow(); ++pol) {
+                        if (flags(pol, chan, row)) {
+                            itsStats.visAlreadyFlagged++;
+                            continue;
+                        }
+                        flags(pol, chan, row) = true;
+                        wasUpdated = true;
+                        itsStats.visFlagged++;
+                    }
+                } else {
+                    tmpamps.push_back(amp);
+                }
+            }
+            if (tmpamps.size()==0) {
+                allFlagged = true;
+            }
+        }
+
 
         // normalise averages and search them for peaks to flag
         if ( !itsAverageFlagsAreReady && (pass==1) ) {
@@ -206,7 +230,6 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                 if ((statsVector[2] >= (avg - (sigma * itsThreshold))) &&
                     (statsVector[3] <= (avg + (sigma * itsThreshold))) &&
                     !itsIntegrateSpectra && !itsIntegrateTimes) {
-                    ASKAPLOG_INFO_STR(logger,"row "<<row<<" skipped - min/max in bounds");
                     continue;
                 }
             }
@@ -227,13 +250,15 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
             casacore::Double aveTime = 0.0;
             casacore::uInt countTime = 0;
             for (size_t chan = 0; chan < nChan; ++chan) {
-                const casacore::Float amp = abs(vdata(row,chan));
+                const casacore::Float amp = abs(vdata(chan, row));
                 // Apply threshold based flagging
                 if (amp > (avg + (sigma * itsThreshold))) {
                     for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                        //if (flags(row, chan, pol)) {
                         if (flags(pol, chan, row)) {
-                            itsStats.visAlreadyFlagged++;
+                            // no double counting
+                            if (itsHighLimit == 0 || amp < itsHighLimit) {
+                                itsStats.visAlreadyFlagged++;
+                            }
                             continue;
                         }
                         flags(row, chan, pol) = true;
@@ -281,9 +306,7 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                     itsStats.rowsFlagged++;
                     for (size_t chan = 0; chan < nChan; ++chan) {
                         for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                            // if (!flags(row, chan, pol)) {
                             if (!flags(pol, chan, row)) {
-                                //flags(row, chan, pol) = true;
                                 flags(pol, chan, row) = true;
                                 wasUpdatedRow = true;
                                 itsStats.visFlagged++;
@@ -297,20 +320,13 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                 for (size_t chan = 0; chan < nChan; ++chan) {
                     if ( !itsMaskSpectra[key][chan] ) {
                         for (casacore::uInt pol = 0; pol < nPol; ++pol) {
-                            //if (!flags(row, chan, pol)) {
                             if (!flags(pol, chan, row)) {
-                                //flags(row, chan, pol) = true;
                                 flags(pol, chan, row) = true;
                                 wasUpdatedRow = true;
                                 itsStats.visFlagged++;
                             }
                         }
                     }
-                }
-            }
-            if (wasUpdatedRow && !dryRun) {
-                if (itsIntegrateTimes && !itsMaskTimes[key][itsCountTimes[key]]) {
-                    //msc.flagRow().put(row, true);
                 }
             }
         }

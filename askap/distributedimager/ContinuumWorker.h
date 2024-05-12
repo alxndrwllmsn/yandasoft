@@ -33,24 +33,21 @@
 
 // boost includes
 #include <boost/noncopyable.hpp>
+#include "boost/shared_ptr.hpp"
 
 // ASKAPsoft includes
-#include "boost/shared_ptr.hpp"
 #include <Common/ParameterSet.h>
-#include <askap/scimath/fitting/INormalEquations.h>
 #include <askap/scimath/fitting/Params.h>
-#include <askap/dataaccess/TableDataSource.h>
-#include <askap/gridding/IVisGridder.h>
 #include <askap/askap/StatReporter.h>
 
 // Local includes
 #include "askap/distributedimager/AdviseDI.h"
-#include "askap/distributedimager/MSSplitter.h"
-#include "askap/distributedimager/CalcCore.h"
 #include "askap/messages/ContinuumWorkUnit.h"
 #include "askap/distributedimager/WorkUnitContainer.h"
 #include "askap/distributedimager/CubeBuilder.h"
 #include "askap/distributedimager/CubeComms.h"
+#include "askap/distributedimager/DataSourceManager.h"
+#include "askap/distributedimager/CalcCore.h"
 #include <askap/utils/StatsAndMask.h>
 
 namespace askap {
@@ -148,6 +145,31 @@ class ContinuumWorker : public boost::noncopyable
         /// @return number of writer ranks for grid export
         int configureNumberOfWriters();
 
+        /// @brief helper method to process a single work unit
+        /// @details This method encapsulates a part of the old processChannel calculating and merging NE for a single work 
+        /// unit. The resulting NE is either added to the root imager passed as the parameter or a new CalcCore object is
+        /// created and returned if the passed shared pointer is empty.
+        /// @param[inout] rootImagerPtr shared pointer to CalcCore object to update or create (if empty shared pointer is passed)
+        /// @param[in] wu work unit to process
+        /// @param[in] lastcycle if this parameter is true and itsWriteGrids is true as well, the grids are extracted into root imager 
+        /// for writing later on. We only do this in the last major cycle, hence the name. In the central solver case this option has
+        /// no effect.
+        void processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const;
+
+        /// @brief helper method to perform minor cycle activities
+        /// @details This method encapsulates running the solver at the conclusion of each major cycle and
+        /// associated data transfers, if necessary. It can be viewed at the place where the minor cycle is
+        /// performed in the case of the local solver (or the interface part, if the master perofms it as
+        /// it happens in the continuum mode).
+        /// @param[in] rootImagerPtr shared pointer to the CalcCore object containing the result of the current 
+        ///                          major cycle for the given worker.
+        /// @param[in] haveMoreMajorCycles flag that more major cycles are to be done (subject to thresholds). In the
+        ///                          central solver mode we expect to receive the new model in this flag is true or
+        ///                          perform new solution ourselves in the case of the local solver.
+        /// @return true if major cycles have to be terminated due to thresholds being reached
+        /// @note empty rootImagerPtr causes an exception. This may happen if no data are processed.
+        bool runMinorCycleSolver(const boost::shared_ptr<CalcCore> &rootImagerPtr, bool haveMoreMajorCycles) const;
+
         // My Advisor
         boost::shared_ptr<synthesis::AdviseDI> itsAdvisor;
 
@@ -166,6 +188,8 @@ class ContinuumWorker : public boost::noncopyable
 
         //For all workunits .... process
         void processChannels();
+        // temporary keep the old version
+        void processChannelsOld();
 
         // Setup the image specified in parset and add it to the Params instance.
         void setupImage(const askap::scimath::Params::ShPtr& params,
@@ -181,6 +205,9 @@ class ContinuumWorker : public boost::noncopyable
 
         // statistics
         StatReporter& itsStats;
+
+        /// @brief shared pointer to data source manager reponsible for dealing with measurement sets
+        boost::shared_ptr<DataSourceManager> itsDSM;
 
         // ID of the master process
         static const int itsMaster = 0;
@@ -274,6 +301,9 @@ class ContinuumWorker : public boost::noncopyable
 
         /// @brief the number of rank that can write to the cube
         const int itsNumWriters;
+
+        /// @brief updatedirection option (switching on joint gridding)
+        const bool itsUpdateDir;
 
 };
 

@@ -114,7 +114,7 @@ namespace askap
                       boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
                   if (ics) {
                     ics->setNoiseThreshold(cThreshold.getValue());
-                    ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the noise threshold of "<<
+                    ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the noise threshold of "<<
                                       cThreshold.getValue("")<<" sigma");
                   } else {
                     ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
@@ -170,6 +170,7 @@ namespace askap
           } // if - noise threshold
         } // for - parameter loop
       } // if - parameter defined
+
       const std::string parName2 = "threshold.masking";
       if (parset.isDefined(parName2)) {
         boost::shared_ptr<ImageCleaningSolver> ics =
@@ -181,6 +182,19 @@ namespace askap
                             "masking threshold, ignoring "<<parName2);
         }
       } // if - parameter defined
+
+      const std::string parName3 = "threshold.usefirstimage";
+      if (parset.isDefined(parName3)) {
+        boost::shared_ptr<ImageCleaningSolver> ics =
+                boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
+        if (ics) {
+            ics->setUseFirstImageForThresholds(parset.getBool(parName3, false));
+        } else {
+            ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
+                "to use thresholds from first image, ignoring "<<parName3);
+        } // if - parameter defined
+      }
+
     } // method
 
 
@@ -201,9 +215,9 @@ namespace askap
       const vector<string> preconditioners=parset.getStringVector("preconditioner.Names",std::vector<std::string>());
       for (vector<string>::const_iterator pc = preconditioners.begin(); pc != preconditioners.end(); ++pc) {
         if ( (*pc)=="Wiener" ) {
-          // if this is the restore solver, use the cached preconditioner function (if it exists).
+          // Use the cached preconditioner function (if it exists & size matches).
           solver->addPreconditioner(WienerPreconditioner::createPreconditioner(
-          parset.makeSubset("preconditioner.Wiener."), solver->getIsRestoreSolver()));
+              parset.makeSubset("preconditioner.Wiener."), true));
         } else if ( (*pc)=="NormWiener" ) {
           const float robustness = parset.getFloat("preconditioner.NormWiener.robustness",0.0);
           solver->addPreconditioner(IImagePreconditioner::ShPtr(new NormWienerPreconditioner(robustness)));

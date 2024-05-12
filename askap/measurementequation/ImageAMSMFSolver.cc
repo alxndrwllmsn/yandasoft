@@ -131,6 +131,11 @@ namespace askap
       std::map<std::string, int> taylorMap;
       SynthesisParamsHelper::listTaylor(names, taylorMap);
 
+      std::string firstImage;
+      double peakRes1 = 0;
+      double originalTarget = 0;
+      double originalTarget2 = 0;
+
       uint nParameters=0;
       ASKAPCHECK(taylorMap.size() != 0, "Solver doesn't have any images to solve for");
       for (std::map<std::string, int>::const_iterator tmIt = taylorMap.begin(); tmIt!=taylorMap.end(); ++tmIt) {
@@ -310,6 +315,10 @@ namespace askap
             // a unique string for every Taylor decomposition (unique for every facet for faceting)
             const std::string imageTag = tmIt->first + planeIter.tag();
             firstcycle = !SynthesisParamsHelper::hasValue(itsCleaners,imageTag);
+
+            if (firstImage.size()==0) {
+                firstImage = imageTag;
+            }
 
             Vector<Array<Float> > cleanVec(itsNumberTaylor);
             Vector<Array<Float> > dirtyVec(itsNumberTaylor);
@@ -547,6 +556,10 @@ namespace askap
                     itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
                     itsControl->setTargetObjectiveFunction2(deepThreshold());
                 }
+                if (imageTag == firstImage) {
+                    originalTarget = itsControl->targetObjectiveFunction();
+                    originalTarget2 = itsControl->targetObjectiveFunction2();
+                }
                 itsControl->setFractionalThreshold(fractionalThreshold());
 
                 itsCleaners[imageTag]->setControl(itsControl);
@@ -558,9 +571,16 @@ namespace askap
                 itsCleaners[imageTag]->setBasisFunction(itsBasisFunction);
                 itsCleaners[imageTag]->setSolutionType(itsSolutionType);
                 itsCleaners[imageTag]->setDecoupled(itsDecoupled);
+                itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
+
                 if (maskArray.nelements()) {
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
+                }
+                if (itsReadScaleMask) {
+                    const std::string name = "scalemask"+imageTag.substr(5);
+                    ASKAPLOG_INFO_STR(logger, "Read scale mask from image: "<<name);
+                    itsCleaners[imageTag]->setScaleMask(SynthesisParamsHelper::imageHandler().read(name).nonDegenerate());
                 }
             } else {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._updatedeconvolver");
@@ -573,6 +593,10 @@ namespace askap
                 if (sigma > 0) {
                     itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
                     itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                    if (imageTag == firstImage) {
+                        originalTarget = itsControl->targetObjectiveFunction();
+                        originalTarget2 = itsControl->targetObjectiveFunction2();
+                    }
                     itsCleaners[imageTag]->setControl(itsControl);
                 }
             }
@@ -583,6 +607,27 @@ namespace askap
             // By convention, iterations are counted from scratch each
             // major cycle
             itsCleaners[imageTag]->state()->setCurrentIter(0);
+
+            if (useFirstImageForThresholds()) {
+                if (imageTag == firstImage ) {
+                    // restore the thresholds for first field
+                    itsControl->setTargetObjectiveFunction(originalTarget);
+                    itsControl->setTargetObjectiveFunction2(originalTarget2);
+                } else {
+                    // need to use final peak residual of first image as limit for cleaning of next images
+                    // to avoid overcleaning offset fields with little flux
+                    if (peakRes1 > originalTarget) {
+                        // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
+                        itsControl->setTargetObjectiveFunction(peakRes1);
+                        itsControl->setTargetObjectiveFunction2(0);
+                    } else {
+                        // if peakRes1 < firstTarget: set 1st target to original value, set 2nd Target to peakRes1
+                        itsControl->setTargetObjectiveFunction(originalTarget);
+                        itsControl->setTargetObjectiveFunction2(peakRes1);
+                    }
+                }
+                itsCleaners[imageTag]->setControl(itsControl);
+            }
 
             for (uInt order=0; order < itsNumberTaylor; ++order) {
                 if (this->itsNumberTaylor>1) {
@@ -647,6 +692,9 @@ namespace askap
             // Now update the stored peak residual
             const std::string peakResParam = std::string("peak_residual.") + imageTag;
             double peakRes = itsCleaners[imageTag]->state()->peakResidual();
+            if (imageTag == firstImage) {
+                peakRes1 = peakRes;
+            }
             // force a stop of the major cycles - clean diverging
             if (stop) {
               peakRes *= -1;
@@ -692,6 +740,19 @@ namespace askap
                   ASKAPLOG_INFO_STR(logger, "No Taylor terms were solved");
                 }
                 const std::string thisOrderParam = iph.paramName();
+                if (order == 0 && itsWriteScaleMask) {
+                    string fullResName = thisOrderParam;
+                    if (itsExtraOversamplingFactor) {
+                        const size_t index = fullResName.find("image");
+                        ASKAPCHECK(index == 0, "Swapping to full-resolution param name but something is wrong");
+                        fullResName.replace(index,5,"fullres");
+                    }
+                    Array<float> tmpImg = itsCleaners[imageTag]->scaleMask();
+                    const uInt numDegenerate = ip.shape(fullResName).size() - tmpImg.ndim();
+
+                    saveArrayIntoParameter(ip, fullResName, ip.shape(fullResName),
+                        "scalemask", tmpImg.addDegenerate(numDegenerate), planeIter.position());
+                }
 
                 ASKAPLOG_INFO_STR(logger, "About to get model for plane="<<plane<<" Taylor order="<<order<<
                     " for image "<<tmIt->first);
@@ -728,7 +789,7 @@ namespace askap
                 parametersToBeFixed.insert(thisOrderParam);
             }
 
-            //itsCleaners[imageTag]->releaseMemory();
+            itsCleaners[imageTag]->releaseMemory();
 
         } // end of polarisation (i.e. plane) loop
 
@@ -817,6 +878,22 @@ namespace askap
       if (this->itsDecoupled) {
           ASKAPLOG_DEBUG_STR(logger, "Using decoupled residuals");
       }
+      // Find out if we are reading or writing the scalemask, or just using it
+      itsReadScaleMask = parset.getBool("readscalemask",false);
+      itsWriteScaleMask = !itsReadScaleMask && parset.getBool("writescalemask",false);
+      itsUseScaleMask = parset.getBool("usescalemask",true) || itsReadScaleMask || itsWriteScaleMask;
+      if (itsUseScaleMask) {
+          ASKAPLOG_INFO_STR(logger, "Using bitmask for scale masks");
+          if (itsReadScaleMask) {
+              ASKAPLOG_INFO_STR(logger, "Will read scale mask image");
+          }
+          if (itsWriteScaleMask) {
+              ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
+          }
+      } else {
+          ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
+      }
+
 
     }
   }

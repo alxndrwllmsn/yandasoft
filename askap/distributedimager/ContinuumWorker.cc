@@ -23,43 +23,27 @@
 /// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 ///
 /// @author Ben Humphreys <ben.humphreys@csiro.au>
+/// Refactoring by Max Voronkov
 
 // Include own header file first
 #include "ContinuumWorker.h"
 
 // System includes
 #include <string>
-#include <sstream>
 #include <stdexcept>
 #include <vector>
-#include <complex>
-#include <cmath>
-#include <iostream>
-#include <iomanip>
 
-#include <sys/stat.h>
-#include <unistd.h>
-
+// boost includes
 #include "boost/shared_ptr.hpp"
-#include "boost/filesystem.hpp"
+
 // ASKAPsoft includes
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapUtil.h>
 #include <askap/profile/AskapProfiler.h>
-#include <askap/scimath/fitting/Equation.h>
-#include <askap/scimath/fitting/INormalEquations.h>
-#include <askap/scimath/fitting/ImagingNormalEquations.h>
-#include <askap/scimath/fitting/Params.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
-#include <askap/gridding/IVisGridder.h>
-#include <askap/gridding/VisGridderFactory.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
-#include <askap/measurementequation/ImageFFTEquation.h>
-#include <askap/measurementequation/SynthesisParamsHelper.h>
-#include <askap/distributedimager/DataSourceManager.h>
 #include <askap/scimath/utils/PolConverter.h>
-#include <Common/ParameterSet.h>
 #include <Common/Exceptions.h>
 #include <casacore/casa/OS/Timer.h>
 #include <askap/parallel/ImagerParallel.h>
@@ -67,15 +51,9 @@
 #include <askap/imageaccess/WeightsLog.h>
 #include <askap/gridding/UVWeightParamsHelper.h>
 
-// CASA Includes
-
 // Local includes
 #include "askap/distributedimager/AdviseDI.h"
-#include "askap/distributedimager/CalcCore.h"
-#include "askap/messages/ContinuumWorkUnit.h"
 #include "askap/messages/ContinuumWorkRequest.h"
-#include "askap/distributedimager/CubeBuilder.h"
-#include "askap/distributedimager/CubeComms.h"
 
 using namespace std;
 using namespace askap::cp;
@@ -116,10 +94,13 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     // write fft of grid (i.e. dirty image, psf)
     itsGridFFT(parset.getBool("write.grids.fft",false)),
     // number of cube writers (itsGridType and itsParset are already defined and could be used)
-    itsNumWriters(configureNumberOfWriters())
+    itsNumWriters(configureNumberOfWriters()),
+    // joint gridding of multiple beams/directions
+    itsUpdateDir(parset.getBool("updatedirection",false))
 {
     ASKAPTRACE("ContinuumWorker::constructor");
 
+    ASKAPCHECK(!(itsUpdateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
 
     itsAdvisor = boost::shared_ptr<synthesis::AdviseDI> (new synthesis::AdviseDI(itsComms, itsParset));
     itsAdvisor->prepare();
@@ -162,7 +143,7 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
 
 /// @brief figure out if preconditioning is to be done
 /// @details This method encapsulates checks of the parset indicating that preconditioning is going to be done.
-/// It is necessary to configure writing of additional data products, although preconditioning itself 
+/// It is necessary to configure writing of additional data products, although preconditioning itself
 /// is enabled and done by the appropriate solver class.
 /// @param[in] parset parset to use (this method is expected to be used in the constructor, so it is handy not
 /// to rely on the itsParset data field).
@@ -180,7 +161,7 @@ bool ContinuumWorker::doingPreconditioning(const LOFAR::ParameterSet &parset)
 
 /// @brief helper method to obtain the number of writers for the cube
 /// @details This method obtains the number of writers from the parset and adjusts it if necessary.
-/// It is intended to be used in the constructor to fill itsNumWriters data field and requires 
+/// It is intended to be used in the constructor to fill itsNumWriters data field and requires
 /// itsGridType and itsParset to be valid.
 /// @return number of writer ranks for grid export
 int ContinuumWorker::configureNumberOfWriters()
@@ -567,7 +548,440 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
    ASKAPLOG_DEBUG_STR(logger, "Passed the barrier");
 }
 
+/// @brief helper method to process a single work unit
+/// @details This method encapsulates a part of the old processChannel calculating and merging NE for a single work
+/// unit. The resulting NE is either added to the root imager passed as the parameter or a new CalcCore object is
+/// created and returned if the passed shared pointer is empty.
+/// @param[inout] rootImagerPtr shared pointer to CalcCore object to update or create (if empty shared pointer is passed)
+/// @param[in] wu work unit to process
+/// @param[in] lastcycle if this parameter is true and itsWriteGrids is true as well, the grids are extracted into root imager
+/// for writing later on. We only do this in the last major cycle, hence the name. In the central solver case this option has
+/// no effect.
+void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const
+{
+   ASKAPASSERT(itsDSM);
+   const int localChannel = wu.get_localChannel();
+   const double globalFrequency = wu.get_channelFrequency();
+   const int globalChannel = wu.get_globalChannel();
+   TableDataSource& ds = itsDSM->dataSource(wu.get_dataset());
+   if (itsUpdateDir) {
+       itsAdvisor->updateDirectionFromWorkUnit(wu);
+   }
+   try {
+        // to accumulate data from the current work unit
+        boost::shared_ptr<CalcCore> workingImagerPtr;
+        if (itsUpdateDir || !rootImagerPtr) {
+            // for itsUpdateDir mode gridders cannot be cached as they have a tangent point
+            // so use the appropriate CalcCore constructor (and same case if the cache is empty
+            // solver is initialised if root imager has not yet been defined and it is not joint deconvolution mode
+            // (i.e. this working imager will be returned as the root imager for future data accumulation)
+            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency, !rootImagerPtr && !itsUpdateDir));
+        } else {
+            // in this case we can reuse gridder from the rootImager (created previously)
+            // also, inhibit solver initialisation because we only run solver in the root imager
+            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency,false));
+        }
+        CalcCore& workingImager = *workingImagerPtr; // just for the semantics
+        if (itsUpdateDir) {
+            // MV: we could've had more intelligent checking whether we need a new subpatch here
+            // (i.e. there could be multiple epochs for the same beam). Leave it as it was before
+            // the refactoring.
+            const bool useSubSizedImages = true;
+            setupImage(workingImager.params(), globalFrequency, useSubSizedImages);
+            // Note, the original code prior to refactoring had "if (majorCycleNumber > 0)" condition for model copy
+            // the following may need to be adjusted if I (MV) didn't understand the logic correctly
+            if (rootImagerPtr && rootImagerPtr->params()) {
+                copyModel(rootImagerPtr->params(),workingImager.params());
+            } else {
+                // MV: use the same approach with a dummy iteration as in the code prior to refactoring
+                // (this is to setup a full size NE to linmos into. This condition indicates that we have
+                // the first work unit processed. On subsequent major cycles rootImager will contain the new model and
+                // for subsequent work units copyModel shouldn't do any harm
+                // I added the following assert condition as I don't expect rootImager defined without a model. Another
+                // wrapping if-statement will be necessary if this assumption doesn't hold
+                ASKAPASSERT(!rootImagerPtr);
+                // change gridder for initial calcNE in itsUpdateDir mode
+                LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
+                tmpParset.replace("gridder","SphFunc");
+                // the following will initialise the solver (i.e. default parameter)
+                rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
+                // setup full size image
+                setupImage(rootImagerPtr->params(), globalFrequency, false);
+                try {
+                   rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
+                   rootImagerPtr->configureNormalEquationsForMosaicing();
+                   rootImagerPtr->zero(); // then we delete all our work ....
+                }
+                catch (const askap::AskapError& e) {
+                       ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - dummy run for rootImager in updatedirection mode");
+                       ASKAPLOG_WARN_STR(logger,"Ignoring the current work unit");
+                       // reset rootImagerPtr to ensure we attempt full size NE generation with the next work unit
+                       rootImagerPtr.reset();
+                       throw;
+                }
+            }
+        } else {
+            if (rootImagerPtr) {
+                workingImager.replaceModelByReference(rootImagerPtr->params());
+            } else {
+                if (itsLocalSolver) {
+                    // setup full sized image
+                    setupImage(workingImager.params(), globalFrequency, false);
+                } else {
+                    // need to receve the model from master
+                    // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
+                    // can receive the model outside of this method
+                    ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
+                    workingImager.receiveModel();
+                    // MV: the message has been copied as is, need to verify that this condition indeed only happens for cycle 0 in the new structure
+                    ASKAPLOG_INFO_STR(logger, "Worker received initial model for cycle 0");
+                }
+            }
+        }
+        // grid and image
+        try {
+            workingImager.calcNE();
+        }
+        catch (const askap::AskapError& e) {
+               ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE");
+               // if this failed but the root did not one of two things may have happened
+               // in continuum mode the gridding fails due to w projection errors - which
+               // were not apparent in lower frequency observations - we have to just keep throwing
+               // the exception up the tree in this case because we cannot recover.
+               // in spectral line mode - this epoch/beam may have failed but other epochs succeeded.
+               // what to do here. Do we continue with the accumulation or just fail ...
+               throw;
+        }
+        // MV: I'm not sure we want to log the summary again (it is done just before the processng of this work unit,
+        // but this matches the old behaviour prior to refactoring as far as I understand it
+        itsStats.logSummary();
+
+        // merge into root image if required.
+        // this is required if there is more than one workunit per channel
+        // either in time or by beam.
+        ASKAPLOG_DEBUG_STR(logger,"About to merge into rootImager");
+        if (itsUpdateDir) {
+            workingImager.configureNormalEquationsForMosaicing();
+        }
+
+        // if rootImager is empty (i.e. this is the first work unit contributing to it) we just copy
+        // the shared pointer
+        if (rootImagerPtr) {
+            rootImagerPtr->mergeNormalEquations(workingImager);
+        } else {
+            rootImagerPtr = workingImagerPtr;
+        }
+        ASKAPLOG_DEBUG_STR(logger,"Merged");
+
+        ASKAPDEBUGASSERT(rootImagerPtr);
+        if (itsWriteGrids && lastcycle && itsLocalSolver) {
+            ASKAPLOG_INFO_STR(logger, "Extracting grids and summing them in the root imager");
+            // the following would work regarless whether root imager and working imager are the same object or not
+            workingImager.addGridsToModel(rootImagerPtr->params());
+        }
+        // MV: it would be nice to think about proper reuse of measurement equation (and associated gridders), currently they are recreated
+        // for every work unit which may not be ideal. For now we can dispose the measurement equation now in the root imager as it is not
+        // needed there. If it doesn't exist there the following call is very cheap.
+        rootImagerPtr->resetMeasurementEquation();
+   }
+   catch(const askap::AskapError& e) {
+         ASKAPLOG_WARN_STR(logger, "Askap error in imaging - skipping accumulation: carrying on - this will result in a blank channel" << e.what());
+         std::cerr << "Askap error in: " << e.what() << std::endl;
+   }
+}
+
+// this is a rewrite of processChannel method
 void ContinuumWorker::processChannels()
+{
+   ASKAPTRACE("ContinuumWorker::processChannels");
+
+   ASKAPLOG_INFO_STR(logger, "Processing Channel Allocation");
+
+   if (itsWriteGrids) {
+       ASKAPLOG_INFO_STR(logger,"Will output gridded visibilities");
+   }
+
+   if (itsLocalSolver) {
+       ASKAPLOG_INFO_STR(logger, "Processing channels in local solver mode");
+   } else {
+       ASKAPLOG_INFO_STR(logger, "Processing channels in central solver mode");
+   }
+
+   // MV: we can remove this - it is now checked in the constructor (but the code is not too far off from supporting both modes, may look into this after immediate needs are satisfied)
+   ASKAPCHECK(!(itsUpdateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
+
+   configureReferenceChannel();
+
+   initialiseCubeWritingIfNecessary();
+
+   if (itsWorkUnits.size() == 0) {
+      ASKAPLOG_INFO_STR(logger,"No work todo");
+
+      // write out the beam log
+      ASKAPLOG_DEBUG_STR(logger, "About to log the full set of restoring beams");
+
+      logBeamInfo();
+      logWeightsInfo();
+
+      return;
+   }
+
+   /// What are the plans for the deconvolution?
+   ASKAPLOG_DEBUG_STR(logger, "Ascertaining Cleaning Plan");
+   const bool writeAtMajorCycle = itsParset.getBool("Images.writeAtMajorCycle", false);
+   if (writeAtMajorCycle && itsLocalSolver) {
+       ASKAPLOG_WARN_STR(logger, "Images.writeAtMajorCycle is not supported in the local solver case - ignoring");
+   }
+   const int nCycles = itsParset.getInt32("ncycles", 0);
+
+   const int uvwMachineCacheSize = itsParset.getInt32("nUVWMachines", 1);
+   ASKAPCHECK(uvwMachineCacheSize > 0 ,
+       "Cache size is supposed to be a positive number, you have "
+       << uvwMachineCacheSize);
+
+   const double uvwMachineCacheTolerance = SynthesisParamsHelper::convertQuantity(itsParset.getString("uvwMachineDirTolerance", "1e-6rad"), "rad");
+
+   ASKAPLOG_DEBUG_STR(logger,
+       "UVWMachine cache will store " << uvwMachineCacheSize << " machines");
+   ASKAPLOG_DEBUG_STR(logger, "Tolerance on the directions is "
+       << uvwMachineCacheTolerance / casacore::C::pi * 180. * 3600. << " arcsec");
+
+   const string colName = itsParset.getString("datacolumn", "DATA");
+   const bool clearcache = itsParset.getBool("clearcache", false);
+
+   // setup data source manager
+   itsDSM.reset(new DataSourceManager(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance));
+
+   // itsWorkUnits may include different epochs (for the same channel)
+   // the order is strictly by channel - with multiple work units per channel.
+   // we use appropriately configured iterators to iterate over all work units with the same
+   // frequency if necessary.
+
+   // for continuum process all allocated frequency channels together, so just one block (note - we need to grab the right iterator later on)
+   const size_t numberOfFrequencyBlocks = itsLocalSolver ? itsWorkUnits.numberOfFrequencyBlocks() : 1;
+
+   for (size_t frequencyBlock = 0; frequencyBlock < numberOfFrequencyBlocks; ++frequencyBlock) {
+        ASKAPLOG_DEBUG_STR(logger, "Processing frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks);
+
+        // this will be used to accumulate normal equations across multiple work units
+        // define it inside the frequency block loop because each frequency block is considered to be independent
+        // (for the continuum case there is only one frequency block comprising all data)
+        boost::shared_ptr<CalcCore> rootImagerPtr;
+
+        // begin and end iterators for the part of work units we need (all of them in continuum, given frequency
+        // for the spectral line mode)
+        const WorkUnitContainer::const_iterator wuBeginIt = itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin();
+        const WorkUnitContainer::const_iterator wuEndIt = itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end();
+
+        // iterator to the last processed work unit (to use in writing, outside the work unit loop)
+        // initialise it with end iterator to double check that it got updated within the loop and no wrong data
+        // will get through by chance
+        WorkUnitContainer::const_iterator wuLastProcessedIt = wuEndIt;
+
+        // the counter is for reporting and to size the writing job in some circumstances
+        // define it in the frequency loop as opposed to inner loops for that latter cause
+        size_t workUnitCounter = 0u;
+
+        try {
+             for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
+                  if (majorCycleNumber != nCycles) {
+                      ASKAPLOG_INFO_STR(logger, "Starting major cycle "<<majorCycleNumber + 1<<" out of "<<nCycles<<
+                                            " (frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
+                  } else {
+                      ASKAPLOG_INFO_STR(logger, "Concluding major cycles (last pass over data, frequency block "<<frequencyBlock + 1<<" out of "<<numberOfFrequencyBlocks<<")");
+                  }
+                  workUnitCounter = 0u;
+                  for (WorkUnitContainer::const_iterator wuIt = wuBeginIt; wuIt != wuEndIt; ++wuIt) {
+                       // skip unsupported work unit types (MV: do we need to do this? May be better not to add them to the list. For now do the same as the code prior to refactoring)
+                       if ((wuIt->get_payloadType() == ContinuumWorkUnit::DONE) || (wuIt->get_payloadType() == ContinuumWorkUnit::NA)) {
+                           continue;
+                       }
+                       // counter just for reporting and to spread writing jobs more evenly (although this can probably
+                       // be done differently - use the same approach as in the code prior to refactoring for now)
+                       ++workUnitCounter;
+                       wuLastProcessedIt = wuIt;
+                       itsStats.logSummary();
+
+                       ASKAPLOG_DEBUG_STR(logger, "Processing work unit "<<workUnitCounter);
+
+                       processOneWorkUnit(rootImagerPtr, *wuIt, majorCycleNumber == nCycles);
+
+                  } // for loop over workunits of the given frequency block (or all of them in continuum mode)
+
+                  if (runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles)) {
+                      // we're here if the early termination condition has been triggered (i.e. on thresholds)
+                      break;
+                  }
+             } // for loop over major cycles
+
+             ASKAPLOG_INFO_STR(logger," Finished the major cycles");
+             // no work is left in the continuum mode except the final logging which is done outside the frequency loop
+             if (itsLocalSolver) {
+                 ASKAPASSERT(rootImagerPtr);
+                 CalcCore& rootImager = *rootImagerPtr; // just for semantics;
+                 rootImager.updateSolver();
+
+                 // At this point we have finished our last major cycle. We have the "best" model from the
+                 // last minor cycle. Which should be in the archive - or full coordinate system
+                 // the residual image should be merged into the archive coordinated as well.
+                 addImageAsModel(rootImager.params());
+
+                 rootImager.check();
+
+
+                 if (itsRestore) {
+                     ASKAPLOG_INFO_STR(logger, "Running restore");
+                     rootImager.restoreImage();
+                 }
+
+                 // force cache clearing here to match the code behaviour prior to refactoring.
+                 // It will be no operation if clearcache is false
+                 if (itsDSM) {
+                     itsDSM->reset();
+                 }
+
+                 itsStats.logSummary();
+
+                 ASKAPLOG_INFO_STR(logger, "writing channel into cube");
+                 ASKAPCHECK(wuLastProcessedIt != wuEndIt, "No work units seem to be processed - logic error or bad configuration?");
+
+                 if (itsComms.isWriter()) {
+
+                     // write own portion first
+                     performOwnWriteJob(wuLastProcessedIt->get_globalChannel(), rootImager.params());
+
+                     /// write everyone elses
+
+                     /// one per client ... I dont care what order they come in at
+
+                     performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ?
+                                  itsComms.getOutstanding() - itsComms.getClients().size() : 0,
+                             itsWorkUnits.size() - workUnitCounter);
+
+                 } else {
+                     // this rank is not the writer, send the result elsewhere
+                     ContinuumWorkRequest result;
+                     result.set_params(rootImager.params());
+                     result.set_globalChannel(wuLastProcessedIt->get_globalChannel());
+                     /// send the work to the writer with a blocking send
+                     result.sendRequest(wuLastProcessedIt->get_writer(), itsComms);
+                     itsComms.removeChannelFromWorker(itsComms.rank());
+                 }
+             } // if in the spectral line mode
+        } // try-block to be able to fail processing of the single spectral channel gracefully
+        catch (const std::exception& e) {
+               if (!itsLocalSolver) {
+                   /// this is MFS/continuum mode
+                   /// throw this further up - this avoids a failure in continuum mode generating bogus - or furphy-like
+                   /// error messages
+                   ASKAPLOG_WARN_STR(logger, "Error processing a channel in continuum mode");
+                   throw;
+               }
+               ASKAPLOG_WARN_STR(logger, "Error in channel processing, skipping: " << e.what());
+               std::cerr << "Skipping channel due to error and continuing: " << e.what() << std::endl;
+
+               // Need to either send an empty map - or remove the channel from the list to write
+               if (itsComms.isWriter()) {
+                   ASKAPLOG_DEBUG_STR(logger, "Marking bad channel as processed in count for writer");
+                   itsComms.removeChannelFromWriter(itsComms.rank());
+               } else {
+                   // MV: I am not sure we have to report the counter here as the failure can happen during solve
+                   ASKAPLOG_DEBUG_STR(logger, "Failed on count " << workUnitCounter);
+                   ASKAPDEBUGASSERT(wuLastProcessedIt != wuEndIt);
+                   sendBlankImageToWriter(*wuLastProcessedIt);
+               }
+        } // catch block bypassing channel write in spectral line mode or passing the exception in continuum
+   } // for loop over frequency blocks (just one pass for the continuum case)
+
+   ASKAPLOG_INFO_STR(logger,"Finished imaging");
+
+   if (itsLocalSolver) {
+       // cleanup
+       performOutstandingWriteJobs();
+   }
+   // MV: I don't think the barrier is necesary here. If it is needed to ensure all channel write operations are
+   // performed before going further, then we have to move it into performOutstandingWriteJobs.
+   // Anyway, leave it as it was prior to refactoring for now
+   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+   itsComms.barrier(itsComms.theWorkers());
+   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+
+   // write out the beam log
+   ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
+   logBeamInfo();
+   logWeightsInfo();
+}
+
+/// @brief helper method to perform minor cycle activities
+/// @details This method encapsulates running the solver at the conclusion of each major cycle and
+/// associated data transfers, if necessary. It can be viewed at the place where the minor cycle is
+/// performed in the case of the local solver (or the interface part, if the master perofms it as
+/// it happens in the continuum mode).
+/// @param[in] rootImagerPtr shared pointer to the CalcCore object containing the result of the current
+///                          major cycle for the given worker.
+/// @param[in] haveMoreMajorCycles flag that more major cycles are to be done (subject to thresholds). In the
+///                          central solver mode we expect to receive the new model in this flag is true or
+///                          perform new solution ourselves in the case of the local solver.
+/// @return true if major cycles have to be terminated due to thresholds being reached
+/// @note empty rootImagerPtr causes an exception. This may happen if no data are processed.
+bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &rootImagerPtr, bool haveMoreMajorCycles) const
+{
+   ASKAPCHECK(rootImagerPtr, "Root imager is empty - no data processed?");
+   if (!itsLocalSolver) {
+       // we run through the whole allocation
+       // lets send it to the master for processing.
+       rootImagerPtr->sendNE();
+
+       // MV: for now leave the original barrier in place although it is not required
+       ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+       itsComms.barrier(itsComms.theWorkers());
+       ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+
+       // now we have to wait for the model (solution) to come back.
+       // MV: except on the very last major cycle
+       if (haveMoreMajorCycles) {
+           ASKAPLOG_DEBUG_STR(logger, "Worker waiting to receive new model");
+           rootImagerPtr->receiveModel();
+           ASKAPLOG_DEBUG_STR(logger, "Worker received model for use in the next major cycle");
+       }
+   }
+   const bool forcedStopping = checkStoppingThresholds(rootImagerPtr->params());
+   // MV: I am not sure this matches the old behaviour in the non-local solver case
+   if (forcedStopping) {
+       return true;
+   }
+   const bool lastCycle = forcedStopping || !haveMoreMajorCycles;
+   if (itsLocalSolver && !lastCycle) {
+       try {
+          rootImagerPtr->solveNE();
+          itsStats.logSummary();
+       }
+       catch (const askap::AskapError& e) {
+              ASKAPLOG_WARN_STR(logger, "Askap error in solver:" << e.what());
+              throw;
+       }
+   }
+   // MV: although fine for now, the following if-statement conceptually is not a part of the minor cycle. It may be better to have it
+   // in a separate method making this clean up action it more explicit.
+   if (!lastCycle) {
+       ASKAPLOG_DEBUG_STR(logger, "Continuing - Reset normal equations");
+       if (itsUpdateDir) {
+           // MV: the original code has the following comment:
+           // Actually I've found that I cannot completely empty the NE. As I need the full size PSF and this is stored in the NE
+           // So this method pretty much only zeros the weights and the datavector(image)
+           rootImagerPtr->zero();
+       } else {
+           rootImagerPtr->reset();
+       }
+   }
+   itsStats.logSummary();
+   return false;
+}
+
+
+// this is the old version of processChannels method prior to refactoring. Kept in place for now just in case we need to flip between the
+// old and new versions quickly for debugging. It is no longer used.
+void ContinuumWorker::processChannelsOld()
 {
   ASKAPTRACE("ContinuumWorker::processChannels");
 
@@ -584,9 +998,7 @@ void ContinuumWorker::processChannels()
     ASKAPLOG_INFO_STR(logger, "Processing multiple channels in central solver mode");
   }
 
-  const bool updateDir = itsParset.getBool("updatedirection",false);
-
-  ASKAPCHECK(!(updateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
+  ASKAPCHECK(!(itsUpdateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
 
   configureReferenceChannel();
 
@@ -624,7 +1036,7 @@ void ContinuumWorker::processChannels()
   const string colName = itsParset.getString("datacolumn", "DATA");
   const bool clearcache = itsParset.getBool("clearcache", false);
 
-  DataSourceManager dsm(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance);
+  itsDSM.reset(new DataSourceManager(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance));
 
   // the itsWorkUnits may include different epochs (for the same channel)
   // the order is strictly by channel - with multiple work units per channel.
@@ -667,7 +1079,7 @@ void ContinuumWorker::processChannels()
 
       int initialChannelWorkUnit = workUnitCount;
 
-      if (!updateDir) {
+      if (!itsUpdateDir) {
 
         // NOTE: this is because if we are mosaicking ON THE FLY. We do
         // not process the first workunit outside the imaging loop.
@@ -686,12 +1098,12 @@ void ContinuumWorker::processChannels()
       double globalFrequency = currentWorkUnit.get_channelFrequency();
       int globalChannel = currentWorkUnit.get_globalChannel();
 
-      TableDataSource& ds = dsm.dataSource(currentWorkUnit.get_dataset());
+      TableDataSource& ds = itsDSM->dataSource(currentWorkUnit.get_dataset());
 
       /// Need to set up the rootImager here
-      if (updateDir) {
+      if (itsUpdateDir) {
             itsAdvisor->updateDirectionFromWorkUnit(currentWorkUnit);
-            // change gridder for initial calcNE in updateDir mode
+            // change gridder for initial calcNE in itsUpdateDir mode
             LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
             tmpParset.replace("gridder","SphFunc");
             boost::shared_ptr<CalcCore> tempIm(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
@@ -710,12 +1122,11 @@ void ContinuumWorker::processChannels()
       /// this will actually build a full image for the first - it is not actually used tho.
       ///
       ASKAPLOG_INFO_STR(logger, "Initialised imager & gridder");
-
       bool stopping = false;
 
-      if (!updateDir) {
+      if (!itsUpdateDir) {
           // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
-          // for updateDir option we have to do weighting in the working imager, root imager just handles the linmos
+          // for itsUpdateDir option we have to do weighting in the working imager, root imager just handles the linmos
           // (although this is probably a bit of the technical debt)
           rootImager.createUVWeightCalculator();
       }
@@ -723,7 +1134,7 @@ void ContinuumWorker::processChannels()
         // for central solver weight grid computation happens here, if it is required
         if (rootImager.isSampleDensityGridNeeded()) {
             // the code below is expected to be called in normal continuum case, incompatible with updatedir
-            ASKAPASSERT(!updateDir);
+            ASKAPASSERT(!itsUpdateDir);
             // MV: a bit of the technical debt here, we don't need the whole model for weights, but we need coordinate systems, shapes and names distributed the right way
             ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model (just for uv-weight calculation)");
             rootImager.receiveModel();
@@ -754,9 +1165,9 @@ void ContinuumWorker::processChannels()
         setupImage(rootImager.params(), frequency, false);
 
         // for local solver build weights locally too without interrank communication
-        // Note, the check for !updateDir is technically redundant here as traditional weighting will only
-        // be setup for rootImager if updateDir is false. But add it here for clarify.
-        if (rootImager.isSampleDensityGridNeeded() && !updateDir) {
+        // Note, the check for !itsUpdateDir is technically redundant here as traditional weighting will only
+        // be setup for rootImager if itsUpdateDir is false. But add it here for clarify.
+        if (rootImager.isSampleDensityGridNeeded() && !itsUpdateDir) {
             ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
             rootImager.setupUVWeightBuilder();
             rootImager.accumulateUVWeights();
@@ -780,7 +1191,7 @@ void ContinuumWorker::processChannels()
         // which would be much better.
         // Why not just use a spheroidal for the PSF gridders (use sphfuncforpsf)/ full FOV (done)
         // FIXME
-        if (updateDir) {
+        if (itsUpdateDir) {
             rootImager.configureNormalEquationsForMosaicing();
             rootImager.zero(); // then we delete all our work ....
         }
@@ -838,14 +1249,14 @@ void ContinuumWorker::processChannels()
           localChannel = tempWorkUnit.get_localChannel();
 
           globalFrequency = tempWorkUnit.get_channelFrequency();
-          TableDataSource& myDs = dsm.dataSource(tempWorkUnit.get_dataset());
+          TableDataSource& myDs = itsDSM->dataSource(tempWorkUnit.get_dataset());
           try {
 
             boost::shared_ptr<CalcCore> workingImagerPtr;
 
-            if (updateDir) {
+            if (itsUpdateDir) {
               itsAdvisor->updateDirectionFromWorkUnit(tempWorkUnit);
-              // in updateDir mode I cannot cache the gridders as they have a tangent point.
+              // in itsUpdateDir mode I cannot cache the gridders as they have a tangent point.
               // FIXED: by just having 2 possible working imagers depending on the mode. ... easy really
 
               boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,localChannel,globalFrequency));
@@ -853,9 +1264,9 @@ void ContinuumWorker::processChannels()
 
               // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
               // (it is used as a flag indicating whether to do traditional weighting)
-              // MV: for now set this up only for updateDir=true and follow the old logic for all other cases,
+              // MV: for now set this up only for itsUpdateDir=true and follow the old logic for all other cases,
               // however it may be worth while to be able to regenerate weight in workingImager instead of reusing what has
-              // been done in rootImager in the case of updateDir=false. There is a bit of untidy design / technical debt here.
+              // been done in rootImager in the case of itsUpdateDir=false. There is a bit of untidy design / technical debt here.
               workingImagerPtr->createUVWeightCalculator();
             }
             else {
@@ -868,12 +1279,9 @@ void ContinuumWorker::processChannels()
 
             ///this loop does the calcNE and the merge of the residual images
 
+            if (itsUpdateDir) {
 
-            bool useSubSizedImages = false;
-
-            if (updateDir) {
-
-              useSubSizedImages = true;
+              const bool useSubSizedImages = true;
               setupImage(workingImager.params(), frequency, useSubSizedImages);
 
               // if traditional weighting is enabled compute the weight. The code below assumes local
@@ -898,6 +1306,7 @@ void ContinuumWorker::processChannels()
             else {
               workingImager.replaceModel(rootImager.params());
             }
+
             // grid and image
             try {
               workingImager.calcNE();
@@ -912,6 +1321,7 @@ void ContinuumWorker::processChannels()
               // what to do here. Do we continue with the accumulation or just fail ...
               throw;
             }
+
             itsStats.logSummary();
 
             // merge into root image if required.
@@ -919,7 +1329,7 @@ void ContinuumWorker::processChannels()
             // either in time or by beam.
 
             ASKAPLOG_DEBUG_STR(logger,"About to merge into rootImager");
-            if (updateDir) {
+            if (itsUpdateDir) {
               workingImager.configureNormalEquationsForMosaicing();
             }
 
@@ -1002,7 +1412,6 @@ void ContinuumWorker::processChannels()
           try {
             rootImager.solveNE();
             itsStats.logSummary();
-
           } catch (const askap::AskapError& e) {
             ASKAPLOG_WARN_STR(logger, "Askap error in solver:" << e.what());
 
@@ -1013,7 +1422,7 @@ void ContinuumWorker::processChannels()
           break; // should be done if I am in local solver mode.
         }
 
-        if (!stopping && updateDir){
+        if (!stopping && itsUpdateDir){
 
           /// But we dont want to keep merging into the same NE
           /// so lets reset
@@ -1030,13 +1439,13 @@ void ContinuumWorker::processChannels()
           // the model is now updated but the NE are empty ... - lets go again
           // well they are not completely empty - the PSF is still there but the weights and image are zero
         }
-        else if (!stopping && !updateDir) {
+        else if (!stopping && !itsUpdateDir) {
           // In this case the first workUnit is processed outside the workUnit loop.
           // So we need to calcNE again with the latest model before the major cycle starts.
           //
-          // If we are using updateDir we reprocess all the workunits - so this is not needed.
+          // If we are using itsUpdateDir we reprocess all the workunits - so this is not needed.
           ASKAPLOG_INFO_STR(logger, "Continuuing - Reset normal equations");
-          rootImager.getNE()->reset();
+          rootImager.reset();
 
           // we have found that resetting the NE is causing some problems after r10290.
 
@@ -1049,9 +1458,9 @@ void ContinuumWorker::processChannels()
         }
         else if (stopping && !itsLocalSolver) {
           ASKAPLOG_INFO_STR(logger, "Not local solver but last run - Reset normal equations");
-          rootImager.getNE()->reset();
+          rootImager.reset();
 
-          if (!updateDir) {
+          if (!itsUpdateDir) {
 
             try {
               rootImager.calcNE();
@@ -1092,7 +1501,7 @@ void ContinuumWorker::processChannels()
       addImageAsModel(rootImager.params());
 
       if (itsWriteGrids) {
-          rootImager.addGridsToModel();
+          rootImager.addGridsToModel(rootImager.params());
       }
 
       rootImager.check();
@@ -1105,7 +1514,7 @@ void ContinuumWorker::processChannels()
 
       // force cache clearing here (although it would be done automatically at the end of the method) to match the
       // code behaviour prior to refactoring. It will be no operation if clearcache is false
-      dsm.reset();
+      itsDSM->reset();
 
       itsStats.logSummary();
 
@@ -1120,8 +1529,8 @@ void ContinuumWorker::processChannels()
 
         /// one per client ... I dont care what order they come in at
 
-        performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ? 
-                                    itsComms.getOutstanding() - itsComms.getClients().size() : 0, 
+        performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ?
+                                    itsComms.getOutstanding() - itsComms.getClients().size() : 0,
                                     itsWorkUnits.size() - workUnitCount);
 
       } else {
@@ -1179,8 +1588,8 @@ void ContinuumWorker::processChannels()
 
 /// @brief send blank image to writer
 /// @details This method is expected to be used when calculation of a spectral plane is failed for some reason,
-/// but some other rank is responsible for writing it. Essentially it sends a blank image with parameters 
-/// (like frequency and channel) filled from the work unit. 
+/// but some other rank is responsible for writing it. Essentially it sends a blank image with parameters
+/// (like frequency and channel) filled from the work unit.
 /// @param[in] wu work unit to take the information from
 /// @note (MV:) This doesn't seem like a good design, but the behaviour is left the same as it was prior to
 /// the refactoring.
@@ -1218,6 +1627,7 @@ void ContinuumWorker::performOwnWriteJob(unsigned int globalChannel, const boost
    handleImageParams(params, cubeChannel);
    ASKAPLOG_INFO_STR(logger, "Written channel " << cubeChannel);
 
+   // MV: I'm not sure why we remove the channel from the list twice, but it has been copied from the original code prior to refactoring
    itsComms.removeChannelFromWriter(itsComms.rank());
 
    itsComms.removeChannelFromWorker(itsComms.rank());
@@ -1270,7 +1680,7 @@ void ContinuumWorker::performOutstandingWriteJobs(int targetOutstanding, int min
    }
 }
 
-/// @brief check stopping thresholds in the model 
+/// @brief check stopping thresholds in the model
 /// @details This method is used at the end of minor cycle deconvolution to check whether to continue iterations.
 /// @param[in] model shared pointer to the scimath::Params object with the model
 /// @return true if stopping is required
@@ -1311,6 +1721,7 @@ bool ContinuumWorker::checkStoppingThresholds(const boost::shared_ptr<scimath::P
 
 void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, askap::scimath::Params::ShPtr SinkParams) const
 {
+  ASKAPCHECK(SourceParams && SinkParams, "Either input or output models are not defined");
   askap::scimath::Params& src = *SourceParams;
   askap::scimath::Params& dest = *SinkParams;
   // ASKAPLOG_WARN_STR(logger, "Names are " << src.names());
@@ -1323,7 +1734,7 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   hlp.copyTo(dest, "slice");
 }
 
-void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan) 
+void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan)
 {
 
   // Pre-conditions
@@ -1518,7 +1929,7 @@ void ContinuumWorker::addImageAsModel(const boost::shared_ptr<scimath::Params> &
 {
    ASKAPLOG_INFO_STR(logger,"Adding model.slice");
    ASKAPDEBUGASSERT(params);
-  
+
    ASKAPCHECK(params->has("image.slice"), "Params are missing image.slice parameter");
    // before archiving "image.slice" as the model, check if a high-resolution "fullres.slice" has been set up
    if (params->has("fullres.slice")) {

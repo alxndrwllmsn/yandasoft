@@ -79,16 +79,12 @@ ASKAP_LOGGER(logger, ".CalcCore");
 
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
-                       accessors::IDataSource& ds, int localChannel, double frequency)
+                       accessors::IDataSource& ds, int localChannel, double frequency, bool initialiseSolver)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsChannel(localChannel),itsFrequency(frequency)
 {
-    /// We need to set the calibration info here
-    /// the ImagerParallel constructor will do the work to
-    /// obtain the itsSolutionSource - but that is a private member of
-    /// the parent class.
-    /// Not sure whether to use it directly or copy it.
-    const std::string solver_par = parset.getString("solver");
-    const std::string algorithm_par = parset.getString("solver.Clean.algorithm", "BasisfunctionMFS");
+    // MV: it is untidy to update the parset and get defaults logic implemented that way
+    // in particular, the second constructor doesn't do it which could lead to bugs. Leave as is for now.
+
     // tell gridder it can throw the grids away if we don't need to write them out
     bool writeGrids = parset.getBool("dumpgrids",false);
     writeGrids = parset.getBool("write.grids",writeGrids); // new name
@@ -96,26 +92,44 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
     // tell restore solver to save the raw (unnormalised, unpreconditioned) psf
     parset.replace(LOFAR::KVpair("restore.saverawpsf",writeGrids));
     // only switch on updateResiduals if we want the residuals written out
-    bool writeResiduals = parset.getBool("write.residualimage",false);
+    const bool writeResiduals = parset.getBool("write.residualimage",false);
     parset.replace(LOFAR::KVpair("restore.updateresiduals",writeResiduals));
     // only switch on savepsfimage if we want the preconditioned psf written out
-    bool writePsfImage = parset.getBool("write.psfimage",false);
+    const bool writePsfImage = parset.getBool("write.psfimage",false);
     parset.replace(LOFAR::KVpair("restore.savepsfimage",writePsfImage));
-    itsSolver = ImageSolverFactory::make(parset);
+    //
+    // MV: it's very hacky and untidy to shadow data members in the base class(es). Although using the data member in
+    // the base class is also ugly. Leave as is for now
+    if (initialiseSolver) {
+        itsSolver = ImageSolverFactory::make(parset);
+    }
     itsGridder = VisGridderFactory::make(parset); // this is private to an inherited class so have to make a new one
     itsRestore = parset.getBool("restore", false);
 }
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
-                       int localChannel, double frequency)
+                       int localChannel, double frequency, bool initialiseSolver)
     : ImagerParallel(comms,parset), itsComms(comms),itsDataSource(ds),itsGridder(gdr), itsChannel(localChannel),
       itsFrequency(frequency)
 {
-  const std::string solver_par = parset.getString("solver");
-  const std::string algorithm_par = parset.getString("solver.Clean.algorithm", "BasisfunctionMFS");
-  itsSolver = ImageSolverFactory::make(parset);
+  if (initialiseSolver) {
+      itsSolver = ImageSolverFactory::make(parset);
+  }
   itsRestore = parset.getBool("restore", false);
+}
+
+/// @brief reset measurement equation
+/// @details We create measurement equation (i.e. ImageFFTEquation) on demand. However, it
+/// has grids which are heavy objects. This method resets the appropriate shared pointer which
+/// should free up the memory.
+void CalcCore::resetMeasurementEquation()
+{
+   // MV: it breaks encapsulation accessing the data member of the base class but the whole code was written this way
+   // One day we should clean up this technical debt.
+   // In principle, I could've put this method with the appropriate base class. But leave it here for now as it is only used
+   // in the new imager at the moment
+   itsEquation.reset();
 }
 
 /// @brief make data iterator
@@ -177,9 +191,9 @@ void CalcCore::accumulateUVWeights() const
 
 /// @brief configure normal equation for linear mosaicing
 /// @details When linmos is expected to happen during merge of normal equations we need to configure
-/// NEs appropriately to interpret weight correctly. This helper method does it. 
+/// NEs appropriately to interpret weight correctly. This helper method does it.
 /// @note Normal equations should already be setup (although could be empty) before this method is called.
-/// Otherwise, an exception will be thrown. Also, we could've do this setup automatically based on the 
+/// Otherwise, an exception will be thrown. Also, we could've do this setup automatically based on the
 /// gridder type. But at the moment the same approach is followed as we had prior to refactoring.
 void CalcCore::configureNormalEquationsForMosaicing() const
 {
@@ -192,7 +206,7 @@ void CalcCore::configureNormalEquationsForMosaicing() const
 
 /// @brief merge normal equations from another CalcCore
 /// @details This is a convenience method to merge in normal equations held by other CalcCore
-/// object. In principle, we can have this method in one of the base classes (and require 
+/// object. In principle, we can have this method in one of the base classes (and require
 /// broader type rather than CalcCore as the input) because all of the required functionality is
 /// in the base classes. But we only use it with CalcCore, so keep it in this class as well.
 /// @note Normal equations should be initialised (and with the consistent type) in both
@@ -224,7 +238,8 @@ void CalcCore::createMeasurementEquation()
    // this gridder is the one that is being used - unfortunately it is not.
    // You therefore get no benefit from initialising the gridder.
    // Also this is why you cannot get at the grid from outside FFT equation
-   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (*itsModel, it, gridder()));
+   // Changed itsModel argument to reference (like in doCalc)
+   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (itsModel, it, gridder()));
    ASKAPDEBUGASSERT(fftEquation);
 
    fftEquation->configure(parset());
@@ -248,12 +263,11 @@ void CalcCore::doCalc()
         createMeasurementEquation();
     } else {
         ASKAPLOG_INFO_STR(logger, "Reusing measurement equation and updating with latest model images" );
-        // Try changing this to reference instead of copy - passes tests
-        //itsEquation->setParameters(*itsModel);
         itsEquation->reference(itsModel);
     }
     ASKAPCHECK(itsEquation, "Equation not defined");
     ASKAPCHECK(itsNe, "NormalEquations not defined");
+
     itsEquation->calcEquations(*itsNe);
 
     ASKAPLOG_INFO_STR(logger,"Calculated normal equations in "<< timer.real()
@@ -276,7 +290,7 @@ std::string CalcCore::getFirstImageName() const
 
 casacore::Array<casacore::Complex> CalcCore::getGrid() const
 {
-   ASKAPLOG_INFO_STR(logger,"Dumping vis grid for channel " << itsChannel);
+   ASKAPLOG_INFO_STR(logger,"Extracting vis grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
    const string imageName = getFirstImageName();
    // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
@@ -287,7 +301,7 @@ casacore::Array<casacore::Complex> CalcCore::getGrid() const
 
 casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
 {
-   ASKAPLOG_INFO_STR(logger,"Dumping pcf grid for channel " << itsChannel);
+   ASKAPLOG_INFO_STR(logger,"Extracting pcf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
    const string imageName = getFirstImageName();
    // in principle, we can pass the shared pointer on interface straight to dynamic cast and test the result only
@@ -307,7 +321,7 @@ casacore::Array<casacore::Complex> CalcCore::getPCFGrid() const
 
 casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 {
-   ASKAPLOG_INFO_STR(logger,"Dumping psf grid for channel " << itsChannel);
+   ASKAPLOG_INFO_STR(logger,"Extracting psf grid for channel " << itsChannel);
    const boost::shared_ptr<ImageFFTEquation> fftEquation = getMeasurementEquation();
    const string imageName = getFirstImageName();
    // note, it's ok to pass null pointer to dynamic cast, no need to check it separately beforehand
@@ -318,24 +332,44 @@ casacore::Array<casacore::Complex> CalcCore::getPSFGrid() const
 
 /// @brief store all complex grids in the model object for future writing
 /// @details This method calls getGrid, getPCFGrid and getPSFGrid and stores
-/// returned arrays in the model so they can be exported later.
-void CalcCore::addGridsToModel()
+/// returned arrays in the model so they can be exported later. If the model
+/// object already has grids, the new values are added. Shape must conform.
+/// @param[in] storage shared pointer to the model where grids will be stored
+void CalcCore::addGridsToModel(const boost::shared_ptr<scimath::Params> &storage)
 {
    ASKAPLOG_INFO_STR(logger,"Adding grid.slice");
+   ASKAPASSERT(storage);
    casacore::Array<casacore::Complex> garr = getGrid();
    casacore::Vector<casacore::Complex> garrVec(garr.reform(casacore::IPosition(1,garr.nelements())));
-   params()->addComplexVector("grid.slice",garrVec);
+   if (storage->has("grid.slice")) {
+       // MV: probably unnecessary complex <-> two floats conversion underneath. Leave as is for now
+       // but in general we seem to be doing unnecessary copy a lot with the current Params class
+       garrVec += storage->complexVectorValue("grid.slice");
+       storage->updateComplexVector("grid.slice",garrVec);
+   } else {
+      storage->addComplexVector("grid.slice",garrVec);
+   }
    ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
    casacore::Array<casacore::Complex> pcfarr = getPCFGrid();
    if (pcfarr.nelements()) {
        ASKAPLOG_INFO_STR(logger,"Adding pcf.slice");
        casacore::Vector<casacore::Complex> pcfVec(pcfarr.reform(casacore::IPosition(1,pcfarr.nelements())));
-       params()->addComplexVector("pcf.slice",pcfVec);
+       if (storage->has("pcf.slice")) {
+           pcfVec += storage->complexVectorValue("pcf.slice");
+           storage->updateComplexVector("pcf.slice",pcfVec);
+       } else {
+         storage->addComplexVector("pcf.slice",pcfVec);
+       }
    }
    ASKAPLOG_INFO_STR(logger,"Adding psfgrid.slice");
    casacore::Array<casacore::Complex> psfarr = getPSFGrid();
    casacore::Vector<casacore::Complex> psfVec(psfarr.reform(casacore::IPosition(1,psfarr.nelements())));
-   params()->addComplexVector("psfgrid.slice",psfVec);
+   if (storage->has("psfgrid.slice")) {
+      psfVec += storage->complexVectorValue("psfgrid.slice");
+      storage->updateComplexVector("psfgrid.slice",psfVec);
+   } else {
+      storage->addComplexVector("psfgrid.slice",psfVec);
+   }
 }
 
 void CalcCore::calcNE()

@@ -117,10 +117,12 @@ namespace askap
       bool useCachedFilter = true;
       if (itsWienerfilter.shape() == 0 || itsWienerfilter.shape() != shape) {
         useCachedFilter = false;
+        ASKAPLOG_DEBUG_STR(logger,"Can't reuse Wiener filter: filter shape="<<itsWienerfilter.shape()<<", psf shape="<<shape);
         itsWienerfilter.resize(shape);
       }
 
       if (itsPcf.shape() != shape) {
+          ASKAPLOG_DEBUG_STR(logger,"Can't reuse Wiener filter: PCF shape="<<itsPcf.shape()<<", psf shape="<<shape);
           itsUseCachedPcf = false;
       }
 
@@ -585,7 +587,6 @@ namespace askap
       } else {
           itsUseCachedPcf = useCachedPcf;
       }
-
       return result;
     }
 

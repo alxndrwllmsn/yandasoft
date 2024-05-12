@@ -125,6 +125,9 @@ namespace askap
       String itsSolutionType;
 
       Bool itsDecoupled;
+      Bool itsUseScaleMask;
+      Bool itsReadScaleMask;
+      Bool itsWriteScaleMask;
 
       casacore::Array<Float> itsPSFZeroArray;
 

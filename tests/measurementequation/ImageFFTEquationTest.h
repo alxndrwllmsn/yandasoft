@@ -62,6 +62,7 @@ namespace askap
     {
 
       CPPUNIT_TEST_SUITE(ImageFFTEquationTest);
+      CPPUNIT_TEST(testCopyAndReference);
       CPPUNIT_TEST(testPredict);
       CPPUNIT_TEST(testSolveSphFun);
       CPPUNIT_TEST(testSolveAntIllum);
@@ -110,6 +111,28 @@ namespace askap
         params2->add("image.i.cena", imagePixels2, imageAxes);
         p2.reset(new ImageFFTEquation(*params2, idi));
 
+      }
+
+      void testCopyAndReference()
+      {
+          boost::shared_ptr<ImageFFTEquation> p3, p4;
+          boost::shared_ptr<Params> params3, params4;
+          params3.reset(new Params(*params1));
+          params4.reset(new Params(*params1));
+
+          IVisGridder::ShPtr gridder=IVisGridder::ShPtr(new SphFuncVisGridder());
+
+          // create using copied params
+          p3.reset(new ImageFFTEquation(*params3,idi, gridder));
+          *params3 = *params2;
+          casacore::IPosition pos(4, npix/2, npix/2, 0, 0);
+          // check values are not affected
+          CPPUNIT_ASSERT(abs(p3->parameters().valueT("image.i.cena")(pos)-1.0)<0.001);
+          // create using referenced params
+          p4.reset(new ImageFFTEquation(params4,idi, gridder));
+          *params4 = *params2;
+          // check values are affected (reference)
+          CPPUNIT_ASSERT(abs(p4->parameters().valueT("image.i.cena")(pos)-0.9)<0.001);
       }
 
       void testPredict()
