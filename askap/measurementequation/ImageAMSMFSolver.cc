@@ -28,23 +28,13 @@ ASKAP_LOGGER(logger, ".measurementequation.imageamsmfsolver");
 #include <askap/askap/AskapError.h>
 #include <askap/profile/AskapProfiler.h>
 
-#include <casacore/casa/aips.h>
-#include <casacore/casa/Arrays/Array.h>
-#include <casacore/casa/Arrays/ArrayMath.h>
-#include <casacore/casa/Arrays/Matrix.h>
-#include <casacore/casa/Arrays/MatrixMath.h>
-#include <casacore/scimath/Mathematics/MatrixMathLA.h>
-#include <casacore/casa/Arrays/Vector.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/measurementequation/ImageParamsHelper.h>
+#include <askap/utils/CleanUtils.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
 #include <askap/scimath/utils/PaddingUtils.h>
 
 #include <askap/deconvolution/DeconvolverMultiTermBasisFunction.h>
-
-#include <casacore/lattices/LatticeMath/LatticeCleaner.h>
-#include <casacore/lattices/LatticeMath/MultiTermLatticeCleaner.h>
-#include <casacore/lattices/Lattices/ArrayLattice.h>
 
 #include <askap/measurementequation/ImageAMSMFSolver.h>
 
@@ -130,6 +120,11 @@ namespace askap
       // per facet in this case
       std::map<std::string, int> taylorMap;
       SynthesisParamsHelper::listTaylor(names, taylorMap);
+
+      // Work out overlap of offset fields with main field and create mask
+      // Main field is expected to be the first and largest encountered
+      Matrix<imtype> extraMask = (itsUseOverlapMask ?
+          overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
 
       std::string firstImage;
       double peakRes1 = 0;
@@ -505,6 +500,7 @@ namespace askap
             if (itsExtraOversamplingFactor) {
                 ASKAPLOG_INFO_STR(logger,
                     "Oversampling by an extra factor of "<<*itsExtraOversamplingFactor<<" before cleaning");
+                // Should we be oversampling (by FFT) the mask array? It could have sharp edges
                 SynthesisParamsHelper::oversample(maskArray,*itsExtraOversamplingFactor);
                 for (uInt order=0; order < limit; ++order) {
                     SynthesisParamsHelper::oversample(psfLongVec(order),*itsExtraOversamplingFactor);
@@ -574,6 +570,10 @@ namespace askap
                 itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
 
                 if (maskArray.nelements()) {
+                    if (imageTag == firstImage &&
+                        extraMask.nelements()== maskArray.nelements()) {
+                        maskArray *= extraMask.addDegenerate(2);
+                    }
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
                 }
@@ -893,8 +893,7 @@ namespace askap
       } else {
           ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
       }
-
-
+      itsUseOverlapMask = parset.getBool("useoverlapmask", true);
     }
   }
 }
