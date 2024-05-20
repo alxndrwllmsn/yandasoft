@@ -98,7 +98,7 @@ Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string
 
     // find biggest image
     size_t maxSize = 0;
-    int main = 0;
+    int mainImage = 0;
     for (int i=0; i < shapes.size(); i++) {
         // Apply oversampling
         if (extraOversamplingFactor) {
@@ -112,37 +112,37 @@ Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string
         const size_t size = shapes[i].product();
         if ( size > maxSize) {
             maxSize = size;
-            main = i;
+            mainImage = i;
         }
     }
     ASKAPASSERT(maxSize > 0);
 
     // Create default mask
-    Matrix<imtype> mask(shapes[main](0),shapes[main](1),1.0f);
+    Matrix<imtype> mask(shapes[mainImage](0),shapes[mainImage](1),static_cast<imtype>(1));
 
     // Work out overlap for each image and set pixels to zero
-    const DirectionCoordinate& refDC = DCs[main];
+    const DirectionCoordinate& refDC = DCs[mainImage];
     bool anyOverlap = false;
     for (int i=0; i<names.size(); i++) {
         ASKAPLOG_DEBUG_STR(logger,"Field "<<i<<" : "<<names[i]);
         // apply mask for all images smaller than the biggest one
         // (if we have multiple images of the biggest size we are probably faceting)
-        if (shapes[i].product() < shapes[main].product()) {
+        if (shapes[i].product() < shapes[mainImage].product()) {
             Vector<float> x,y;
             const DirectionCoordinate& inDC = DCs[i];
-            Vector<IPosition> edgePoints = imagemath::LinmosAccumulator<float>::
+            const Vector<IPosition> edgePoints = imagemath::LinmosAccumulator<float>::
                 convertImageEdgePointsToRef(inDC,shapes[i],refDC, false, true, &x, &y);
             bool overlap = false;
             for (const IPosition & point : edgePoints) {
-                if (point >= 0  && point < shapes[main]) {
+                if (point >= 0  && point < shapes[mainImage]) {
                     overlap = true;
                     anyOverlap = true;
                     break;
                 }
             }
             if (overlap) {
-                ASKAPLOG_INFO_STR(logger,names[i]<<" overlaps "<<names[main]<<", setting a mask on main image");
-                LCPolygon poly(x,y,shapes[main]);
+                ASKAPLOG_INFO_STR(logger,names[i]<<" overlaps "<<names[mainImage]<<", setting a mask on mainImage image");
+                LCPolygon poly(x,y,shapes[mainImage]);
                 mask(poly.boundingBox())(poly.maskArray()) = 0;
             }
         }
