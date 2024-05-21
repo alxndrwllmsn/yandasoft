@@ -28,23 +28,13 @@ ASKAP_LOGGER(logger, ".measurementequation.imageamsmfsolver");
 #include <askap/askap/AskapError.h>
 #include <askap/profile/AskapProfiler.h>
 
-#include <casacore/casa/aips.h>
-#include <casacore/casa/Arrays/Array.h>
-#include <casacore/casa/Arrays/ArrayMath.h>
-#include <casacore/casa/Arrays/Matrix.h>
-#include <casacore/casa/Arrays/MatrixMath.h>
-#include <casacore/scimath/Mathematics/MatrixMathLA.h>
-#include <casacore/casa/Arrays/Vector.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/measurementequation/ImageParamsHelper.h>
+#include <askap/utils/CleanUtils.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
 #include <askap/scimath/utils/PaddingUtils.h>
 
 #include <askap/deconvolution/DeconvolverMultiTermBasisFunction.h>
-
-#include <casacore/lattices/LatticeMath/LatticeCleaner.h>
-#include <casacore/lattices/LatticeMath/MultiTermLatticeCleaner.h>
-#include <casacore/lattices/Lattices/ArrayLattice.h>
 
 #include <askap/measurementequation/ImageAMSMFSolver.h>
 
@@ -130,6 +120,16 @@ namespace askap
       // per facet in this case
       std::map<std::string, int> taylorMap;
       SynthesisParamsHelper::listTaylor(names, taylorMap);
+
+      // Work out overlap of offset fields with main field and create mask
+      // Main field is expected to be the first and largest encountered
+      Matrix<imtype> extraMask = (itsUseOverlapMask ?
+          overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
+
+      std::string firstImage;
+      double peakRes1 = 0;
+      double originalTarget = 0;
+      double originalTarget2 = 0;
 
       uint nParameters=0;
       ASKAPCHECK(taylorMap.size() != 0, "Solver doesn't have any images to solve for");
@@ -310,6 +310,10 @@ namespace askap
             // a unique string for every Taylor decomposition (unique for every facet for faceting)
             const std::string imageTag = tmIt->first + planeIter.tag();
             firstcycle = !SynthesisParamsHelper::hasValue(itsCleaners,imageTag);
+
+            if (firstImage.size()==0) {
+                firstImage = imageTag;
+            }
 
             Vector<Array<Float> > cleanVec(itsNumberTaylor);
             Vector<Array<Float> > dirtyVec(itsNumberTaylor);
@@ -496,6 +500,7 @@ namespace askap
             if (itsExtraOversamplingFactor) {
                 ASKAPLOG_INFO_STR(logger,
                     "Oversampling by an extra factor of "<<*itsExtraOversamplingFactor<<" before cleaning");
+                // Should we be oversampling (by FFT) the mask array? It could have sharp edges
                 SynthesisParamsHelper::oversample(maskArray,*itsExtraOversamplingFactor);
                 for (uInt order=0; order < limit; ++order) {
                     SynthesisParamsHelper::oversample(psfLongVec(order),*itsExtraOversamplingFactor);
@@ -547,6 +552,10 @@ namespace askap
                     itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
                     itsControl->setTargetObjectiveFunction2(deepThreshold());
                 }
+                if (imageTag == firstImage) {
+                    originalTarget = itsControl->targetObjectiveFunction();
+                    originalTarget2 = itsControl->targetObjectiveFunction2();
+                }
                 itsControl->setFractionalThreshold(fractionalThreshold());
 
                 itsCleaners[imageTag]->setControl(itsControl);
@@ -561,6 +570,10 @@ namespace askap
                 itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
 
                 if (maskArray.nelements()) {
+                    if (imageTag == firstImage &&
+                        extraMask.nelements()== maskArray.nelements()) {
+                        maskArray *= extraMask.addDegenerate(2);
+                    }
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
                 }
@@ -580,6 +593,10 @@ namespace askap
                 if (sigma > 0) {
                     itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
                     itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                    if (imageTag == firstImage) {
+                        originalTarget = itsControl->targetObjectiveFunction();
+                        originalTarget2 = itsControl->targetObjectiveFunction2();
+                    }
                     itsCleaners[imageTag]->setControl(itsControl);
                 }
             }
@@ -590,6 +607,27 @@ namespace askap
             // By convention, iterations are counted from scratch each
             // major cycle
             itsCleaners[imageTag]->state()->setCurrentIter(0);
+
+            if (useFirstImageForThresholds()) {
+                if (imageTag == firstImage ) {
+                    // restore the thresholds for first field
+                    itsControl->setTargetObjectiveFunction(originalTarget);
+                    itsControl->setTargetObjectiveFunction2(originalTarget2);
+                } else {
+                    // need to use final peak residual of first image as limit for cleaning of next images
+                    // to avoid overcleaning offset fields with little flux
+                    if (peakRes1 > originalTarget) {
+                        // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
+                        itsControl->setTargetObjectiveFunction(peakRes1);
+                        itsControl->setTargetObjectiveFunction2(0);
+                    } else {
+                        // if peakRes1 < firstTarget: set 1st target to original value, set 2nd Target to peakRes1
+                        itsControl->setTargetObjectiveFunction(originalTarget);
+                        itsControl->setTargetObjectiveFunction2(peakRes1);
+                    }
+                }
+                itsCleaners[imageTag]->setControl(itsControl);
+            }
 
             for (uInt order=0; order < itsNumberTaylor; ++order) {
                 if (this->itsNumberTaylor>1) {
@@ -654,6 +692,9 @@ namespace askap
             // Now update the stored peak residual
             const std::string peakResParam = std::string("peak_residual.") + imageTag;
             double peakRes = itsCleaners[imageTag]->state()->peakResidual();
+            if (imageTag == firstImage) {
+                peakRes1 = peakRes;
+            }
             // force a stop of the major cycles - clean diverging
             if (stop) {
               peakRes *= -1;
@@ -852,8 +893,7 @@ namespace askap
       } else {
           ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
       }
-
-
+      itsUseOverlapMask = parset.getBool("useoverlapmask", true);
     }
   }
 }

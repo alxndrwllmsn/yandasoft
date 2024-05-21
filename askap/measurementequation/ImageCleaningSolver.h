@@ -100,6 +100,21 @@ public:
    /// the casacore when signal-based cleaning was the only available option, equals to 0.9.
    void setMaskingThreshold(double mThreshold);
 
+   /// @brief how to apply thresholds for multiple images
+   /// @details When cleaning multiple images, especially a main field and some offset fields
+   /// you can avoid overcleaning the offset fields by treating the clean thresholds as if it
+   /// is one combined image
+   /// @return current setting - true = use first image, false = independent
+   bool useFirstImageForThresholds() const {return itsUseFirstImageForThresholds;}
+
+   /// @brief set how to apply thresholds for multiple images
+   /// @details When cleaning multiple images, especially a main field and some offset fields
+   /// you can avoid overcleaning the offset fields by treating the clean thresholds as if it
+   /// is one combined image
+   /// @param[in] useFirst : true = use first image, false = independent
+   void setUseFirstImageForThresholds(bool useFirst)
+   { itsUseFirstImageForThresholds = useFirst;}
+
    /// @brief set padding factor for this solver
    /// @details Because cleaning usually utilises FFT for performance (to calculate convolution with PSF),
    /// some padding is necessary to avoid wrap around. This parameter controlls the amount of padding.
@@ -179,6 +194,9 @@ private:
    /// If the mask value is lower than this threshold, the corresponding pixel is not cleaned.
    /// This is a classical signal-based cleaning.
    double itsMaskingThreshold;
+
+   /// @brief how to apply thresholds for multiple images
+   bool itsUseFirstImageForThresholds;
 
    /// @brief padding factor for solver
    /// @details Because cleaning usually utilises FFT for performance (to calculate convolution with PSF),

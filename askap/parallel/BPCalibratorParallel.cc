@@ -318,8 +318,9 @@ void BPCalibratorParallel::run()
                itsRefGainYY = "";
            }
 
+	   ASKAPLOG_INFO_STR(logger, "*** Starting iterations for beam="<< indices.first<<" and channel="<<indices.second<<" ***");
            for (int cycle = 0; (cycle < nCycles) && validSolution(); ++cycle) {
-                ASKAPLOG_INFO_STR(logger, "*** Starting calibration iteration " << cycle + 1 << " for beam="<<
+                ASKAPLOG_DEBUG_STR(logger, "*** Starting calibration iteration " << cycle + 1 << " for beam="<<
                               indices.first<<" and channel="<<indices.second<<" ***");
                 // iterator is used to access the current work unit inside calcNE
                 calcNE();
@@ -486,7 +487,7 @@ void BPCalibratorParallel::invalidateSolution() {
 void BPCalibratorParallel::solveNE()
 {
   if (itsComms.isWorker()) {
-      ASKAPLOG_INFO_STR(logger, "Solving normal equations");
+      ASKAPLOG_DEBUG_STR(logger, "Solving normal equations");
       ASKAPDEBUGASSERT(itsNe);
       const std::vector<std::string> unknowns = itsNe->unknowns();
       if (unknowns.size() == 0) {
@@ -505,7 +506,7 @@ void BPCalibratorParallel::solveNE()
       const std::vector<std::string> freeNames = itsModel->freeNames();
       for (std::vector<std::string>::const_iterator ci = freeNames.begin(); ci != freeNames.end(); ++ci) {
            if (std::find(unknowns.begin(), unknowns.end(), *ci) == unknowns.end()) {
-               ASKAPLOG_INFO_STR(logger, "Parameter "<<*ci<<" is missing in the normal equations - no data");
+               ASKAPLOG_DEBUG_STR(logger, "Parameter "<<*ci<<" is missing in the normal equations - no data");
                itsModel->fix(*ci);
            }
       }
@@ -523,8 +524,8 @@ void BPCalibratorParallel::solveNE()
       }
 
       itsSolver->solveNormalEquations(*itsModel,q);
-      ASKAPLOG_INFO_STR(logger, "Solved normal equations in "<< timer.real() << " seconds ");
-      ASKAPLOG_INFO_STR(logger, "Solution quality: "<<q);
+      ASKAPLOG_DEBUG_STR(logger, "Solved normal equations in "<< timer.real() << " seconds ");
+      ASKAPLOG_DEBUG_STR(logger, "Solution quality: "<<q);
 
       const unsigned int minRank = parset().getUint32("minrank",15u);
       if (q.rank() < minRank) {
@@ -536,16 +537,16 @@ void BPCalibratorParallel::solveNE()
       //wasim was here
       /*
       if (itsRefGain != "") {
-          ASKAPLOG_INFO_STR(logger, "Rotating phases to have that of "<<itsRefGain<<" equal to 0");
+          ASKAPLOG_DEBUG_STR(logger, "Rotating phases to have that of "<<itsRefGain<<" equal to 0");
           rotatePhases();
       }
       */
       if (itsRefGainXX != "") {
 	      if (itsRefGainXX == itsRefGainYY){
-		       ASKAPLOG_INFO_STR(logger, "Rotating both XX and YY phases to have that of "<<
+		       ASKAPLOG_DEBUG_STR(logger, "Rotating both XX and YY phases to have that of "<<
                   itsRefGainXX<<" equal to 0");
 	      } else{
-		       ASKAPLOG_INFO_STR(logger, "Rotating XX phases to have that of "<<
+		       ASKAPLOG_DEBUG_STR(logger, "Rotating XX phases to have that of "<<
                   itsRefGainXX<<" equal to 0 and YY phases to have that of "<<
                   itsRefGainYY<<" equal to 0");
 	      }
@@ -786,10 +787,10 @@ void BPCalibratorParallel::calcOne(const std::string& ms, const casacore::uInt c
 {
   casacore::Timer timer;
   timer.mark();
-  ASKAPLOG_INFO_STR(logger, "Calculating normal equations for " << ms <<" channel "<<chan<<" beam "<<beam);
+  ASKAPLOG_DEBUG_STR(logger, "Calculating normal equations for " << ms <<" channel "<<chan<<" beam "<<beam);
   // First time around we need to generate the equation
   if (!itsEquation) {
-      ASKAPLOG_INFO_STR(logger, "Creating measurement equation" );
+      ASKAPLOG_DEBUG_STR(logger, "Creating measurement equation" );
       accessors::TableDataSource ds(ms, accessors::TableDataSource::MEMORY_BUFFERS, dataColumn());
       ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
       accessors::IDataSelectorPtr sel=ds.createSelector();
@@ -807,7 +808,7 @@ void BPCalibratorParallel::calcOne(const std::string& ms, const casacore::uInt c
       ASKAPCHECK(itsModel, "Initial assumption of parameters is not defined");
 
       if (!itsPerfectME) {
-          ASKAPLOG_INFO_STR(logger, "Constructing measurement equation corresponding to the uncorrupted model");
+          ASKAPLOG_DEBUG_STR(logger, "Constructing measurement equation corresponding to the uncorrupted model");
           ASKAPCHECK(itsPerfectModel, "Uncorrupted model not defined");
           if (SynthesisParamsHelper::hasImage(itsPerfectModel)) {
               ASKAPCHECK(!SynthesisParamsHelper::hasComponent(itsPerfectModel),
@@ -832,7 +833,7 @@ void BPCalibratorParallel::calcOne(const std::string& ms, const casacore::uInt c
       createCalibrationME(it,itsPerfectME);
       ASKAPCHECK(itsEquation, "Equation is not defined");
   } else {
-      ASKAPLOG_INFO_STR(logger, "Reusing measurement equation" );
+      ASKAPLOG_DEBUG_STR(logger, "Reusing measurement equation" );
       // we need to update the model held by measurement equation
       // because it has been cloned at construction
       ASKAPCHECK(itsEquation, "Equation is not defined");
@@ -841,7 +842,7 @@ void BPCalibratorParallel::calcOne(const std::string& ms, const casacore::uInt c
   }
   ASKAPCHECK(itsNe, "NormalEquations are not defined");
   itsEquation->calcEquations(*itsNe);
-  ASKAPLOG_INFO_STR(logger, "Calculated normal equations for "<< ms << " channel "<<chan<<" beam " <<beam<<" in "<< timer.real()
+  ASKAPLOG_DEBUG_STR(logger, "Calculated normal equations for "<< ms << " channel "<<chan<<" beam " <<beam<<" in "<< timer.real()
                      << " seconds ");
 }
 

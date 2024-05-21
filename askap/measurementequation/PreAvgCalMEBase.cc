@@ -204,7 +204,7 @@ void PreAvgCalMEBase::initIndexedNormalMatrixAndParameterIndex(scimath::GenericN
 /// @param[in] ne normal equations to update
 void PreAvgCalMEBase::calcGenericEquations(scimath::GenericNormalEquations &ne) const
 {
-    ASKAPLOG_INFO_STR(logger, "Calculating Generic Equations.");
+    ASKAPLOG_DEBUG_STR(logger, "Calculating Generic Equations.");
 
     const scimath::PolXProducts &polXProducts = itsBuffer.polXProducts();
     const bool fdp = isFrequencyDependent();
@@ -214,7 +214,7 @@ void PreAvgCalMEBase::calcGenericEquations(scimath::GenericNormalEquations &ne) 
         initIndexedNormalMatrixAndParameterIndex(ne);
     }
 
-    ASKAPLOG_INFO_STR(logger, "Building the normal matrix.");
+    ASKAPLOG_DEBUG_STR(logger, "Building the normal matrix.");
 
     for (casacore::uInt row = 0; row < itsBuffer.nRow(); ++row) {
         scimath::ComplexDiffMatrix cdm = buildComplexDiffMatrix(itsBuffer, row);
