@@ -37,11 +37,12 @@
 using namespace casa;
 
 namespace askap {
+namespace utils {
 
 /// @brief helper method to compute overlap masks for a set of images
 /// @details when cleaning a set of images together we want to avoid putting the
 /// same source in the model multiple times, this method will create a mask for
-/// the first image that excludes the regions covered by other fields
+/// the biggest image that excludes the regions covered by other fields
 /// @param[in] ip Params contains image parameters (starting with "image.")
 /// @param[in] taylorMap map with image base names and number of Taylor terms
 /// @param[in] extraOversamplingFactor if true, apply the oversampling factor when
@@ -51,6 +52,7 @@ namespace askap {
 Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string,int>& taylorMap,
     boost::optional<float> extraOversamplingFactor);
 
+} // namespace utils
 } // namespace askap
 
 #endif
