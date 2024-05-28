@@ -553,6 +553,104 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
    ASKAPLOG_DEBUG_STR(logger, "Passed the barrier");
 }
 
+/// @brief helper method to create and configure work and (optionally) root imagers
+/// @details This method encapsulates the part of single work unit processing where the work and root imagers are created. 
+/// Using two imager objects is a bit of the technical debt - ideally, one has to merge normal equations or models directly.
+/// But this is deeply in the design of this the application and left as is for now. Normally, all gridding of data is taken place
+/// in the 'work imager' and the results are merged into 'root imager' when ready. If the root imager is not defined, the work imager
+/// becomes one for subsequent data merge. However, the logic of creating these imagers depend on the mode (e.g. itsUpdateDir, itsLocalSolver).
+/// This method encapsulates all logic, so it can be repeated easily for both normal gridding and sample grid calculation for traditional weighting.
+/// @param[in] wu work unit to work with (parameters like frequency, channel and the dataset may be used). Note, access to data currently happens
+/// in the joint imaging mode where the full image is created through dummy iteration hack.
+/// @param[inout] rootImagerPtr shared pointer to CalcCore object to use as the root imager (if empty, it is created in the joint imaging mode)
+/// @return shared pointer to CalcCore object to be used as a work imager for the given work unit
+boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWorkUnit &wu, boost::shared_ptr<CalcCore> &rootImagerPtr) const
+{
+   ASKAPASSERT(itsDSM);
+   const int localChannel = wu.get_localChannel();
+   const double globalFrequency = wu.get_channelFrequency();
+   const int globalChannel = wu.get_globalChannel();
+   TableDataSource& ds = itsDSM->dataSource(wu.get_dataset());
+
+   if (itsUpdateDir) {
+       // note, this can update the parset which is then used to construct CalcCore objects
+       itsAdvisor->updateDirectionFromWorkUnit(wu);
+   }
+
+   // to accumulate data from the current work unit
+   boost::shared_ptr<CalcCore> workingImagerPtr;
+   if (itsUpdateDir || !rootImagerPtr) {
+       // for itsUpdateDir mode gridders cannot be cached as they have a tangent point
+       // so use the appropriate CalcCore constructor (and same case if the cache is empty
+       // solver is initialised if root imager has not yet been defined and it is not joint deconvolution mode
+       // (i.e. if this working imager will eventually become the root imager for subsequent data accumulation)
+       workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency, !rootImagerPtr && !itsUpdateDir));
+   } else {
+       // in this case we can reuse gridder from the rootImager (created previously)
+       // also, inhibit solver initialisation because we only run solver in the root imager
+       workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency,false));
+   }
+
+   CalcCore& workingImager = *workingImagerPtr; // just for the semantics
+   if (itsUpdateDir) {
+       // MV: we could've had more intelligent checking whether we need a new subpatch here
+       // (i.e. there could be multiple epochs for the same beam). Leave it as it was before
+       // the refactoring.
+       const bool useSubSizedImages = true;
+       setupImage(workingImager.params(), globalFrequency, useSubSizedImages);
+       // Note, the original code prior to refactoring had "if (majorCycleNumber > 0)" condition for model copy
+       // the following may need to be adjusted if I (MV) didn't understand the logic correctly
+       if (rootImagerPtr && rootImagerPtr->params()) {
+           copyModel(rootImagerPtr->params(),workingImager.params());
+       } else {
+           // MV: use the same approach with a dummy iteration as in the code prior to refactoring
+           // (this is to setup a full size NE to linmos into. This condition indicates that we have
+           // the first work unit processed. On subsequent major cycles rootImager will contain the new model and
+           // for subsequent work units copyModel shouldn't do any harm
+           // I added the following assert condition as I don't expect rootImager defined without a model. Another
+           // wrapping if-statement will be necessary if this assumption doesn't hold
+           ASKAPASSERT(!rootImagerPtr);
+           // change gridder for initial calcNE in itsUpdateDir mode
+           LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
+           tmpParset.replace("gridder","SphFunc");
+           // the following will initialise the solver (i.e. default parameter)
+           rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
+           // setup full size image
+           setupImage(rootImagerPtr->params(), globalFrequency, false);
+           try {
+              rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
+              rootImagerPtr->configureNormalEquationsForMosaicing();
+              rootImagerPtr->zero(); // then we delete all our work ....
+           }
+           catch (const askap::AskapError& e) {
+                  ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - dummy run for rootImager in updatedirection mode");
+                  ASKAPLOG_WARN_STR(logger,"Ignoring the current work unit");
+                  // reset rootImagerPtr to ensure we attempt full size NE generation with the next work unit
+                  rootImagerPtr.reset();
+                  throw;
+           }
+       }
+   } else {
+       if (rootImagerPtr) {
+           workingImager.replaceModelByReference(rootImagerPtr->params());
+       } else {
+           if (itsLocalSolver) {
+               // setup full sized image
+               setupImage(workingImager.params(), globalFrequency, false);
+           } else {
+               // need to receve the model from master
+               // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
+               // can receive the model outside of this method
+               ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
+               workingImager.receiveModel();
+               // MV: the message has been copied as is, need to verify that this condition indeed only happens for cycle 0 in the new structure
+               ASKAPLOG_INFO_STR(logger, "Worker received initial model for cycle 0");
+           }
+       }
+   }
+   return workingImagerPtr;
+}
+
 /// @brief helper method to process a single work unit
 /// @details This method encapsulates a part of the old processChannel calculating and merging NE for a single work
 /// unit. The resulting NE is either added to the root imager passed as the parameter or a new CalcCore object is
@@ -564,85 +662,12 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 /// no effect.
 void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const
 {
-   ASKAPASSERT(itsDSM);
-   const int localChannel = wu.get_localChannel();
-   const double globalFrequency = wu.get_channelFrequency();
-   const int globalChannel = wu.get_globalChannel();
-   TableDataSource& ds = itsDSM->dataSource(wu.get_dataset());
-   if (itsUpdateDir) {
-       itsAdvisor->updateDirectionFromWorkUnit(wu);
-   }
    try {
         // to accumulate data from the current work unit
-        boost::shared_ptr<CalcCore> workingImagerPtr;
-        if (itsUpdateDir || !rootImagerPtr) {
-            // for itsUpdateDir mode gridders cannot be cached as they have a tangent point
-            // so use the appropriate CalcCore constructor (and same case if the cache is empty
-            // solver is initialised if root imager has not yet been defined and it is not joint deconvolution mode
-            // (i.e. this working imager will be returned as the root imager for future data accumulation)
-            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency, !rootImagerPtr && !itsUpdateDir));
-        } else {
-            // in this case we can reuse gridder from the rootImager (created previously)
-            // also, inhibit solver initialisation because we only run solver in the root imager
-            workingImagerPtr.reset(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency,false));
-        }
+        boost::shared_ptr<CalcCore> workingImagerPtr = createImagers(wu, rootImagerPtr);
+        ASKAPDEBUGASSERT(workingImagerPtr);
         CalcCore& workingImager = *workingImagerPtr; // just for the semantics
-        if (itsUpdateDir) {
-            // MV: we could've had more intelligent checking whether we need a new subpatch here
-            // (i.e. there could be multiple epochs for the same beam). Leave it as it was before
-            // the refactoring.
-            const bool useSubSizedImages = true;
-            setupImage(workingImager.params(), globalFrequency, useSubSizedImages);
-            // Note, the original code prior to refactoring had "if (majorCycleNumber > 0)" condition for model copy
-            // the following may need to be adjusted if I (MV) didn't understand the logic correctly
-            if (rootImagerPtr && rootImagerPtr->params()) {
-                copyModel(rootImagerPtr->params(),workingImager.params());
-            } else {
-                // MV: use the same approach with a dummy iteration as in the code prior to refactoring
-                // (this is to setup a full size NE to linmos into. This condition indicates that we have
-                // the first work unit processed. On subsequent major cycles rootImager will contain the new model and
-                // for subsequent work units copyModel shouldn't do any harm
-                // I added the following assert condition as I don't expect rootImager defined without a model. Another
-                // wrapping if-statement will be necessary if this assumption doesn't hold
-                ASKAPASSERT(!rootImagerPtr);
-                // change gridder for initial calcNE in itsUpdateDir mode
-                LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
-                tmpParset.replace("gridder","SphFunc");
-                // the following will initialise the solver (i.e. default parameter)
-                rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
-                // setup full size image
-                setupImage(rootImagerPtr->params(), globalFrequency, false);
-                try {
-                   rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
-                   rootImagerPtr->configureNormalEquationsForMosaicing();
-                   rootImagerPtr->zero(); // then we delete all our work ....
-                }
-                catch (const askap::AskapError& e) {
-                       ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - dummy run for rootImager in updatedirection mode");
-                       ASKAPLOG_WARN_STR(logger,"Ignoring the current work unit");
-                       // reset rootImagerPtr to ensure we attempt full size NE generation with the next work unit
-                       rootImagerPtr.reset();
-                       throw;
-                }
-            }
-        } else {
-            if (rootImagerPtr) {
-                workingImager.replaceModelByReference(rootImagerPtr->params());
-            } else {
-                if (itsLocalSolver) {
-                    // setup full sized image
-                    setupImage(workingImager.params(), globalFrequency, false);
-                } else {
-                    // need to receve the model from master
-                    // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
-                    // can receive the model outside of this method
-                    ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
-                    workingImager.receiveModel();
-                    // MV: the message has been copied as is, need to verify that this condition indeed only happens for cycle 0 in the new structure
-                    ASKAPLOG_INFO_STR(logger, "Worker received initial model for cycle 0");
-                }
-            }
-        }
+
         // grid and image
         try {
             workingImager.calcNE();
@@ -685,13 +710,12 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
             workingImager.addGridsToModel(rootImagerPtr->params());
         }
         // MV: it would be nice to think about proper reuse of measurement equation (and associated gridders), currently they are recreated
-        // for every work unit which may not be ideal. For now we can dispose the measurement equation now in the root imager as it is not
+        // for every work unit which may not be ideal. For now we can dispose the measurement equation in the root imager as it is not
         // needed there. If it doesn't exist there the following call is very cheap.
         rootImagerPtr->resetMeasurementEquation();
    }
    catch(const askap::AskapError& e) {
          ASKAPLOG_WARN_STR(logger, "Askap error in imaging - skipping accumulation: carrying on - this will result in a blank channel" << e.what());
-         std::cerr << "Askap error in: " << e.what() << std::endl;
    }
 }
 
@@ -817,7 +841,7 @@ void ContinuumWorker::processChannels()
 
                   } // for loop over workunits of the given frequency block (or all of them in continuum mode)
 
-                  // minor cycle would fail of rootImagerPtr is void (exception handler later on would write a blank image if necessary)
+                  // minor cycle would fail if rootImagerPtr is void (exception handler later on would write a blank image if necessary)
                   if (runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles)) {
                       // we're here if the early termination condition has been triggered (i.e. on thresholds)
                       break;

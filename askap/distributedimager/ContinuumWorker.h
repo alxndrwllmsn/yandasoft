@@ -156,6 +156,19 @@ class ContinuumWorker : public boost::noncopyable
         /// no effect.
         void processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const;
 
+        /// @brief helper method to create and configure work and (optionally) root imagers
+        /// @details This method encapsulates the part of single work unit processing where the work and root imagers are created. 
+        /// Using two imager objects is a bit of the technical debt - ideally, one has to merge normal equations or models directly.
+        /// But this is deeply in the design of this the application and left as is for now. Normally, all gridding of data is taken place
+        /// in the 'work imager' and the results are merged into 'root imager' when ready. If the root imager is not defined, the work imager
+        /// becomes one for subsequent data merge. However, the logic of creating these imagers depend on the mode (e.g. itsUpdateDir, itsLocalSolver).
+        /// This method encapsulates all logic, so it can be repeated easily for both normal gridding and sample grid calculation for traditional weighting.
+        /// @param[in] wu work unit to work with (parameters like frequency, channel and the dataset may be used). Note, access to data currently happens
+        /// in the joint imaging mode where the full image is created through dummy iteration hack.
+        /// @param[inout] rootImagerPtr shared pointer to CalcCore object to use as the root imager (if empty, it is created in the joint imaging mode)
+        /// @return shared pointer to CalcCore object to be used as a work imager for the given work unit
+        boost::shared_ptr<CalcCore> createImagers(const cp::ContinuumWorkUnit &wu, boost::shared_ptr<CalcCore> &rootImagerPtr) const;
+
         /// @brief helper method to perform minor cycle activities
         /// @details This method encapsulates running the solver at the conclusion of each major cycle and
         /// associated data transfers, if necessary. It can be viewed at the place where the minor cycle is
