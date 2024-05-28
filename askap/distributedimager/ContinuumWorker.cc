@@ -840,7 +840,7 @@ void ContinuumWorker::processChannels()
 
 
                  if (itsRestore) {
-                     ASKAPLOG_INFO_STR(logger, "Running restore");
+                     ASKAPLOG_DEBUG_STR(logger, "Running restore");
                      rootImager.restoreImage();
                  }
 
@@ -852,7 +852,7 @@ void ContinuumWorker::processChannels()
 
                  itsStats.logSummary();
 
-                 ASKAPLOG_INFO_STR(logger, "writing channel into cube");
+                 ASKAPLOG_DEBUG_STR(logger, "writing channel into cube");
                  ASKAPCHECK(wuLastProcessedIt != wuEndIt, "No work units seem to be processed - logic error or bad configuration?");
 
                  if (itsComms.isWriter()) {
@@ -903,7 +903,7 @@ void ContinuumWorker::processChannels()
         } // catch block bypassing channel write in spectral line mode or passing the exception in continuum
    } // for loop over frequency blocks (just one pass for the continuum case)
 
-   ASKAPLOG_INFO_STR(logger,"Finished imaging");
+   ASKAPLOG_DEBUG_STR(logger,"Finished imaging");
 
    if (itsLocalSolver) {
        // cleanup
@@ -912,12 +912,12 @@ void ContinuumWorker::processChannels()
    // MV: I don't think the barrier is necesary here. If it is needed to ensure all channel write operations are
    // performed before going further, then we have to move it into performOutstandingWriteJobs.
    // Anyway, leave it as it was prior to refactoring for now
-   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+   ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
    itsComms.barrier(itsComms.theWorkers());
-   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+   ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
 
    // write out the beam log
-   ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
+   ASKAPLOG_DEBUG_STR(logger, "About to log the full set of restoring beams");
    logBeamInfo();
    logWeightsInfo();
 }
@@ -943,9 +943,9 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        rootImagerPtr->sendNE();
 
        // MV: for now leave the original barrier in place although it is not required
-       ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+       ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
        itsComms.barrier(itsComms.theWorkers());
-       ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+       ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
 
        // now we have to wait for the model (solution) to come back.
        // MV: except on the very last major cycle
@@ -972,7 +972,7 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        }
    }
    // MV: although fine for now, the following if-statement conceptually is not a part of the minor cycle. It may be better to have it
-   // in a separate method making this clean up action it more explicit.
+   // in a separate method making this clean up action more explicit.
    if (!lastCycle) {
        ASKAPLOG_DEBUG_STR(logger, "Continuing - Reset normal equations");
        if (itsUpdateDir) {
