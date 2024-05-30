@@ -49,6 +49,7 @@
 #include "askap/distributedimager/DataSourceManager.h"
 #include "askap/distributedimager/CalcCore.h"
 #include <askap/utils/StatsAndMask.h>
+#include <askap/gridding/IUVWeightCalculator.h>
 
 namespace askap {
 namespace cp {
@@ -318,6 +319,14 @@ class ContinuumWorker : public boost::noncopyable
         /// @brief updatedirection option (switching on joint gridding)
         const bool itsUpdateDir;
 
+        /// @brief flag that we need the sample density grid (and that traditional weighting is done)
+        /// @details If defined, sample density grid needs to be constructed and traditional weighting
+        /// needs to be done. Note, this serves the same purpose as the similarly named method in
+        /// ImagerParallel. However, it is handy to get this flag available in the worker before the imager
+        /// is constructed (because we can have many imagers and it makes the code messy). Ideally, we need to
+        /// clean up some technical debt and probably avoid having unnecessary responsibilities assign to the 
+        /// imager class.
+        const bool itsSampleDensityGridNeeded;
 };
 
 };

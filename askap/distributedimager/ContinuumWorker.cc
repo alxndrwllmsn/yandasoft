@@ -96,7 +96,10 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     // number of cube writers (itsGridType and itsParset are already defined and could be used)
     itsNumWriters(configureNumberOfWriters()),
     // joint gridding of multiple beams/directions
-    itsUpdateDir(parset.getBool("updatedirection",false))
+    itsUpdateDir(parset.getBool("updatedirection",false)),
+    // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether 
+    // the shared pointer is not empty. But this is cheap. We can clear this up later)
+    itsSampleDensityGridNeeded(ImagerParallel::createUVWeightCalculator(parset))
 {
     ASKAPTRACE("ContinuumWorker::constructor");
 
@@ -664,7 +667,7 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
 {
    try {
         // to accumulate data from the current work unit
-        boost::shared_ptr<CalcCore> workingImagerPtr = createImagers(wu, rootImagerPtr);
+        const boost::shared_ptr<CalcCore> workingImagerPtr = createImagers(wu, rootImagerPtr);
         ASKAPDEBUGASSERT(workingImagerPtr);
         CalcCore& workingImager = *workingImagerPtr; // just for the semantics
 
@@ -715,7 +718,15 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
         rootImagerPtr->resetMeasurementEquation();
    }
    catch(const askap::AskapError& e) {
-         ASKAPLOG_WARN_STR(logger, "Askap error in imaging - skipping accumulation: carrying on - this will result in a blank channel" << e.what());
+         if (itsLocalSolver) {
+             ASKAPLOG_ERROR_STR(logger, "Askap error in imaging - skipping accumulation and carrying on - this will result in a blank channel (dataset " <<
+                                wu.get_dataset()<<" global channel "<<wu.get_globalChannel()<<"(: "<< e.what());
+         } else {
+             // MV: it is not clear to me whether we should ignore this error, but keep the same behaviour as it was prior to the refactoring
+             // (just change the message to better reflect the situation)
+             ASKAPLOG_ERROR_STR(logger, "Askap error in imaging - skipping accumulation of some or all data in "<<
+                               wu.get_dataset()<<" and carrying on: " << e.what());
+         }
    }
 }
 
