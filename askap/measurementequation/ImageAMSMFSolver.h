@@ -126,6 +126,7 @@ namespace askap
 
       Bool itsDecoupled;
       Bool itsUseScaleMask;
+      Bool itsUseScalePixels;
       Bool itsReadScaleMask;
       Bool itsWriteScaleMask;
       Bool itsUseOverlapMask;

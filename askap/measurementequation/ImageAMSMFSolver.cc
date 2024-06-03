@@ -501,7 +501,9 @@ namespace askap
                 ASKAPLOG_INFO_STR(logger,
                     "Oversampling by an extra factor of "<<*itsExtraOversamplingFactor<<" before cleaning");
                 // Should we be oversampling (by FFT) the mask array? It could have sharp edges
-                SynthesisParamsHelper::oversample(maskArray,*itsExtraOversamplingFactor);
+                if (maskArray.nelements()) {
+                    SynthesisParamsHelper::oversample(maskArray,*itsExtraOversamplingFactor);
+                }
                 for (uInt order=0; order < limit; ++order) {
                     SynthesisParamsHelper::oversample(psfLongVec(order),*itsExtraOversamplingFactor);
                     if(order < this->itsNumberTaylor) {
@@ -568,6 +570,7 @@ namespace askap
                 itsCleaners[imageTag]->setSolutionType(itsSolutionType);
                 itsCleaners[imageTag]->setDecoupled(itsDecoupled);
                 itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
+                itsCleaners[imageTag]->setUseScalePixels(itsUseScalePixels);
 
                 if (maskArray.nelements()) {
                     if (imageTag == firstImage &&
@@ -882,8 +885,13 @@ namespace askap
       itsReadScaleMask = parset.getBool("readscalemask",false);
       itsWriteScaleMask = !itsReadScaleMask && parset.getBool("writescalemask",false);
       itsUseScaleMask = parset.getBool("usescalemask",true) || itsReadScaleMask || itsWriteScaleMask;
+      itsUseScalePixels = parset.getBool("usescalepixels",itsUseScaleMask);
       if (itsUseScaleMask) {
-          ASKAPLOG_INFO_STR(logger, "Using bitmask for scale masks");
+          if (itsUseScalePixels) {
+              ASKAPLOG_INFO_STR(logger, "Using pixel lists for scale masks");
+          } else {
+              ASKAPLOG_INFO_STR(logger, "Using bitmask image for scale masks");
+          }
           if (itsReadScaleMask) {
               ASKAPLOG_INFO_STR(logger, "Will read scale mask image");
           }
@@ -893,6 +901,7 @@ namespace askap
       } else {
           ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
       }
+
       itsUseOverlapMask = parset.getBool("useoverlapmask", true);
     }
   }
