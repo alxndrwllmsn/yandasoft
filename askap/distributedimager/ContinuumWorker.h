@@ -66,6 +66,14 @@ class ContinuumWorker : public boost::noncopyable
         void writeCubeStatistics();
 
     private:
+        /// @brief check if sample density grid needs to be built
+        /// @details For now, use the shared pointer carrying uv weight calculator as a flag that we need to
+        /// build grid of weights (this is what uv weight calculator works with). The appropriate factory method
+        /// is called in the constructor, so technically the output of this method is predetermined for all 
+        /// instances of this class.
+        /// @return true if sample density grid needs to be built
+        bool inline isSampleDensityGridNeeded() const { return static_cast<bool>(itsUVWeightCalculator); }
+
         /// @brief configure allocation in channels
         /// @details This method sets up channel allocation for cube writing (in local solver mode)
         /// or combines channels in the global solver mode if configured in the parset.
@@ -156,6 +164,15 @@ class ContinuumWorker : public boost::noncopyable
         /// for writing later on. We only do this in the last major cycle, hence the name. In the central solver case this option has
         /// no effect.
         void processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu, bool lastcycle) const;
+
+        /// @brief helper method to accumulate uv-weights for a single work unit
+        /// @details It is alalogous to processOneWorkUnit, but is used in the section responsible for traditional weighting.
+        /// The resulting sample density grid (wrapped into an NE-like object) is either added to the root imager passed as a parameter or
+        /// a new CalcCore object is created and returned if the passed shared pointer is null.
+        /// @param[inout] rootImagerPtr shared pointer to CalcCore object to update or create (if empty shared pointer is passed)
+        /// @param[in] wu work unit to process
+        void accumulateUVWeightsForOneWorkUnit(boost::shared_ptr<CalcCore> &rootImagerPtr, const cp::ContinuumWorkUnit &wu) const;
+
 
         /// @brief helper method to create and configure work and (optionally) root imagers
         /// @details This method encapsulates the part of single work unit processing where the work and root imagers are created. 
@@ -319,14 +336,14 @@ class ContinuumWorker : public boost::noncopyable
         /// @brief updatedirection option (switching on joint gridding)
         const bool itsUpdateDir;
 
-        /// @brief flag that we need the sample density grid (and that traditional weighting is done)
-        /// @details If defined, sample density grid needs to be constructed and traditional weighting
-        /// needs to be done. Note, this serves the same purpose as the similarly named method in
-        /// ImagerParallel. However, it is handy to get this flag available in the worker before the imager
-        /// is constructed (because we can have many imagers and it makes the code messy). Ideally, we need to
-        /// clean up some technical debt and probably avoid having unnecessary responsibilities assign to the 
-        /// imager class.
-        const bool itsSampleDensityGridNeeded;
+        /// @brief shared pointer to the uv-weight calculator object
+        /// @details it can also be used as a flag that the sample density grid is needed (and that traditional weighting is done)
+        /// If defined, the sample density grid needs to be constructed and traditional weighting
+        /// needs to be done. Note, this serves the same purpose as the similarly named data member in ImagerParallel class. However, 
+        /// it is handy to get this object available in this class before the imager is constructed (because we can have many 
+        /// imagers and it makes the code messy). Ideally, we need to clean up some technical debt and probably avoid having 
+        /// unnecessary responsibilities assign to the imager class.
+        const boost::shared_ptr<IUVWeightCalculator> itsUVWeightCalculator;
 };
 
 };
