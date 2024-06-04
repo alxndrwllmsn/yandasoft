@@ -791,7 +791,6 @@ void ContinuumWorker::processChannels()
         // the counter is for reporting and to size the writing job in some circumstances
         // define it in the frequency loop as opposed to inner loops for that latter cause
         size_t workUnitCounter = 0u;
-        bool forcedStop = false;
         try {
              for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
                   if (majorCycleNumber != nCycles) {
@@ -817,8 +816,7 @@ void ContinuumWorker::processChannels()
 
                   } // for loop over workunits of the given frequency block (or all of them in continuum mode)
                   // minor cycle would fail of rootImagerPtr is void (exception handler later on would write a blank image if necessary)
-                  forcedStop = runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles);
-                  if (forcedStop) {
+                  if (runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles)) {
                       // we're here if the early termination condition has been triggered (i.e. on thresholds)
                       if (itsLocalSolver || majorCycleNumber == nCycles) {
                           break;
