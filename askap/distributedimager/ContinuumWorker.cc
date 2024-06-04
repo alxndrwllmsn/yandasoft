@@ -199,9 +199,9 @@ void ContinuumWorker::run(void)
       break;
     } else if (wu.get_payloadType() == ContinuumWorkUnit::NA) {
       // MV: in the original code before refactoring NA allocations would be processed and skipped later
-      // in principle, this allows us to do other actions (e.g. related to writing). However, I am not sure it 
+      // in principle, this allows us to do other actions (e.g. related to writing). However, I am not sure it
       // ever worked correctly before the refactoring (would've written a blank image into wrong channel). After the
-      // refactoring it triggered some asserts and, therefore, the decision was made to skip such work units here. 
+      // refactoring it triggered some asserts and, therefore, the decision was made to skip such work units here.
       // If such work units are found necessary later, the logic needs to be altered in processChannels to deal with them.
       // And probably the logic of writing needs to be cleared up at some point (there is still some technical debt which
       // is causing issues here)
@@ -791,7 +791,7 @@ void ContinuumWorker::processChannels()
         // the counter is for reporting and to size the writing job in some circumstances
         // define it in the frequency loop as opposed to inner loops for that latter cause
         size_t workUnitCounter = 0u;
-
+        bool forcedStop = false;
         try {
              for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
                   if (majorCycleNumber != nCycles) {
@@ -816,11 +816,15 @@ void ContinuumWorker::processChannels()
                        processOneWorkUnit(rootImagerPtr, *wuIt, majorCycleNumber == nCycles);
 
                   } // for loop over workunits of the given frequency block (or all of them in continuum mode)
-
                   // minor cycle would fail of rootImagerPtr is void (exception handler later on would write a blank image if necessary)
-                  if (runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles)) {
+                  forcedStop = runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles);
+                  if (forcedStop) {
                       // we're here if the early termination condition has been triggered (i.e. on thresholds)
-                      break;
+                      if (itsLocalSolver || majorCycleNumber == nCycles) {
+                          break;
+                      }
+                      // we need to do one more round to send the final residuals
+                      majorCycleNumber = nCycles - 1;
                   }
              } // for loop over major cycles
 
