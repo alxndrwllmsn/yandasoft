@@ -79,10 +79,9 @@ spr.addToParset("Cimager.Images.nyquistgridding=true")
 # increase the number of major cycles, but it is expected that we terminate after the first one due to the threshold setting below
 # the following will override the original setting by adding a duplicated keyword at the end of the parset
 spr.addToParset("Cimager.ncycles=3")
-spr.addToParset("Cimager.threshold.majorcycle=3Jy")
+spr.addToParset("Cimager.threshold.majorcycle=0.05Jy")
 spr.runNewImagerParallel(nProcs=2, timeout="5m")
-# MV: need to investigate why with this cutoff the flux doesn't come up right, but for now test only that it runs without a deadlock
-analyseResult(spr, checkFlux = False)
+analyseResult(spr, checkFlux = True)
 
 print("Offset pointing")
 os.system("rm -rf *.1934.*")

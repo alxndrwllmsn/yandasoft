@@ -958,10 +958,8 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        }
    }
    const bool forcedStopping = checkStoppingThresholds(rootImagerPtr->params());
-   // MV: I am not sure this matches the old behaviour in the non-local solver case
-   if (forcedStopping) {
-       return true;
-   }
+   // MV: it would be nice to check if continuum and spectral line mode do the same thing in terms of the number of major cycles 
+   // (in both cases of stopping on thresholds and on reaching the limit of major cycles)
    const bool lastCycle = forcedStopping || !haveMoreMajorCycles;
    if (itsLocalSolver && !lastCycle) {
        try {
@@ -975,8 +973,8 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
    }
    // MV: although fine for now, the following if-statement conceptually is not a part of the minor cycle. It may be better to have it
    // in a separate method making this clean up action it more explicit.
-   if (!lastCycle) {
-       ASKAPLOG_DEBUG_STR(logger, "Continuing - Reset normal equations");
+   if (haveMoreMajorCycles && !(forcedStopping && itsLocalSolver)) {
+       ASKAPLOG_DEBUG_STR(logger, "Preparing for one more iteration - Reset normal equations");
        if (itsUpdateDir) {
            // MV: the original code has the following comment:
            // Actually I've found that I cannot completely empty the NE. As I need the full size PSF and this is stored in the NE
@@ -987,7 +985,7 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        }
    }
    itsStats.logSummary();
-   return false;
+   return forcedStopping;
 }
 
 
