@@ -124,7 +124,7 @@ namespace askap
       // Work out overlap of offset fields with main field and create mask
       // Main field is expected to be the first and largest encountered
       Matrix<imtype> extraMask = (itsUseOverlapMask ?
-          overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
+          utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
 
       std::string firstImage;
       double peakRes1 = 0;

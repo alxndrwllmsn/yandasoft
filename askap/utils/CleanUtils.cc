@@ -42,9 +42,8 @@ ASKAP_LOGGER(logger, "utils.cleanutils");
 
 
 using namespace casacore;
-using namespace askap::synthesis;
-
-namespace askap {
+using namespace askap;
+using namespace synthesis;
 
 /// @brief helper method to compute overlap masks for a set of images
 /// @details when cleaning a set of images together we want to avoid putting the
@@ -56,7 +55,7 @@ namespace askap {
 /// generating the output mask
 /// @return a Matrix with 1 for pixels with no overlap and 0 when there is overlap.
 /// If there is only a single image centre present, the Matrix will have shape (0,0)
-Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string,int>& taylorMap,
+Matrix<imtype> askap::utils::overlapMask(const scimath::Params& ip, const std::map<std::string,int>& taylorMap,
     boost::optional<float> extraOversamplingFactor)
 {
     // make list of unique image names (.taylor0 only), their centres and their sizes
@@ -77,6 +76,7 @@ Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string
             if (allEQ(dirCoord.referenceValue(), DCs[i].referenceValue()))
             {
                 // seen before, store this one if it is bigger
+
                 if (shape.product() > shapes[i].product()) {
                     shapes[i] = shape;
                     names[i] = name;
@@ -86,12 +86,14 @@ Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string
             }
         }
         if (!seen) {
+
             names.push_back(name);
             DCs.push_back(dirCoord);
             shapes.push_back(shape);
         }
     }
 
+    // Nothing to do if we have no, or a single field
     if (names.size() < 2) {
         return Matrix<imtype>();
     }
@@ -116,7 +118,6 @@ Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string
         }
     }
     ASKAPASSERT(maxSize > 0);
-
     // Create default mask
     Matrix<imtype> mask(shapes[mainImage](0),shapes[mainImage](1),static_cast<imtype>(1));
 
@@ -141,16 +142,16 @@ Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string
                 }
             }
             if (overlap) {
-                ASKAPLOG_INFO_STR(logger,names[i]<<" overlaps "<<names[mainImage]<<", setting a mask on mainImage image");
+                ASKAPLOG_INFO_STR(logger,names[i]<<" overlaps "<<names[mainImage]<<", setting a mask on the main image");
                 LCPolygon poly(x,y,shapes[mainImage]);
                 mask(poly.boundingBox())(poly.maskArray()) = 0;
             }
         }
     }
+    // if there is no overlap, we don't need the mask
     if (!anyOverlap) {
         mask.resize(0,0);
     }
     return mask;
 
 }
-} // namespace askap

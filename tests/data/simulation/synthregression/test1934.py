@@ -66,8 +66,22 @@ spr.addToParset("Cimager.ncycles=1")
 ## temporary disable traditional weighting until AXA-2792 is sorted out under code refactored in AXA-2849
 ##spr.addToParset("Cimager.uvweight = [ConjugatesAdderFFT, Robust]")
 spr.addToParset("Cimager.uvweight.robustness = -2.")
-spr.runNewImagerParallel(nProcs=2)
+spr.runNewImagerParallel(nProcs=2, timeout="5m")
 analyseResult(spr)
+
+print("Early termination of major cycle for central pointing with the new imager")
+os.system("rm -rf *.1934.*")
+spr.initParset()
+spr.addToParset("Cimager.dataset=1934pt0.ms")
+# Image only 10 channels for this test (otherwise it is too slow and combinedchannels don't work, see AXA-2457
+spr.addToParset("Cimager.Channels=[10,90]")
+spr.addToParset("Cimager.Images.nyquistgridding=true")
+# increase the number of major cycles, but it is expected that we terminate after the first one due to the threshold setting below
+# the following will override the original setting by adding a duplicated keyword at the end of the parset
+spr.addToParset("Cimager.ncycles=3")
+spr.addToParset("Cimager.threshold.majorcycle=0.05Jy")
+spr.runNewImagerParallel(nProcs=2, timeout="5m")
+analyseResult(spr, checkFlux = True)
 
 print("Offset pointing")
 os.system("rm -rf *.1934.*")

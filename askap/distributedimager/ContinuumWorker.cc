@@ -198,28 +198,33 @@ void ContinuumWorker::run(void)
       ASKAPLOG_INFO_STR(logger, "Worker has received complete allocation");
       break;
     } else if (wu.get_payloadType() == ContinuumWorkUnit::NA) {
-      ASKAPLOG_WARN_STR(logger, "Worker has received non applicable allocation");
-      ASKAPLOG_WARN_STR(logger, "In new scheme we still process it ...");
-
+      // MV: in the original code before refactoring NA allocations would be processed and skipped later
+      // in principle, this allows us to do other actions (e.g. related to writing). However, I am not sure it
+      // ever worked correctly before the refactoring (would've written a blank image into wrong channel). After the
+      // refactoring it triggered some asserts and, therefore, the decision was made to skip such work units here.
+      // If such work units are found necessary later, the logic needs to be altered in processChannels to deal with them.
+      // And probably the logic of writing needs to be cleared up at some point (there is still some technical debt which
+      // is causing issues here)
+      ASKAPLOG_WARN_STR(logger, "Worker has received non applicable allocation - ignoring");
     } else {
 
       ASKAPLOG_DEBUG_STR(logger, "Worker has received valid allocation");
-    }
-    const string ms = wu.get_dataset();
-    ASKAPLOG_DEBUG_STR(logger, "Received Work Unit for dataset " << ms
-      << ", local (topo) channel " << wu.get_localChannel()
-      << ", global (topo) channel " << wu.get_globalChannel()
-      << ", frequency " << wu.get_channelFrequency() / 1.e6 << " MHz"
-      << ", width " << wu.get_channelWidth() / 1e3 << " kHz");
-    try {
+
+      const string ms = wu.get_dataset();
+      ASKAPLOG_DEBUG_STR(logger, "Received Work Unit for dataset " << ms
+         << ", local (topo) channel " << wu.get_localChannel()
+         << ", global (topo) channel " << wu.get_globalChannel()
+         << ", frequency " << wu.get_channelFrequency() / 1.e6 << " MHz"
+         << ", width " << wu.get_channelWidth() / 1e3 << " kHz");
+      try {
         ASKAPLOG_DEBUG_STR(logger, "Parset Reports (before): " << (itsParset.getStringVector("dataset", true)));
         preProcessWorkUnit(wu);
         ASKAPLOG_DEBUG_STR(logger, "Parset Reports (after): " << (itsParset.getStringVector("dataset", true)));
-    } catch (AskapError& e) {
+      } catch (AskapError& e) {
         ASKAPLOG_WARN_STR(logger, "Failure processing workUnit");
         ASKAPLOG_WARN_STR(logger, "Exception detail: " << e.what());
+      }
     }
-
 
     wrequest.sendRequest(itsMaster, itsComms);
 
@@ -773,6 +778,11 @@ void ContinuumWorker::processChannels()
         const WorkUnitContainer::const_iterator wuBeginIt = itsLocalSolver ? itsWorkUnits.begin(frequencyBlock) : itsWorkUnits.begin();
         const WorkUnitContainer::const_iterator wuEndIt = itsLocalSolver ? itsWorkUnits.end(frequencyBlock) : itsWorkUnits.end();
 
+        if (wuBeginIt == wuEndIt) {
+            ASKAPLOG_WARN_STR(logger, "No work assigned for this rank for frequency block "<<frequencyBlock + 1);
+            continue;
+        }
+
         // iterator to the last processed work unit (to use in writing, outside the work unit loop)
         // initialise it with end iterator to double check that it got updated within the loop and no wrong data
         // will get through by chance
@@ -781,7 +791,6 @@ void ContinuumWorker::processChannels()
         // the counter is for reporting and to size the writing job in some circumstances
         // define it in the frequency loop as opposed to inner loops for that latter cause
         size_t workUnitCounter = 0u;
-
         try {
              for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
                   if (majorCycleNumber != nCycles) {
@@ -792,10 +801,9 @@ void ContinuumWorker::processChannels()
                   }
                   workUnitCounter = 0u;
                   for (WorkUnitContainer::const_iterator wuIt = wuBeginIt; wuIt != wuEndIt; ++wuIt) {
-                       // skip unsupported work unit types (MV: do we need to do this? May be better not to add them to the list. For now do the same as the code prior to refactoring)
-                       if ((wuIt->get_payloadType() == ContinuumWorkUnit::DONE) || (wuIt->get_payloadType() == ContinuumWorkUnit::NA)) {
-                           continue;
-                       }
+                       // MV: the original code prior to refactoring had the codition skipping DONE and NA workunits here
+                       // Currently, we don't add them, hence the condition has been removed
+
                        // counter just for reporting and to spread writing jobs more evenly (although this can probably
                        // be done differently - use the same approach as in the code prior to refactoring for now)
                        ++workUnitCounter;
@@ -807,10 +815,14 @@ void ContinuumWorker::processChannels()
                        processOneWorkUnit(rootImagerPtr, *wuIt, majorCycleNumber == nCycles);
 
                   } // for loop over workunits of the given frequency block (or all of them in continuum mode)
-
+                  // minor cycle would fail of rootImagerPtr is void (exception handler later on would write a blank image if necessary)
                   if (runMinorCycleSolver(rootImagerPtr, majorCycleNumber < nCycles)) {
                       // we're here if the early termination condition has been triggered (i.e. on thresholds)
-                      break;
+                      if (itsLocalSolver || majorCycleNumber == nCycles) {
+                          break;
+                      }
+                      // we need to do one more round to send the final residuals
+                      majorCycleNumber = nCycles - 1;
                   }
              } // for loop over major cycles
 
@@ -887,7 +899,7 @@ void ContinuumWorker::processChannels()
                } else {
                    // MV: I am not sure we have to report the counter here as the failure can happen during solve
                    ASKAPLOG_DEBUG_STR(logger, "Failed on count " << workUnitCounter);
-                   ASKAPDEBUGASSERT(wuLastProcessedIt != wuEndIt);
+                   ASKAPASSERT(wuLastProcessedIt != wuEndIt);
                    sendBlankImageToWriter(*wuLastProcessedIt);
                }
         } // catch block bypassing channel write in spectral line mode or passing the exception in continuum
@@ -946,10 +958,8 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        }
    }
    const bool forcedStopping = checkStoppingThresholds(rootImagerPtr->params());
-   // MV: I am not sure this matches the old behaviour in the non-local solver case
-   if (forcedStopping) {
-       return true;
-   }
+   // MV: it would be nice to check if continuum and spectral line mode do the same thing in terms of the number of major cycles 
+   // (in both cases of stopping on thresholds and on reaching the limit of major cycles)
    const bool lastCycle = forcedStopping || !haveMoreMajorCycles;
    if (itsLocalSolver && !lastCycle) {
        try {
@@ -963,8 +973,8 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
    }
    // MV: although fine for now, the following if-statement conceptually is not a part of the minor cycle. It may be better to have it
    // in a separate method making this clean up action it more explicit.
-   if (!lastCycle) {
-       ASKAPLOG_DEBUG_STR(logger, "Continuing - Reset normal equations");
+   if (haveMoreMajorCycles && !(forcedStopping && itsLocalSolver)) {
+       ASKAPLOG_DEBUG_STR(logger, "Preparing for one more iteration - Reset normal equations");
        if (itsUpdateDir) {
            // MV: the original code has the following comment:
            // Actually I've found that I cannot completely empty the NE. As I need the full size PSF and this is stored in the NE
@@ -975,7 +985,7 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        }
    }
    itsStats.logSummary();
-   return false;
+   return forcedStopping;
 }
 
 
