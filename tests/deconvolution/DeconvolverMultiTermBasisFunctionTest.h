@@ -50,10 +50,12 @@ class DeconvolverMultiTermBasisFunctionTest : public CppUnit::TestFixture
   CPPUNIT_TEST_EXCEPTION(testWrongShape, AskapError);
   CPPUNIT_TEST_EXCEPTION(testDeconvolveOffsetPSF, AskapError);
   CPPUNIT_TEST(testDeconvolvePSFSubset);
+  CPPUNIT_TEST(testScaleMask);
   CPPUNIT_TEST_SUITE_END();
 public:
 
   void setUp() {
+    ASKAPLOG_INFO_STR(logger,"test setUp");
     IPosition dimensions(2,100,100);
     itsDirty.reset(new Array<Float>(dimensions));
     itsDirty->set(0.0);
@@ -97,16 +99,19 @@ public:
   }
 
   void testCreate() {
+    ASKAPLOG_INFO_STR(logger,"test Create");
     itsDirty.reset(new Array<Float>(IPosition(2,100,100)));
     itsDirty->set(1.0);
     itsDB->updateDirty(*itsDirty);
   }
   void testWrongShape() {
+    ASKAPLOG_INFO_STR(logger,"test WrongShape");
     itsDirty.reset(new Array<Float>(IPosition(2,200,200)));
     itsDirty->set(0.0);
     itsDB->updateDirty(*itsDirty);
   }
   void testDeconvolveOffsetPSF() {
+    ASKAPLOG_INFO_STR(logger,"test DeconvolveOffset");
     itsDB->dirty()(IPosition(2,30,20))=1.0;
     itsDB->psf().set(0.0);
     itsDB->psf()(IPosition(2,70,70))=1.0;
@@ -115,6 +120,7 @@ public:
   }
 
   void testDeconvolveCenter() {
+    ASKAPLOG_INFO_STR(logger,"test DeconvolveCentre");
     itsDB->dirty().set(0.0);
     itsDB->dirty()(IPosition(2,50,50))=1.0;
     CPPUNIT_ASSERT(itsDB->deconvolve());
@@ -124,6 +130,7 @@ public:
   void testDeconvolvePSFSubset() {
     // this test was added in response to a bug where reuse of the deconvolver triggered shape mismatch when
     // a subset of the PSF was used for deconvolution
+    ASKAPLOG_INFO_STR(logger,"test DeconvolvePSFSubset");
     itsDB->dirty().set(0.0);
     itsDB->dirty()(IPosition(2,50,50))=1.0;
     itsDB->control()->setPSFWidth(50);
@@ -135,6 +142,25 @@ public:
     itsDB->state()->setCurrentIter(0);
     CPPUNIT_ASSERT(itsDB->deconvolve());
     CPPUNIT_ASSERT(itsDB->control()->terminationCause()==DeconvolverControl<Float>::CONVERGED);
+  }
+
+  void testScaleMask() {
+      ASKAPLOG_INFO_STR(logger,"test ScaleMask");
+      itsDB->setSolutionType("MAXBASE");
+      itsDB->setUseScaleBitMask(true);
+      itsDB->setUseScalePixels(true);
+      itsDB->dirty()(IPosition(2,45,45),IPosition(2,55,55))=1.0;
+      itsDB->control()->setTargetObjectiveFunction2(0.1);
+      itsDB->control()->setTargetIter(15);
+      CPPUNIT_ASSERT(itsDB->dirty()(IPosition(2,50,50))==1.0);
+      CPPUNIT_ASSERT(itsDB->deconvolve());
+      CPPUNIT_ASSERT(itsDB->control()->terminationCause()==DeconvolverControl<Float>::EXCEEDEDITERATIONS);
+      Array<float> mask = itsDB->scaleMask();
+      itsDB->setScaleMask(mask);
+      Array<float> mask2 = itsDB->scaleMask();
+      for( uint j=0; j<mask.nelements(); j++) {
+        CPPUNIT_ASSERT_EQUAL(mask.data()[j],mask2.data()[j]);
+      }
   }
 
 private:
