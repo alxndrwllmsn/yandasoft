@@ -1981,22 +1981,22 @@ namespace askap {
         void DeconvolverMultiTermBasisFunction<T, FT>::setScaleMask(const Matrix<T>& scaleMask)
         {
             ASKAPCHECK(this->dirty(0).shape() == scaleMask.shape(),"Mismatch of dirty image and scale mask");
+            ASKAPCHECK(this->itsBasisFunction, "Basis function not initialised");
+            const uInt nBases(this->itsBasisFunction->numberBases());
+            itsScalePixels.resize(nBases);
             if (itsUseScalePixels){
                 ASKAPASSERT(scaleMask.contiguousStorage());
                 // we could use std::numeric_limits<T>::digits, but for double
                 // the uint doesn't have enough range - anyway 24 scales seems plenty
-                const uint maxScales = 24;
+                ASKAPCHECK(nBases <= 24,"Scalemask only supports up to 24 scales");
                 for (uint i=0; i < scaleMask.size(); i++) {
                     const uint val = static_cast<uint>(scaleMask.data()[i]);
                     // Need to deal with multiple scales at same pixel
                     if (val > 0) {
-                        for (uint scale = 0; scale < maxScales; scale++) {
+                        for (uint scale = 0; scale < nBases; scale++) {
                             const uint scaleBit = 1<<scale;
                             if (val & scaleBit) {
                                 // this scale is present
-                                while (itsScalePixels.size() < scale+1) {
-                                    itsScalePixels.push_back(std::vector<uint>());
-                                }
                                 itsScalePixels[scale].push_back(i);
                             }
                             if (val == scaleBit) {

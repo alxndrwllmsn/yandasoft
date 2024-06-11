@@ -581,9 +581,8 @@ namespace askap
                     itsCleaners[imageTag]->setWeight(maskArray);
                 }
                 if (itsReadScaleMask) {
-                    const std::string name = "scalemask"+imageTag.substr(5);
-                    ASKAPLOG_INFO_STR(logger, "Read scale mask from image: "<<name);
-                    itsCleaners[imageTag]->setScaleMask(SynthesisParamsHelper::imageHandler().read(name).nonDegenerate());
+                    ASKAPLOG_INFO_STR(logger, "Read scale mask from image: "<<itsScaleMaskName);
+                    itsCleaners[imageTag]->setScaleMask(SynthesisParamsHelper::imageHandler().read(itsScaleMaskName).nonDegenerate());
                 }
             } else {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._updatedeconvolver");
@@ -882,7 +881,8 @@ namespace askap
           ASKAPLOG_DEBUG_STR(logger, "Using decoupled residuals");
       }
       // Find out if we are reading or writing the scalemask, or just using it
-      itsReadScaleMask = parset.getBool("readscalemask",false);
+      itsScaleMaskName = parset.getString("readscalemask","");
+      itsReadScaleMask = (itsScaleMaskName != "");
       itsWriteScaleMask = !itsReadScaleMask && parset.getBool("writescalemask",false);
       itsUseScaleMask = parset.getBool("usescalemask",true) || itsReadScaleMask || itsWriteScaleMask;
       itsUseScalePixels = parset.getBool("usescalepixels",itsUseScaleMask);
@@ -893,7 +893,7 @@ namespace askap
               ASKAPLOG_INFO_STR(logger, "Using bitmask image for scale masks");
           }
           if (itsReadScaleMask) {
-              ASKAPLOG_INFO_STR(logger, "Will read scale mask image");
+              ASKAPLOG_INFO_STR(logger, "Will read scale mask image "<<itsScaleMaskName);
           }
           if (itsWriteScaleMask) {
               ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
