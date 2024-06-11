@@ -211,9 +211,11 @@ namespace askap {
             // Set Private Values
             T maxVal_private(0.0);
             uint maxIndex_private = 0;
+            ASKAPASSERT(im.contiguousStorage());
             const T* pIm = im.data();
             const uint n = pixels.size();
             const uInt nrow = im.nrow();
+            ASKAPDEBUGASSERT(nrow > 0);
 
             #pragma omp for schedule(static)
             for (uInt j = 0; j < n; j++ ) {
@@ -244,10 +246,12 @@ namespace askap {
             // Set Private Values
             T maxVal_private(0.0);
             uint maxIndex_private = 0;
+            ASKAPASSERT(im.contiguousStorage() && mask.contiguousStorage());
             const T* pIm = im.data();
             const T* pMask = mask.data();
             const uint n = pixels.size();
             const uInt nrow = mask.nrow();
+            ASKAPDEBUGASSERT(nrow > 0);
 
             #pragma omp for schedule(static)
             for (uInt j = 0; j < n; j++ ) {
@@ -589,6 +593,8 @@ namespace askap {
             uInt nBases(this->itsBasisFunction->numberBases());
 
             if (itsUseScaleMask) {
+                ASKAPASSERT(nBases <= itsMaxScales);
+
                 // scale pixels only implemented for MAXBASE
                 if (itsUseScalePixels && itsSolutionType != "MAXBASE") {
                     ASKAPLOG_WARN_STR(decmtbflogger,"Disabled usescalepixels because of solutiontype "<<itsSolutionType);
@@ -1983,12 +1989,10 @@ namespace askap {
             ASKAPCHECK(this->dirty(0).shape() == scaleMask.shape(),"Mismatch of dirty image and scale mask");
             ASKAPCHECK(this->itsBasisFunction, "Basis function not initialised");
             const uInt nBases(this->itsBasisFunction->numberBases());
-            itsScalePixels.resize(nBases);
+            ASKAPCHECK(nBases <= itsMaxScales,"Scalemask only supports up to "<<itsMaxScales<<" scales");
             if (itsUseScalePixels){
                 ASKAPASSERT(scaleMask.contiguousStorage());
-                // we could use std::numeric_limits<T>::digits, but for double
-                // the uint doesn't have enough range - anyway 24 scales seems plenty
-                ASKAPCHECK(nBases <= 24,"Scalemask only supports up to 24 scales");
+                itsScalePixels.resize(nBases);
                 for (uint i=0; i < scaleMask.size(); i++) {
                     const uint val = static_cast<uint>(scaleMask.data()[i]);
                     // Need to deal with multiple scales at same pixel

@@ -158,15 +158,9 @@ public:
       Array<float> mask = itsDB->scaleMask();
       itsDB->setScaleMask(mask);
       Array<float> mask2 = itsDB->scaleMask();
-      Bool equal = true;
       for( uint j=0; j<mask.nelements(); j++) {
-          if (mask.data()[j]!=mask2.data()[j]) {
-              ASKAPLOG_WARN_STR(logger,"scaleMask inconsistent: pixel = "<<j<<" value: "<<
-                  mask.data()[j]<<" "<<mask2.data()[j]);
-              equal = false;
-          }
+        CPPUNIT_ASSERT_EQUAL(mask.data()[j],mask2.data()[j]);
       }
-      CPPUNIT_ASSERT(equal);
   }
 
 private:
