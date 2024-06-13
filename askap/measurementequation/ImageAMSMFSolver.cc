@@ -571,6 +571,9 @@ namespace askap
                 itsCleaners[imageTag]->setDecoupled(itsDecoupled);
                 itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
                 itsCleaners[imageTag]->setUseScalePixels(itsUseScalePixels);
+                itsCleaners[imageTag]->setUsePixelLists(itsUsePixelLists);
+                itsCleaners[imageTag]->setPixelListCutoffTolerance(itsPixelListCutoffTolerance);
+                itsCleaners[imageTag]->setPixelListNSigma(itsPixelListNSigma);
 
                 if (maskArray.nelements()) {
                     if (imageTag == firstImage &&
@@ -886,6 +889,7 @@ namespace askap
       itsWriteScaleMask = !itsReadScaleMask && parset.getBool("writescalemask",false);
       itsUseScaleMask = parset.getBool("usescalemask",true) || itsReadScaleMask || itsWriteScaleMask;
       itsUseScalePixels = parset.getBool("usescalepixels",itsUseScaleMask);
+      itsUsePixelLists = parset.getBool("usepixellists", false);
       if (itsUseScaleMask) {
           if (itsUseScalePixels) {
               ASKAPLOG_INFO_STR(logger, "Using pixel lists for scale masks");
@@ -901,8 +905,12 @@ namespace askap
       } else {
           ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
       }
-
+      if (itsUsePixelLists) {
+          ASKAPLOG_INFO_STR(logger, "Using pixel lists with active (high) pixels");
+      }
       itsUseOverlapMask = parset.getBool("useoverlapmask", true);
+      itsPixelListCutoffTolerance = parset.getFloat("usepixellists.cutofftolerance",0.1);
+      itsPixelListNSigma = parset.getFloat("usepixellists.nsigma",4.0);
     }
   }
 }

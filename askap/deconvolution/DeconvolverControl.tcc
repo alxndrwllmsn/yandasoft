@@ -153,6 +153,21 @@ namespace askap {
         }
 
         template<class T>
+        T DeconvolverControl<T>::level(const DeconvolverState<T>& ds, T safetyMargin)
+        {
+            T level = this->itsTargetObjectiveFunction;
+            if (itsDeepCleanMode) {
+                level = this->itsTargetObjectiveFunction2;
+            }
+            T level2 = this->itsFractionalThreshold * ds.initialObjectiveFunction();
+            if (level2 > level) {
+                level = level2;
+            }
+            ASKAPCHECK(safetyMargin > 0 && safetyMargin < 1, "safetyMargin should be between 0 and 1");
+            return level * (1-safetyMargin);
+        }
+
+        template<class T>
         String DeconvolverControl<T>::terminationString() const
         {
             switch (itsTerminationCause) {
