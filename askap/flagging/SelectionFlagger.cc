@@ -319,10 +319,8 @@ void SelectionFlagger::checkDetailed(const IDataSharedIter& di,
         }
 
         if (!dryRun) {
-            //flag(row, Slice(startCh,stopCh,1,true), Slice()) = true;
-            flag(Slice(), Slice(startCh,stopCh,1,true), row) = true;
+            flag(Slice(), Slice(startCh,stopCh,1,false), row) = true;
         }
-        //itsStats.visFlagged += (stopCh-startCh+1)*flag.nplane();
         itsStats.visFlagged += (stopCh-startCh+1)*flag.nrow();
     }
 }
