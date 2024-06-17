@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(VERSION "1.16.3")
+set(VERSION "1.16.5")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
 
