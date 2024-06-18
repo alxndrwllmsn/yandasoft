@@ -904,6 +904,10 @@ void ContinuumWorker::processChannels()
                  }
                  // revert normal equations back to the type suitable for imaging
                  rootImagerPtr->recreateNormalEquations();
+                 // if needed, set the mosaicing flag to the newly created imaging normal equations to avoid type mismatch
+                 if (itsUpdateDir) {
+                     rootImagerPtr->configureNormalEquationsForMosaicing();
+                 }
              }
              for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
                   if (majorCycleNumber != nCycles) {
