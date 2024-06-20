@@ -560,10 +560,12 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 /// @brief helper method to create and configure work and (optionally) root imagers
 /// @details This method encapsulates the part of single work unit processing where the work and root imagers are created. 
 /// Using two imager objects is a bit of the technical debt - ideally, one has to merge normal equations or models directly.
-/// But this is deeply in the design of this the application and left as is for now. Normally, all gridding of data is taken place
+/// But this is deeply in the design of this application and left as is for now. Normally, all gridding of data is taken place
 /// in the 'work imager' and the results are merged into 'root imager' when ready. If the root imager is not defined, the work imager
-/// becomes one for subsequent data merge. However, the logic of creating these imagers depend on the mode (e.g. itsUpdateDir, itsLocalSolver).
-/// This method encapsulates all logic, so it can be repeated easily for both normal gridding and sample grid calculation for traditional weighting.
+/// becomes one for the subsequent data merge. However, the logic of creating these imagers depends on the mode (e.g. itsUpdateDir, itsLocalSolver).
+/// This method encapsulates all the logic, so it can be repeated easily for both normal gridding and sample grid calculation for traditional weighting.
+/// @note in the case of central solver (and no joint deconvolution), this method expects to receive model from the master rank if root imager is not
+/// defined (i.e. when the work imager created inside this method would become a new root imager for future accumulation)
 /// @param[in] wu work unit to work with (parameters like frequency, channel and the dataset may be used). Note, access to data currently happens
 /// in the joint imaging mode where the full image is created through dummy iteration hack.
 /// @param[inout] rootImagerPtr shared pointer to CalcCore object to use as the root imager (if empty, it is created in the joint imaging mode)
@@ -645,10 +647,9 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
                // need to receve the model from master
                // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
                // can receive the model outside of this method
-               ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
+               ASKAPLOG_DEBUG_STR(logger, "Worker waiting to receive new model");
                workingImager.receiveModel();
-               // MV: the message has been copied as is, need to verify that this condition indeed only happens for cycle 0 in the new structure
-               ASKAPLOG_INFO_STR(logger, "Worker received initial model for cycle 0");
+               ASKAPLOG_DEBUG_STR(logger, "Worker received initial model for either uv-weights calculation or cycle 0");
            }
        }
    }
@@ -901,6 +902,12 @@ void ContinuumWorker::processChannels()
                      // the following call sends the weight grid back to the master for merging and processing,
                      // the result will be sent back along with the model
                      rootImagerPtr->sendNE();
+
+                     // need to receive the model explicitly (as it is only done inside createImagers call (executed from
+                     // accumulateUVWeightsFromOneWorkUnit and processOneWorkUnit) if rootImagerPtr is empty
+                     ASKAPLOG_DEBUG_STR(logger, "Worker waiting to receive new model");
+                     rootImagerPtr->receiveModel();
+                     ASKAPLOG_DEBUG_STR(logger, "Worker received initial model for cycle 0 with uv-weights");
                  }
                  // revert normal equations back to the type suitable for imaging
                  rootImagerPtr->recreateNormalEquations();

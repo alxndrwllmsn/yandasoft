@@ -63,8 +63,7 @@ spr.addToParset("Cimager.Images.nyquistgridding=true")
 # adding a duplicated keyword at the end of the parset
 spr.addToParset("Cimager.ncycles=1")
 # this enables traditional weighting with robustness -2 (i.e. close to uniform)
-## temporary disable traditional weighting until AXA-2792 is sorted out under code refactored in AXA-2849
-##spr.addToParset("Cimager.uvweight = [ConjugatesAdderFFT, Robust]")
+spr.addToParset("Cimager.uvweight = [ConjugatesAdderFFT, Robust]")
 spr.addToParset("Cimager.uvweight.robustness = -2.")
 spr.runNewImagerParallel(nProcs=2, timeout="5m")
 analyseResult(spr)
