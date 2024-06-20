@@ -468,7 +468,8 @@ namespace askap {
         void DeconvolverMultiTermBasisFunction<T, FT>::initialise()
         {
             ASKAPTRACE("DeconvolverMultiTermBasisFunction::initialise");
-            DeconvolverBase<T, FT>::initialise();
+            // This one does not appear to be needed
+            //DeconvolverBase<T, FT>::initialise();
 
             // Initialise residuals
             initialiseResidual();
