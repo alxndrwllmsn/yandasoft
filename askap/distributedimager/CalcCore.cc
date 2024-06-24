@@ -621,3 +621,22 @@ void CalcCore::restoreImage() const
     ASKAPDEBUGASSERT(itsModel);
 
 }
+
+/// @brief stash current normal equations in the buffer
+/// @details It simply copies shared pointer to the normal equations into itsSavedNE. Note, an exception is
+/// thrown if the buffer is not empty (cross check as we currently plan to have a single-element stack).
+void CalcCore::stashNormalEquations() 
+{
+   ASKAPCHECK(!itsSavedNE, "Logic error - attempting to stash normal equations while the buffer is not empty!");
+   itsSavedNE = getNE();
+}
+
+/// @brief pop normal equations from the buffer
+/// @details This method restores previously stashed normal equations. An exception is thrown if the buffer is
+/// empty.
+void CalcCore::popNormalEquations()
+{
+   ASKAPCHECK(itsSavedNE, "Logic error - attempting to pop normal equations from an empty buffer!");
+   setNE(itsSavedNE);
+   itsSavedNE.reset();
+}

@@ -669,13 +669,18 @@ void ContinuumWorker::accumulateUVWeightsForOneWorkUnit(boost::shared_ptr<CalcCo
         const boost::shared_ptr<CalcCore> workingImagerPtr = createImagers(wu, rootImagerPtr);
         ASKAPDEBUGASSERT(workingImagerPtr);
         CalcCore& workingImager = *workingImagerPtr; // just for the semantics
-        if (rootImagerPtr) {
-            // MV: it is a bit of the technical debt to redo this operations on every call to this method, only the
-            // first call with non-null rootImagerPtr in the joint deconvolution mode is where the code inside this block is required
+        if (rootImagerPtr && rootImagerPtr->notStashedNormalEquations()) {
+            // this block of code is only executed in the joint deconvolution mode (itsUpdateDir==true) on the first pass, when
+            // rootImagerPtr is created. We then stash the normal equations to be able to restore it later before the imaging can begin.
+            // This allows us to avoid extra operation to create the full image again.
 
-            // just to get a consistent picture w.r.t. uv-weight calculation mode everywhere
-            // it is only necessary here in the joint deconvolution mode (itsUpdateDir) because in this case
-            // the rootImager will be created separately and not from a working imager
+            rootImagerPtr->stashNormalEquations();
+
+            // just a cross-check, because we don't exect this code to be used in other modes
+            ASKAPDEBUGASSERT(itsUpdateDir);
+
+            // the following is required because in the joint deconvolution mode the root imager is not a copy of one of the previous work imagers.
+
             rootImagerPtr->setUVWeightCalculator(itsUVWeightCalculator);
             // this is necessary to get the right type of NE as we merge data into rootImager later on
             rootImagerPtr->setupUVWeightBuilder();
@@ -909,11 +914,15 @@ void ContinuumWorker::processChannels()
                      rootImagerPtr->receiveModel();
                      ASKAPLOG_DEBUG_STR(logger, "Worker received initial model for cycle 0 with uv-weights");
                  }
-                 // revert normal equations back to the type suitable for imaging
-                 rootImagerPtr->recreateNormalEquations();
                  // if needed, set the mosaicing flag to the newly created imaging normal equations to avoid type mismatch
                  if (itsUpdateDir) {
-                     rootImagerPtr->configureNormalEquationsForMosaicing();
+                     // in the joint deconvolution mode restore normal equations (stashed inside accumulateUVWeightsForOneWorkUnit
+                     // when root imager has been created) from the buffer
+                     rootImagerPtr->popNormalEquations();
+                 } else {
+                     // in all other modes simply recreate normal equations, this will revert it back to the type suitable for imaging
+                     // (although, in principle, we could have stash-pop approach for all cases)
+                     rootImagerPtr->recreateNormalEquations();
                  }
              }
              for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
@@ -1860,12 +1869,9 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   SynthesisParamsHelper::copyImageParameter(src, dest,"image.slice");
 
   // uv-weight related parameters are stored as part of the model. If present, the corresponding parameter name 
-  // as accepted by UVWeightParamsHelper would be without the leading "image". However, we don't need to copy 
-  // the uv-weights here - in the joint deconvolution case, where this method is used, the uv-weight doesn't leave
-  // the actual working imager (in the future, there may be more complicated use cases where we may want to change this, but
-  // also some aggregation logic would be necessary as each part done in parallel technically has its own weight).
-  //UVWeightParamsHelper hlp(src);
-  //hlp.copyTo(dest, "slice");
+  // as accepted by UVWeightParamsHelper would be without the leading "image". 
+  UVWeightParamsHelper hlp(src);
+  hlp.copyTo(dest, "slice");
 }
 
 void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, unsigned int chan)
