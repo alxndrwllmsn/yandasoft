@@ -528,7 +528,18 @@ class CdeconvolverApp : public askap::Application
                     casacore::Array<casacore::Float> model;
                     casacore::Array<casacore::Float> restored;
                     casacore::Vector<casacore::Quantum<double>> beam(3);
-                    doTheWork(subset, dirtyIn, psfIn, pcfIn, psfOut, dirty, model, restored, writeRestored, oversampling, fov, beam);
+
+                    if (maxPsf > 0) {
+                        doTheWork(subset, dirtyIn, psfIn, pcfIn, psfOut, dirty, model, restored, writeRestored, oversampling, fov, beam);
+                    } else {
+                        psfOut = psfIn;
+                        dirty = dirtyIn;
+                        model = dirtyIn;
+                        restored = dirtyIn;
+                        beam[0] = casa::Quantum<double>(1., "rad");
+                        beam[1] = casa::Quantum<double>(1., "rad");
+                        beam[2] = casa::Quantum<double>(1., "deg");
+                    }
                     itsBeamList[channel] = beam;
 
                     if (serialWrite) {
