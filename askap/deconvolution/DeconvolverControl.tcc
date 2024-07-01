@@ -70,9 +70,9 @@ namespace askap {
         Bool DeconvolverControl<T>::terminate(const DeconvolverState<T>& state)
         {
             // Check for convergence
-            if (abs(state.objectiveFunction()) < this->itsTargetObjectiveFunction) {
+            if (abs(state.objectiveFunction()) < itsTargetObjectiveFunction) {
                 // Now check if we want to enter deep cleaning mode
-                if (this->itsTargetObjectiveFunction2>0) {
+                if (itsTargetObjectiveFunction2>0) {
                     if (!itsDeepCleanMode) {
                         ASKAPLOG_INFO_STR(decctllogger, "Starting deep cleaning phase");
                         itsDeepCleanMode = True;
@@ -80,7 +80,7 @@ namespace askap {
                         //itsTerminationCause = CONVERGED;
                         //return True;
                     }
-                    if (abs(state.objectiveFunction()) < this->itsTargetObjectiveFunction2) {
+                    if (abs(state.objectiveFunction()) < itsTargetObjectiveFunction2) {
                         ASKAPLOG_INFO_STR(decctllogger, "Objective function " << state.objectiveFunction()
                                             << " less than 2nd target " << itsTargetObjectiveFunction2);
                         itsTerminationCause = CONVERGED;
@@ -94,7 +94,7 @@ namespace askap {
                 }
             }
             //
-            if (abs(state.objectiveFunction()) < this->itsFractionalThreshold*state.initialObjectiveFunction()) {
+            if (abs(state.objectiveFunction()) < itsFractionalThreshold*state.initialObjectiveFunction()) {
                 ASKAPLOG_INFO_STR(decctllogger, "Objective function " << state.objectiveFunction()
                                       << " less than fractional threshold " << itsFractionalThreshold
                                       << " * initialObjectiveFunction : " << state.initialObjectiveFunction());
@@ -109,10 +109,10 @@ namespace askap {
             }
 
             // Terminate if the target number of iterations is not set
-            ASKAPCHECK(this->targetIter() > 0, "Target number of iterations not set");
+            ASKAPCHECK(targetIter() > 0, "Target number of iterations not set");
 
             // Check for too many iterations
-            if ((state.currentIter() > -1) && (this->targetIter() > 0) && (state.currentIter() >= this->targetIter())) {
+            if ((state.currentIter() > -1) && (targetIter() > 0) && (state.currentIter() >= targetIter())) {
                 itsTerminationCause = EXCEEDEDITERATIONS;
                 return True;
             }
@@ -153,13 +153,13 @@ namespace askap {
         }
 
         template<class T>
-        T DeconvolverControl<T>::level(const DeconvolverState<T>& ds, T safetyMargin)
+        T DeconvolverControl<T>::level(const DeconvolverState<T>& ds, T safetyMargin) const
         {
-            T level = this->itsTargetObjectiveFunction;
+            T level = itsTargetObjectiveFunction;
             if (itsDeepCleanMode) {
-                level = this->itsTargetObjectiveFunction2;
+                level = itsTargetObjectiveFunction2;
             }
-            T level2 = this->itsFractionalThreshold * ds.initialObjectiveFunction();
+            T level2 = itsFractionalThreshold * ds.initialObjectiveFunction();
             if (level2 > level) {
                 level = level2;
             }
@@ -198,16 +198,16 @@ namespace askap {
         template<class T>
         void DeconvolverControl<T>::configure(const LOFAR::ParameterSet& parset)
         {
-            this->setGain(parset.getFloat("gain", 0.1));
-            this->setTolerance(parset.getFloat("tolerance", 1e-3));
-            this->setTargetIter(parset.getInt32("niter", 100));
-            this->setTargetFlux(parset.getFloat("targetflux", 0));
-            this->setTargetObjectiveFunction(parset.getFloat("targetobjective", 0.0));
-            this->setFractionalThreshold(parset.getFloat("fractionalthreshold", 0.0));
-            this->setAbsoluteThreshold(parset.getFloat("absolutethreshold", 0.0));
-            this->setLambda(parset.getFloat("lambda", 0.0001));
-            this->setPSFWidth(parset.getInt32("psfwidth", 0));
-            this->setDetectDivergence(parset.getBool("detectdivergence",true));
+            setGain(parset.getFloat("gain", 0.1));
+            setTolerance(parset.getFloat("tolerance", 1e-3));
+            setTargetIter(parset.getInt32("niter", 100));
+            setTargetFlux(parset.getFloat("targetflux", 0));
+            setTargetObjectiveFunction(parset.getFloat("targetobjective", 0.0));
+            setFractionalThreshold(parset.getFloat("fractionalthreshold", 0.0));
+            setAbsoluteThreshold(parset.getFloat("absolutethreshold", 0.0));
+            setLambda(parset.getFloat("lambda", 0.0001));
+            setPSFWidth(parset.getInt32("psfwidth", 0));
+            setDetectDivergence(parset.getBool("detectdivergence",true));
         }
 
     } // namespace synthesis

@@ -278,7 +278,8 @@ namespace askap {
                 Vector<Array<T> >& psf,
                 Vector<Array<T> >& psfLong)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
-                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false),itsUsePixelLists(false)
+                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false),itsUsePixelLists(false),
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0)
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There are " << this->nTerms() << " terms to be solved");
 
@@ -296,7 +297,9 @@ namespace askap {
         DeconvolverMultiTermBasisFunction<T, FT>::DeconvolverMultiTermBasisFunction(Array<T>& dirty,
                 Array<T>& psf)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
-                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false),itsUsePixelLists(false)
+                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false),itsUsePixelLists(false),
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0)
+
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There is only one term to be solved");
             this->itsPsfLongVec.resize(1);
@@ -1474,19 +1477,20 @@ namespace askap {
 
                     // if needed fill the list of high pixels we'll use for peak finding and cleaning residuals
                     if (fillHighPixels && itsUsePixelLists && !useScalePixels) {
-                        const T level = this->control()->level(*(this->state()),itsPixelListCutoffTolerance);
+                        const T level = this->control()->level(*(this->state()),itsPixelListTolerance);
                         const bool haveMask = maskref.nelements()>0;
                         #pragma omp for schedule(static)
                         for (uint base = 0; base < nBases; base++) {
                             const Matrix<T> res(itsResidualBasis(base)(0));
                             // get a quick estimate of the rms using 1% of pixels
+                            ASKAPDEBUGASSERT(res.nrow()>10 && res.ncolumn()>10);
                             const float sigma = 1.48f * casacore::madfm(res(Slice(0,res.nrow()/10,10),Slice(0,res.ncolumn()/10,10)));
                             ASKAPDEBUGASSERT(res.contiguousStorage());
                             ASKAPDEBUGASSERT(!haveMask || maskref.contiguousStorage());
                             const T* pRes = res.data();
                             const T* pMask = maskref.data();
                             const uint n = res.nelements();
-                            // check we don't overflow
+                            // check we don't overflow uint
                             ASKAPDEBUGASSERT(n==res.nelements());
                             highPixels[base].clear();
                             std::vector<uint>& pixels = highPixels[base];

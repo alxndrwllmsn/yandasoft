@@ -162,11 +162,11 @@ namespace askap {
                 /// @brief Set whether to use a pixel list for the clean
                 void setUsePixelLists(Bool usePixelLists);
 
-                /// @brief Set pixel list cutoff tolerance
-                /// @details Multiply the clean cutoff by (1-tolerance) to decide which
+                /// @brief Set pixel list tolerance
+                /// @details Multiply the clean threshold by (1-tolerance) to decide which
                 /// pixels go in the pixel list for a major cycle. Suggested value 0.1
-                void setPixelListCutoffTolerance(float tolerance) {
-                    itsPixelListCutoffTolerance = tolerance;
+                void setPixelListTolerance(float tolerance) {
+                    itsPixelListTolerance = tolerance;
                 }
 
                 /// @brief Set pixel list n sigma limit
@@ -316,7 +316,7 @@ namespace askap {
 
                 casa::Bool itsUsePixelLists;
 
-                float itsPixelListCutoffTolerance;
+                float itsPixelListTolerance;
 
                 float itsPixelListNSigma;
 

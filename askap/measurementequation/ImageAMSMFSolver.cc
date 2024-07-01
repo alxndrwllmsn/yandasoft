@@ -572,7 +572,7 @@ namespace askap
                 itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
                 itsCleaners[imageTag]->setUseScalePixels(itsUseScalePixels);
                 itsCleaners[imageTag]->setUsePixelLists(itsUsePixelLists);
-                itsCleaners[imageTag]->setPixelListCutoffTolerance(itsPixelListCutoffTolerance);
+                itsCleaners[imageTag]->setPixelListTolerance(itsPixelListTolerance);
                 itsCleaners[imageTag]->setPixelListNSigma(itsPixelListNSigma);
 
                 if (maskArray.nelements()) {
@@ -909,7 +909,7 @@ namespace askap
           ASKAPLOG_INFO_STR(logger, "Using pixel lists with active (high) pixels");
       }
       itsUseOverlapMask = parset.getBool("useoverlapmask", true);
-      itsPixelListCutoffTolerance = parset.getFloat("usepixellists.cutofftolerance",0.1);
+      itsPixelListTolerance = parset.getFloat("usepixellists.tolerance",0.1);
       itsPixelListNSigma = parset.getFloat("usepixellists.nsigma",4.0);
     }
   }
