@@ -427,14 +427,14 @@ void CalcCore::check() const
     std::vector<std::string> names = itsNe->unknowns();
     const ImagingNormalEquations &checkRef =
     dynamic_cast<const ImagingNormalEquations&>(*itsNe);
+    ASKAPCHECK(names.size() > 0, "CalcCore::check has been called for an empty NE");
 
     casacore::Vector<imtype> diag(checkRef.normalMatrixDiagonal(names[0]));
     casacore::Vector<imtype> dv = checkRef.dataVectorT(names[0]);
     casacore::Vector<imtype> slice(checkRef.normalMatrixSlice(names[0]));
     casacore::Vector<imtype> pcf(checkRef.preconditionerSlice(names[0]));
 
-    ASKAPLOG_DEBUG_STR(logger, "Max data: " << max(dv) << " Max PSF: " << max(slice) << " Normalised: " << max(dv)/max(slice));
-
+    ASKAPLOG_DEBUG_STR(logger, "Max data: " << max(dv) << " Max PSF: " << max(slice) << " Normalised: " << max(dv)/max(slice)<<" ("<<names[0]<<")");
 }
 void CalcCore::solveNE()
 {

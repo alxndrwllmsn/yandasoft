@@ -623,6 +623,35 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
            rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
            // setup full size image
            setupImage(rootImagerPtr->params(), globalFrequency, false);
+
+           if (isSampleDensityGridNeeded()) {
+               // note, this effectively emulates the same approach as used in the traditional weighting hack, i.e.
+               // it would generate separate weight for the dummy pass done with the full size grid using the root imager
+               // (this is only done in the joint deconvolution mode). This approach is fundamentally flawed (see AXA-2792)
+               // because it uses PSF built with the first work unit only. But if the data are only split by beams it may be
+               // a viable short-cut. So the intention is to have this approach available as an option (the only choice until
+               // other approaches are implemented), at least in the short term. Besides, more accurate ways to construct PSF
+               // which take into account all work units (and, therefore, need a way to select beams and fields) would also
+               // require some form of casting or reprojection between grids of different shape. Therefore, it would unlikely
+               // produce the same PSF as one could get using the traditional weighting hack (but PSF is approximate anyway in
+               // the joint deconvolution case).
+
+               ASKAPLOG_DEBUG_STR(logger, "Making separate UV weights for the PSF obtained using the full size grid in the joint imaging mode");
+               CalcCore& rootImager = *rootImagerPtr; // just for the semantics
+               rootImager.setUVWeightCalculator(itsUVWeightCalculator);
+               rootImager.setupUVWeightBuilder();
+               try {
+                  rootImager.accumulateUVWeights();
+               }
+               catch (const askap::AskapError& e) {
+                  ASKAPLOG_WARN_STR(logger,"Askap error in uv weight accumulation - dummy run for rootImager in updatedirection mode, ignoring the current work unit");
+                  rootImagerPtr.reset();
+                  throw;
+               }
+               // this will compute weights and add them to the model held by root imager
+               rootImager.computeUVWeights();
+               rootImager.recreateNormalEquations();
+           }
            try {
               rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
               rootImagerPtr->configureNormalEquationsForMosaicing();
@@ -634,6 +663,15 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
                   // reset rootImagerPtr to ensure we attempt full size NE generation with the next work unit
                   rootImagerPtr.reset();
                   throw;
+           }
+
+           // this block of code matches similar if-statement above (see notes up there) -  we need to remove all UV weights now (PSF has been generated)
+           // to avoid conflict with the weights generated for individual pointings/beams (as those grids can have different size)
+           if (isSampleDensityGridNeeded()) {
+               UVWeightParamsHelper hlp(rootImagerPtr->params());
+               // we could've written a general method (e.g. in ImagerParallel) to remove all uv-weight related parameters, but the following should be sufficient for now
+               ASKAPDEBUGASSERT(hlp.exists("slice"));
+               hlp.remove("slice");
            }
        }
    } else {
@@ -668,7 +706,6 @@ void ContinuumWorker::accumulateUVWeightsForOneWorkUnit(boost::shared_ptr<CalcCo
         // model is received from master or created from scratch inside createImagers taking operating mode into account
         const boost::shared_ptr<CalcCore> workingImagerPtr = createImagers(wu, rootImagerPtr);
         ASKAPDEBUGASSERT(workingImagerPtr);
-        CalcCore& workingImager = *workingImagerPtr; // just for the semantics
         if (rootImagerPtr && rootImagerPtr->notStashedNormalEquations()) {
             // this block of code is only executed in the joint deconvolution mode (itsUpdateDir==true) on the first pass, when
             // rootImagerPtr is created. We then stash the normal equations to be able to restore it later before the imaging can begin.
@@ -685,6 +722,7 @@ void ContinuumWorker::accumulateUVWeightsForOneWorkUnit(boost::shared_ptr<CalcCo
             // this is necessary to get the right type of NE as we merge data into rootImager later on
             rootImagerPtr->setupUVWeightBuilder();
         }
+        CalcCore& workingImager = *workingImagerPtr; // just for the semantics
         // just to get a consistent picture w.r.t. uv-weight calculation mode everywhere
         workingImager.setUVWeightCalculator(itsUVWeightCalculator);
         workingImager.setupUVWeightBuilder();
@@ -917,7 +955,7 @@ void ContinuumWorker::processChannels()
                  // if needed, set the mosaicing flag to the newly created imaging normal equations to avoid type mismatch
                  if (itsUpdateDir) {
                      // in the joint deconvolution mode restore normal equations (stashed inside accumulateUVWeightsForOneWorkUnit
-                     // when root imager has been created) from the buffer
+                     // when root imager has been created) from the buffer because they have some coordinate system information for the full image
                      rootImagerPtr->popNormalEquations();
                  } else {
                      // in all other modes simply recreate normal equations, this will revert it back to the type suitable for imaging
