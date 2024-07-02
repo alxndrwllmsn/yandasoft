@@ -211,7 +211,7 @@ void ContinuumMaster::run(void)
     }
     else {
         for (int cycle = 0; cycle < nCycles; ++cycle) {
-            ASKAPLOG_DEBUG_STR(logger, "Master beginning major cycle ** " << cycle);
+            ASKAPLOG_DEBUG_STR(logger, "Master beginning major cycle ** " << cycle+1);
 
             if (cycle==0) {
                 imager.broadcastModel(); // initially empty model
@@ -225,7 +225,7 @@ void ContinuumMaster::run(void)
 
             if (imager.params()->has("peak_residual")) {
                 const double peak_residual = imager.params()->scalarValue("peak_residual");
-                ASKAPLOG_INFO_STR(logger, "Major Cycle " << cycle << " Reached peak residual of " << abs(peak_residual) << " after solve");
+                ASKAPLOG_INFO_STR(logger, "Major Cycle " << cycle+1 << " Reached peak residual of " << abs(peak_residual) << " after solve");
 
                 if (peak_residual < targetPeakResidual) {
 

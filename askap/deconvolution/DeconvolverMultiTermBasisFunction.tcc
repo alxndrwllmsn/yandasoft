@@ -278,7 +278,8 @@ namespace askap {
                 Vector<Array<T> >& psf,
                 Vector<Array<T> >& psfLong)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
-                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false)
+                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false),itsUsePixelLists(false),
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0)
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There are " << this->nTerms() << " terms to be solved");
 
@@ -296,7 +297,9 @@ namespace askap {
         DeconvolverMultiTermBasisFunction<T, FT>::DeconvolverMultiTermBasisFunction(Array<T>& dirty,
                 Array<T>& psf)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
-                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false)
+                itsSolutionType("MAXCHISQ"), itsDecoupled(false), itsUseScaleMask(false),itsUseScalePixels(false),itsUsePixelLists(false),
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0)
+
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There is only one term to be solved");
             this->itsPsfLongVec.resize(1);
@@ -335,6 +338,12 @@ namespace askap {
         void DeconvolverMultiTermBasisFunction<T, FT>::setUseScaleBitMask(Bool useScaleBitmask)
         {
             itsUseScaleMask=useScaleBitmask;
+        };
+
+        template<class T, class FT>
+        void DeconvolverMultiTermBasisFunction<T, FT>::setUsePixelLists(Bool usePixelLists)
+        {
+            itsUsePixelLists = usePixelLists;
         };
 
         template<class T, class FT>
@@ -462,7 +471,8 @@ namespace askap {
         void DeconvolverMultiTermBasisFunction<T, FT>::initialise()
         {
             ASKAPTRACE("DeconvolverMultiTermBasisFunction::initialise");
-            DeconvolverBase<T, FT>::initialise();
+            // This one does not appear to be needed
+            //DeconvolverBase<T, FT>::initialise();
 
             // Initialise residuals
             initialiseResidual();
@@ -536,12 +546,11 @@ namespace askap {
 
                     // temporary object is ok here because we do an assignment to uninitialised array later on
                     Matrix<T> work(real(residualFFT));
-
+#ifdef ASKAP_DEBUG
                     ASKAPLOG_DEBUG_STR(decmtbflogger, "Basis(" << base
-                                           << ")*Residual(" << term << "): max = " << max(work)
-                                           << " min = " << min(work));
-
-                    // this->itsResidualBasis(base)(term) = work;
+                                            << ")*Residual(" << term << "): max = " << max(work)
+                                            << " min = " << min(work));
+#endif
                     this->itsResidualBasis(base)(term).reference(work);
                 }
             }
@@ -592,9 +601,14 @@ namespace askap {
 
             uInt nBases(this->itsBasisFunction->numberBases());
 
+            // pixellists only implemented for MAXBASE
+            if (itsUsePixelLists && itsSolutionType != "MAXBASE") {
+                ASKAPLOG_WARN_STR(decmtbflogger,"Disabled usepixellists because of solutiontype "<<itsSolutionType);
+                itsUsePixelLists = false;
+            }
+
             if (itsUseScaleMask) {
                 ASKAPASSERT(nBases <= itsMaxScales);
-
                 // scale pixels only implemented for MAXBASE
                 if (itsUseScalePixels && itsSolutionType != "MAXBASE") {
                     ASKAPLOG_WARN_STR(decmtbflogger,"Disabled usescalepixels because of solutiontype "<<itsSolutionType);
@@ -819,7 +833,6 @@ namespace askap {
             const uInt nBases(this->itsResidualBasis.nelements());
             IPosition absPeakPos(2, 0);
             T absPeakVal(0.0);
-            float sumFlux;
             uInt optimumBase(0);
             Vector<T> peakValues(this->nTerms());
             Vector<T> maxValues(this->nTerms());
@@ -841,18 +854,28 @@ namespace askap {
             // temporary matrix references
             casa::Matrix<T> mat1, mat2;
 
+            // debugging
+            casa::Vector<float> cutoffLevel(nBases);
+
             // Timers for analysis
-            const int no_timers = 10;
+            const int no_timers = 11;
             Vector<double> TimerStart(no_timers,0), TimerStop(no_timers,0), Times(no_timers,0);
 
 	      	// Termination
 	      	int converged;
             this->control()->maskNeedsResetting(true);
 
+            bool fillHighPixels = itsUsePixelLists;
+            bool listScalePixels = itsUseScalePixels;
+            bool firstCycle = true;
             if (this->control()->targetIter() != 0) {
 
-            //const double start_time = MPI_Wtime();
-            const time_t start_time = time(0);
+            std::vector<std::vector<uint>> highPixels;
+            if (itsUsePixelLists) {
+                highPixels.resize(nBases);
+            }
+
+            const double start_time = MPI_Wtime();
 
             #pragma omp parallel
             {
@@ -900,12 +923,11 @@ namespace askap {
                         // init scratch space for mask
                         #pragma omp single
                         mask = Matrix<T>(weights.shape(),0.0);
-                        // Check mask base for contiguity
+                        // Check mask base for contiguity - should be fine - it's not a slice
                         if (!mask.contiguousStorage()) {
                             ASKAPLOG_WARN_STR(decmtbflogger, "mask is not contiguous\n");
                         }
                     }
-
                 }
 
                 #pragma omp single
@@ -1072,13 +1094,17 @@ namespace askap {
 
                             if (haveMask) {
                                 if (this->control()->deepCleanMode() && itsUseScalePixels) {
-                                    absMaxPosMaskedOMP(maxVal,maxPos,res,maskref,itsScalePixels[base]);
+                                    absMaxPosMaskedOMP(maxVal,maxPos,res,maskref,std::vector<uint>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
+                                } else if (itsUsePixelLists && !firstCycle) {
+                                    absMaxPosMaskedOMP(maxVal,maxPos,res,maskref,highPixels[base]);
                                 } else {
                                     absMaxPosMaskedOMP(maxVal,maxPos,res,maskref);
                                 }
                             } else {
                                 if (this->control()->deepCleanMode() && itsUseScalePixels) {
-                                    absMaxPosOMP(maxVal,maxPos,res,itsScalePixels[base]);
+                                    absMaxPosOMP(maxVal,maxPos,res,std::vector<uint>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
+                                } else if (itsUsePixelLists && !firstCycle) {
+                                    absMaxPosOMP(maxVal,maxPos,res,highPixels[base]);
                                 } else {
                                     absMaxPosOMP(maxVal,maxPos,res);
                                 }
@@ -1229,7 +1255,7 @@ namespace askap {
                         // Record location of peak in mask - only one of these will be initialised
                         if (this->itsMask.nelements()) this->itsMask(optimumBase)(absPeakPos)=T(1.0);
                         if (this->itsScaleMask.nelements()) this->itsScaleMask(absPeakPos) |= (1<<optimumBase);
-                        if (itsScalePixels.size()) itsScalePixels[optimumBase].push_back(absPeakPos[0]+absPeakPos[1]*nx);
+                        if (itsScalePixels.size()) itsScalePixels[optimumBase].insert(absPeakPos[0]+absPeakPos[1]*nx);
                         ASKAPCHECK((this->itsMask.nelements()>0) + (this->itsScaleMask.nelements()>0) + itsUseScalePixels <= 1,"Logic error in the code");
                         // Take square root to get value comparable to peak residual
                         if (this->itsSolutionType == "MAXCHISQ") {
@@ -1299,54 +1325,38 @@ namespace askap {
                     } // End of coupled residual section
 
                     // TODO: Check this barrier?
-                    #pragma omp barrier
+                    //#pragma omp barrier
 
                     // Section 8
                     #pragma omp single
-                    TimerStart[8] = MPI_Wtime();
-
-                    #pragma omp sections
                     {
+                        TimerStart[8] = MPI_Wtime();
 
-                        #pragma omp section
-                        {
-                            if (this->state()->initialObjectiveFunction() == 0.0) {
-                                this->state()->setInitialObjectiveFunction(abs(absPeakVal));
-                            }
+                        if (this->state()->initialObjectiveFunction() == 0.0) {
+                            this->state()->setInitialObjectiveFunction(abs(absPeakVal));
                         }
-
-                        #pragma omp section
                         this->state()->setPeakResidual(abs(absPeakVal));
-
-                        #pragma omp section
                         this->state()->setObjectiveFunction(abs(absPeakVal));
-
-                        // Prepare the sum for the totalflux
-                        #pragma omp section
-                        sumFlux = 0.0;
-
                     } // End of single
 
-                    float localsum = 0.0;
-                    float* model_pointer = this->model(0).getStorage(IsNotCont);
-                    #pragma omp for schedule(static) nowait
-                    for (int index = 0; index < this->model(0).nelements(); index++) {
-                        localsum += model_pointer[index];
+                    #pragma omp master
+                    {
+                        if (listScalePixels && this->control()->deepCleanMode()) {
+                            for (uint base = 0; base < nBases; base++) {
+                                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" has "<<itsScalePixels[base].size()<<" active pixels for deep clean");
+                            }
+                            listScalePixels = false;
+                        }
                     }
-
-                    #pragma omp critical
-                    sumFlux += localsum;
-
-                    // This barrier is required - no implicit barrier following criticals
-                    #pragma omp barrier
-
-                    // without OpenMP, this may be faster
-                    //sumFlux = sum(this->model(0));
-
 
                     #pragma omp single
                     {
+                        float sumFlux = 0.0;
+                        for (uint base=0; base < nBases; base++) {
+                            sumFlux += this->itsTermBaseFlux(base)(0);
+                        }
                         this->state()->setTotalFlux(sumFlux);
+
                         ASKAPLOG_DEBUG_STR(decmtbflogger,"Peak="<<absPeakVal<<", Pos="<< absPeakPos <<", Base="<<optimumBase<<", Total flux = "<<sumFlux);
                         residualShape(0) = this->dirty(0).shape()(0);
                         residualShape(1) = this->dirty(0).shape()(1);
@@ -1405,7 +1415,16 @@ namespace askap {
                             }
                         }
                     }
+                    // End of section 9
+                    #pragma omp single
+                    { TimerStop[9] = MPI_Wtime(); Times[9] += (TimerStop[9]-TimerStart[9]); }
 
+                    // Section 10
+                    #pragma omp single
+                    TimerStart[10] = MPI_Wtime();
+
+                    const bool useScalePixels = this->control()->deepCleanMode() && itsUseScalePixels;
+                    const bool useHighPixels = itsUsePixelLists && !useScalePixels && !firstCycle ;
 
                     // Subtract PSFs, including base-base crossterms
                     for (uInt term1 = 0; term1 < this->nTerms(); term1++) {
@@ -1414,25 +1433,90 @@ namespace askap {
                                 const T amp = this->control()->gain() * peakValues(term2);
                                 for (uInt base = 0; base < nBases; base++) {
                                     // optimise the following code
-                                    // this->itsResidualBasis(base)(term1)(residualSlicer) =
-                                    //     this->itsResidualBasis(base)(term1)(residualSlicer)
-                                    //     - this->control()->gain() * peakValues(term2) *
+                                    // this->itsResidualBasis(base)(term1)(residualSlicer) -=
+                                    //     this->control()->gain() * peakValues(term2) *
                                     //     this->itsPSFCrossTerms(base, optimumBase)(term1, term2)(psfSlicer);
                                     #pragma omp single
                                     {
                                         mat1.reference(this->itsResidualBasis(base)(term1));
                                         mat2.reference(this->itsPSFCrossTerms(base, optimumBase)(term1, term2));
                                     }
-                                    #pragma omp for schedule(static)
-                                    for (uInt j = 0; j < nj; j++) {
-                                        T* pRes = &mat1(ri0, rj0 + j);
-                                        const T* pPsf = &mat2(pi0, pj0 + j);
-                                        for (uInt i = 0; i < ni; i++) {
-                                            pRes[i] -= amp * pPsf[i];
+                                    if (useHighPixels|| useScalePixels) {
+                                        // loop over pixels, work out if in range, if so, subtract psf
+                                        const std::vector<uint>& pixels = (useHighPixels ?
+                                            highPixels[base] :
+                                            std::vector<uint>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
+                                        const uint n = pixels.size();
+                                        const uint nrow = mat1.nrow();
+                                        #pragma omp for schedule(static)
+                                        for (uint k = 0; k < n; k++) {
+                                            const uint pixel = pixels[k];
+                                            const uint x = pixel % nrow;
+                                            const uint y = pixel / nrow;
+                                            const uint xpsf = x-absPeakPos(0) + psfShape(0)/2;
+                                            const uint ypsf = y-absPeakPos(1) + psfShape(1)/2;
+                                            if (xpsf>=0 && xpsf < psfShape(0) &&
+                                                ypsf>=0 && ypsf < psfShape(1)) {
+                                                mat1(x,y) -= amp * mat2(xpsf,ypsf);
+                                            }
+                                        }
+                                    } else {
+                                        #pragma omp for schedule(static)
+                                        for (uInt j = 0; j < nj; j++) {
+                                            T* pRes = &mat1(ri0, rj0 + j);
+                                            const T* pPsf = &mat2(pi0, pj0 + j);
+                                            for (uInt i = 0; i < ni; i++) {
+                                                pRes[i] -= amp * pPsf[i];
+                                            }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // if needed fill the list of high pixels we'll use for peak finding and cleaning residuals
+                    if (fillHighPixels && itsUsePixelLists && !useScalePixels) {
+                        const T level = this->control()->level(*(this->state()),itsPixelListTolerance);
+                        const bool haveMask = maskref.nelements()>0;
+                        #pragma omp for schedule(static)
+                        for (uint base = 0; base < nBases; base++) {
+                            const Matrix<T> res(itsResidualBasis(base)(0));
+                            // get a quick estimate of the rms using 1% of pixels
+                            ASKAPDEBUGASSERT(res.nrow()>10 && res.ncolumn()>10);
+                            const float sigma = 1.48f * casacore::madfm(res(Slice(0,res.nrow()/10,10),Slice(0,res.ncolumn()/10,10)));
+                            ASKAPDEBUGASSERT(res.contiguousStorage());
+                            ASKAPDEBUGASSERT(!haveMask || maskref.contiguousStorage());
+                            const T* pRes = res.data();
+                            const T* pMask = maskref.data();
+                            const uint n = res.nelements();
+                            // check we don't overflow uint
+                            ASKAPDEBUGASSERT(n==res.nelements());
+                            highPixels[base].clear();
+                            std::vector<uint>& pixels = highPixels[base];
+                            // scale the level down for larger scales, but not below n sigma
+                            const float cutoff = max(itsPixelListNSigma*sigma,sqrt(this->itsCouplingMatrix(base)(0, 0)) * level);
+                            cutoffLevel(base) = cutoff;
+                            auto it = itsScalePixels[base].begin();
+                            // add pixels to the list if they are high or cleaned before
+                            // uses the fact that itsScalePixels[base] is a sorted set
+                            for (uint j = 0; j < n; j++ ) {
+                                const T val = haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j]);
+                                const bool doInc = (it != itsScalePixels[base].end()) && (*it == j);
+                                if (val > cutoff || doInc) {
+                                    pixels.push_back(j);
+                                }
+                                if (doInc) {
+                                    ++it;
+                                }
+                            }
+                        }
+                        #pragma omp master
+                        {
+                            for (uint base = 0; base < nBases; base++) {
+                                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" has "<<highPixels[base].size()<<" pixels above "<<cutoffLevel(base));
+                            }
+                            fillHighPixels = false;
                         }
                     }
 
@@ -1442,9 +1526,9 @@ namespace askap {
 						this->state()->incIter();
                     }
 
-                    // End of section 9
+                    // End of section 10
                     #pragma omp single
-                    { TimerStop[9] = MPI_Wtime(); Times[9] += (TimerStop[9]-TimerStart[9]); }
+                    { TimerStop[10] = MPI_Wtime(); Times[10] += (TimerStop[10]-TimerStart[10]); }
 
                     //End of all iterations
                     #pragma omp barrier
@@ -1452,14 +1536,14 @@ namespace askap {
 					#pragma omp single
 					{
 						converged = this->control()->terminate(*(this->state()));
+                        firstCycle = false;
 					}
 
                 } while (!converged);
 
             } // End of parallel section
 
-            //const double end_time = MPI_Wtime();
-            const time_t end_time = time(0);
+            const double end_time = MPI_Wtime();
             ASKAPLOG_INFO_STR(decmtbflogger,
                               "Time for minor cycles: "<<end_time-start_time<<" sec");
 
@@ -1529,8 +1613,6 @@ namespace askap {
         {
             float maxValf = 0;
             int maxPosI = 0;
-            //const uInt ncol = mask.ncolumn();
-            //const uInt nrow = mask.nrow();
             // Parallel reduction with openacc
             #pragma acc parallel loop reduction(max:maxValf) present(mask, im)
             for (int i = 0; i < nele; i++ ) {
@@ -1965,8 +2047,7 @@ namespace askap {
                 casacore::Matrix<T> scaleMask(itsResidualBasis[0][0].shape().getFirst(2),T(0));
                 for (int base=0; base<itsScalePixels.size(); base++) {
                     const uint scaleBit = 1<<base;
-                    for (uint i=0; i<itsScalePixels[base].size(); i++) {
-                        const uint pixel = itsScalePixels[base][i];
+                    for (const uint& pixel : itsScalePixels[base]) {
                         scaleMask.data()[pixel] = static_cast<uint>(scaleMask.data()[pixel]) | scaleBit;
                     }
                 }
@@ -2001,7 +2082,7 @@ namespace askap {
                             const uint scaleBit = 1<<scale;
                             if (val & scaleBit) {
                                 // this scale is present
-                                itsScalePixels[scale].push_back(i);
+                                itsScalePixels[scale].insert(i);
                             }
                             if (val == scaleBit) {
                                 // no other scales to check

@@ -131,6 +131,9 @@ namespace askap
       Bool itsReadScaleMask;
       Bool itsWriteScaleMask;
       Bool itsUseOverlapMask;
+      Bool itsUsePixelLists;
+      Float itsPixelListTolerance;
+      Float itsPixelListNSigma;
 
       casacore::Array<Float> itsPSFZeroArray;
 

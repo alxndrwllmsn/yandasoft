@@ -159,6 +159,23 @@ namespace askap {
                 /// @brief Set whether to use a pixel list for the scalemask
                 void setUseScalePixels(Bool useScalePixels);
 
+                /// @brief Set whether to use a pixel list for the clean
+                void setUsePixelLists(Bool usePixelLists);
+
+                /// @brief Set pixel list tolerance
+                /// @details Multiply the clean threshold by (1-tolerance) to decide which
+                /// pixels go in the pixel list for a major cycle. Suggested value 0.1
+                void setPixelListTolerance(float tolerance) {
+                    itsPixelListTolerance = tolerance;
+                }
+
+                /// @brief Set pixel list n sigma limit
+                /// @detail Don't put pixels in the pixellist with amplitude < limit*noise
+                /// The noise is determined separately for each scale / residual basis
+                void setPixelListNSigma(float limit) {
+                    itsPixelListNSigma = limit;
+                }
+
                 /// @brief Set the deep cleaning switch for component finding
                 void setDeepCleanMode(casacore::Bool deep);
 
@@ -262,7 +279,7 @@ namespace askap {
 
                 /// Alternative bitmask listing active pixels for each scale
                 /// Need to use ulong/size_t instead of uint for images > 64k^2
-                std::vector<std::vector<uint>> itsScalePixels;
+                std::vector<std::set<uint>> itsScalePixels;
 
                 /// Point spread functions convolved with cross terms
                 // [nxsub,nysub][nterms,nterms][nbases,nbases]
@@ -296,6 +313,12 @@ namespace askap {
                 casa::Bool itsUseScaleMask;
 
                 casa::Bool itsUseScalePixels;
+
+                casa::Bool itsUsePixelLists;
+
+                float itsPixelListTolerance;
+
+                float itsPixelListNSigma;
 
       /// @brief Store the MFS inverse coupling matrix
       /// @details needed by the restore solver, but it doesn't have all 2N-1 PSFs needed for generation. So store.
