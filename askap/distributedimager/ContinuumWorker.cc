@@ -143,6 +143,10 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
             ASKAPLOG_INFO_STR(logger,"Using default velocity reference direction ( = pointing/field centre)");
         }
     }
+
+    if (isSampleDensityGridNeeded() && itsParset.getBool("sphfuncforpsf", false) && !itsUpdateDir) {
+        ASKAPLOG_WARN_STR(logger, "Using together sphfuncforpsf = true and the traditional weighting mode may lead to unexpected results. Consider using updatedirection=true. See AXA-2792 for details.");
+    }
 }
 
 /// @brief figure out if preconditioning is to be done
