@@ -20,7 +20,7 @@ def analyseResult(spr, checkFlux = True, checkPos = True, resultHasMFSName = Tru
    if resultHasMFSName:
       imgName = 'image.1934.taylor.0.restored'
    else:
-      imgName = 'image.restored.wr.1.1934'
+      imgName = 'image.restored.1934'
    stats = spr.imageStats(imgName)
    print("Statistics for restored image: ",stats)
    flux_diff = abs(expected_flux - stats['peak'])
@@ -47,7 +47,7 @@ def checkBeamLog():
       Note, the number of tests we do should produce identical beam within the tolerance
    """
    import numpy
-   fname = "beamlog.image.restored.wr.1.1934.txt"
+   fname = "beamlog.image.restored.1934.txt"
    beam = numpy.loadtxt(fname)
    if beam.shape != (4,):
       raise RuntimeError("Expect 4 columns and 1 row with data in {}".format(fname))
@@ -132,6 +132,7 @@ if True:
    spr.addToParset("Cimager.nchanpercore=1")
    spr.addToParset("Cimager.Images.image.1934.nterms=1")
    spr.addToParset("Cimager.visweights=\"\"")
+   spr.addToParset("Cimager.singleoutputfile=true")
    # also change algorithm to BasisFunctionMFS 
    spr.addToParset("Cimager.solver.Clean.algorithm=BasisfunctionMFS")
    spr.addToParset("Cimager.solver.Clean.niter=200")
