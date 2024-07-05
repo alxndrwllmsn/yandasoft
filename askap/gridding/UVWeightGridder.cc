@@ -276,7 +276,7 @@ void UVWeightGridder::indexField(const accessors::IConstDataAccessor &acc) const
 
   itsCurrentField = itsKnownPointings.size();
   itsKnownPointings.push_back(firstPointing);
-  ASKAPLOG_DEBUG_STR(logger, "Found new field " << itsCurrentField << " with beam 0 at "<<
+  ASKAPLOG_DEBUG_STR(logger, "Found new field " << itsCurrentField << " with beam "<<acc.feed1()(0)<<" at "<<
             printDirection(firstPointing));
 }
 

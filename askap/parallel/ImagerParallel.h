@@ -165,11 +165,28 @@ namespace askap
       /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
       /// case with the list of effects) or returns an empty pointer if no iteration over data is required
       /// (i.e. either some special algorithm is in use or there is no uv-weighting)
+      /// @param[in] parset configuration parset to use
+      /// @return shared pointer to the uv-weight calculator object
+      static boost::shared_ptr<IUVWeightCalculator> createUVWeightCalculator(const LOFAR::ParameterSet &parset);
+
+      /// @brief factory method creating uv weight calculator based on the current parset
+      /// @details Unlike the static method which gets the parset as the parameter and returns the shared pointer to
+      /// the calculator object, this method uses the current parset passed to the imager in the constructor and assigns
+      /// the result to itsUVWeightCalculator. There is a bit of the technical debt here and it would probably be better to
+      /// factor out this factory into a separate class (and remove this code from the imager). For now, it seems to be the 
+      /// quicker way to be able to quiery the traditional weighting setup without configuring the imager.
       /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight
       /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that
       /// there is no need obtaining the density because either no traditional weighting is done or
       /// we're using some special algorithm which does not require iteration over data
       void createUVWeightCalculator();
+
+      /// @brief set uv-weight calculator object explicitly
+      /// @details This method may be useful, if the weight calculator is created via the static createUVWeightCalculator method.
+      /// This ambiguity w.r.t. dealing with weight calculator objects is hopefully temporary (and is indicative of the technical debt
+      /// because we probably shouldn't have this functionality as part of the imager and/or have approach with two imagers during accumulation).
+      /// @param[in] calc shared pointer to the uv-weight calculator object to set
+      void setUVWeightCalculator(const boost::shared_ptr<IUVWeightCalculator> &calc) { itsUVWeightCalculator = calc; }
 
       /// @brief check if sample density grid needs to be built
       /// @details For now, use the shared pointer carrying uv weight calculator as a flag that we need to

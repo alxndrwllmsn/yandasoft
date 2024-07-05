@@ -195,9 +195,10 @@ void ContinuumMaster::run(void)
         // (this is actually redundant in the case of the master, because calcNE later on would do this, but the code is
         // cleaner this way when we do it explicitly)
         imager.recreateNormalEquations();
+        ASKAPLOG_DEBUG_STR(logger, "Master is about to broadcast the first model with uv-weights");
+    } else {
+        ASKAPLOG_DEBUG_STR(logger, "Master is about to broadcast the first <empty> model");
     }
-    //
-    ASKAPLOG_DEBUG_STR(logger, "Master is about to broadcast first <empty> model");
 
     if (nCycles == 0) { // no solve if ncycles is 0
         ASKAPLOG_DEBUG_STR(logger, "Master beginning single - empty model");
@@ -214,7 +215,7 @@ void ContinuumMaster::run(void)
             ASKAPLOG_DEBUG_STR(logger, "Master beginning major cycle ** " << cycle+1);
 
             if (cycle==0) {
-                imager.broadcastModel(); // initially empty model
+                imager.broadcastModel(); // initially empty model (with or without uv-weights)
             }
             /// Minor Cycle
 

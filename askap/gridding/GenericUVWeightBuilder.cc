@@ -33,6 +33,9 @@
 // own includes
 #include <askap/gridding/GenericUVWeightBuilder.h>
 
+#include <askap/askap/AskapLogging.h>
+ASKAP_LOGGER(logger, ".gridding.genericuvweightbuilder");
+
 namespace askap {
 
 namespace synthesis {
@@ -168,6 +171,7 @@ UVWeightCollection& GenericUVWeightBuilder::finalise(const IUVWeightCalculator &
    // we can add OpenMP parallelism later for either index or plane loop (or both), if required
    // (although care must be taken with slice creation as this part is not thread safe)
    for (std::set<casacore::uInt>::const_iterator ci = indices.begin(); ci != indices.end(); ++ci) {
+        ASKAPLOG_DEBUG_STR(logger, "Finalising uv-weights for (generalised) index "<<*ci);
         ASKAPDEBUGASSERT(itsWeights.exists(*ci));
         casacore::Cube<float> &cube = itsWeights.get(*ci);
         for (casacore::uInt plane = 0; plane < cube.nplane(); ++plane) {
