@@ -131,7 +131,7 @@ FetchContent_Declare(base-imagemath
 
 # -------- base-askapparallel --------
 FetchContent_Declare(base-askapparallel
-  GIT_REPOSITORY    git@github.com:alxndrwllmsn/base-askapparallel.git
+  GIT_REPOSITORY    https://github.com/alxndrwllmsn/base-askapparallel.git
   GIT_TAG           ${BASE_ASKAPPARALLEL_TAG}
   SOURCE_DIR        base-askapparallel
 )
@@ -145,7 +145,7 @@ FetchContent_Declare(base-scimath
 
 # -------- base-accessors --------
 FetchContent_Declare(base-accessors
-  GIT_REPOSITORY    git@github.com:alxndrwllmsn/base-accessors.git
+  GIT_REPOSITORY    https://github.com/alxndrwllmsn/base-accessors.git
   GIT_TAG           ${BASE_ACCESSORS_TAG}
   SOURCE_DIR        base-accessors
 )
