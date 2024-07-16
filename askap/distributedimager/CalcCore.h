@@ -166,6 +166,23 @@ namespace cp {
         /// @param[in] other an instance of CalcCore to merge from
         void mergeNormalEquations(const CalcCore &other) const;
 
+        // the following methods are used to manage single-element stack storing shared pointer to normal equations
+        // see documentation on itsSavedNE data member for more details.
+
+        /// @brief stash current normal equations in the buffer
+        /// @details It simply copies shared pointer to the normal equations into itsSavedNE. Note, an exception is
+        /// thrown if the buffer is not empty (cross check as we currently plan to have a single-element stack).
+        void stashNormalEquations();
+
+        /// @brief pop normal equations from the buffer
+        /// @details This method restores previously stashed normal equations. An exception is thrown if the buffer is
+        /// empty.
+        void popNormalEquations();
+
+        /// @brief check if no normal equations are stashed in the buffer
+        /// @return true if the buffer is empty, false otherwise
+        inline bool notStashedNormalEquations() const { return !itsSavedNE; }
+
     protected:
         /// @brief keep the base class' version accessible here
         /// @note for quick reference, it has the following signature:
@@ -216,6 +233,18 @@ namespace cp {
 
         // Its frequency in the output cube
         double itsFrequency;
+
+        /// @brief buffer to store normal equations
+        /// @details It is a bit of technical debt partially caused by two-imager design of the code, but I (MV) don't see
+        /// a better way of doing this. For traditional weighting we work with different type of NE which is incompatible with
+        /// ordinary normal equations used for imaging. Normally, we recreate imaging normal equations before they are needed. But
+        /// in the case of traditional weighting with joint imaging, they contain coordinate system, etc and currently (which is
+        /// also a bit of the technical debt) are obtained via additional iteration over the data. I tried to reuse this information
+        /// as much as possible but then need to cherry-pick information from two imagers we have. This field is essentially a
+        /// single-element stack which allows to restore the original normal equations after traditional weighting loop is done.
+        /// In normal circumstances it should be null pointer. It only carries value while traditional weighting is done and only
+        /// in the imager used for accumulation (root imager).
+        boost::shared_ptr<askap::scimath::INormalEquations> itsSavedNE;
 
 };
 };

@@ -919,6 +919,41 @@ namespace askap
     /// all available data)
     void ImagerParallel::accumulateUVWeights(const boost::shared_ptr<accessors::IConstDataIterator> &iter) const
     {
+       // first, figure out the image parameter to work with as we need the cell size and image shape to setup the weight grid
+       // Again similar code to that in ImageFFTEquation but we can't easily reuse it (although, perhaps, some refactoring is possible). 
+       // There is a complication that we can have more than one free image parameter (even after removing Taylor terms). For now, only 
+       // support a single image, which would break faceting. It is straightforward to extend the code to support multiple facets if we 
+       // build just one weight for all facets, otherwise more thoughts are needed (but, perhaps, using the 3rd index we could have facets 
+       // factored in and even build separate weight for each facet).
+
+       // again some code duplication with what we have above, but here we want to retain the full parameter name
+       // it would be nice to think about some refactoring
+       ASKAPDEBUGASSERT(itsModel);
+       const std::vector<std::string> completions = itsModel->completions("image");
+       std::set<std::string> currentParamNames;
+       for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
+            ImageParamsHelper iph("image"+*ci);
+            if (iph.isTaylorTerm()) {
+                // in the case of multiple Taylor terms work with order 0, also it may be absent in distributed Taylor terms case - see below
+                iph.makeTaylorTerm(0);
+            }
+            // MV: we could've selected the required facet here too, but don't bother with it at this stage
+            // passing all facets as they are, if present
+            currentParamNames.insert(iph.paramName());
+       }
+       ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any free image parameter in the current model, there is nothing to build the uv-weight for!");
+       // the next check can be commented out, if we always want to use the parameters extracted from the first image (or some logic is necessary to choose the
+       // one we want). Leave the check in place for now, as it can alert us to some unexpected use cases
+       ASKAPCHECK(currentParamNames.size() == 1, "Only one image parameter is currently supported for traditional weighting");
+       const std::string imageParamName = *currentParamNames.begin();
+       // for distributed Taylor terms, term 0 may actually be on a different rank. But we can skip weight calculation for other Taylor terms
+       // (the merge logic would merge the empty builder with whatever it will try to merge in; more thoughts would be needed if there are multiple images)
+       if (!itsModel->has(imageParamName)) {
+           ASKAPLOG_DEBUG_STR(logger, "Distributed Taylor terms case, skip weight accumulation for non zero Taylor terms");
+           return;
+       }
+
+       // now get the builder (should already be setup by the time this method is called) and setup the weight gridder
        const boost::shared_ptr<GenericUVWeightBuilder> builder = getUVWeightBuilder();
        UVWeightGridder gridder(builder);
 
@@ -949,43 +984,24 @@ namespace askap
 
        // technical debt!
        // this is hopefully a temporary hack - due to the current way to place oversampling planes, the weight gridder needs to know
-       // the oversampling factor used by the actual data gridder. The following code gets it from the parset and sets to the weight gridder
+       // the oversampling factor used by the actual data gridder. The following code gets it from the parset and sets to the weight gridder.
+       // And unfortunately, the defaults are different for different gridders which adds to technical debt.
        // Note, the weight gridder doesn't oversample its grid, it just needs to sample the same way for the first oversampling plane
        const std::string dataGridderName = parset().getString("gridder");
-       const int oversample = parset().getInt32("gridder."+dataGridderName+".oversample", 1);
+       int defaultOversample = dataGridderName == "Box" ? 1 : 8;
+       if (dataGridderName == "SphFunc" || dataGridderName == "WStack") {
+           defaultOversample = 128;
+       } 
+       const int oversample = parset().getInt32("gridder."+dataGridderName+".oversample", defaultOversample);
        ASKAPCHECK(oversample > 0, "Oversampling factor is supposed to be positive, you have "<<oversample);
        ASKAPLOG_INFO_STR(logger, "The weight gridder will assume that the data gridder ("<<dataGridderName<<") is using the oversampling factor of "<<oversample);
        ASKAPLOG_DEBUG_STR(logger, "data gridder parameters: "<<parset().makeSubset("gridder."+dataGridderName));
        gridder.setOversampleFactor(oversample);
        //
 
-       // now figure out the cell size and image shape, again similar code to that in ImageFFTEquation but we can't easily reuse it
-       // (although, perhaps, some refactoring is possible). But first, we need to choose the appropriate image parameter and there is a
-       // complication that we can have more than one (even after removing Taylor terms). For now, only support a single image, which would
-       // break faceting. It is straightforward to extend the code to support multiple facets if we build just one weight for all facets, otherwise
-       // more thoughts are needed (but, perhaps, using the 3rd index we could have facets factored in and even build separate weight for each facet).
-
-       // again some code duplication with what we have above, but here we want to retain the full parameter name
-       // it would be nice to think about some refactoring
-       ASKAPDEBUGASSERT(itsModel);
-       const std::vector<std::string> completions = itsModel->completions("image");
-       std::set<std::string> currentParamNames;
-       for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
-            ImageParamsHelper iph("image"+*ci);
-            if (iph.isTaylorTerm()) {
-                // in the case of multiple Taylor terms work with order 0
-                iph.makeTaylorTerm(0);
-            }
-            // MV: we could've selected the required facet here too, but don't bother with it at this stage
-            // passing all facets as they are, if present
-            currentParamNames.insert(iph.paramName());
-       }
-       ASKAPCHECK(currentParamNames.size() > 0, "Unable to find any free image parameter in the current model, there is nothing to build the uv-weight for!");
-       // the next check can be commented out, if we always want to use the parameters extracted from the first image (or some logic is necessary to choose the
-       // one we want). Leave the check in place for now, as it can alert us to some unexpected use cases
-       ASKAPCHECK(currentParamNames.size() == 1, "Only one image parameter is currently supported for traditional weighting");
-       const scimath::Axes axes(itsModel->axes(*currentParamNames.begin()));
-       const casacore::IPosition imageShape = itsModel->shape(*currentParamNames.begin());
+       // now figure out the cell size and image shape for the image parameter selected above and pass them to the gridder
+       const scimath::Axes axes(itsModel->axes(imageParamName));
+       const casacore::IPosition imageShape = itsModel->shape(imageParamName);
        gridder.initialise(axes, imageShape);
 
        // now the setup is done, so we can iterate over data and accumulate
@@ -1002,10 +1018,26 @@ namespace askap
     /// state similar to that before the first major cycle if no traditional weighting is done.
     void ImagerParallel::recreateNormalEquations()
     {
-       ASKAPLOG_DEBUG_STR(logger,"Recreating NE from model");
        ASKAPDEBUGASSERT(itsModel);
+       ASKAPLOG_DEBUG_STR(logger,"Recreating NE from model "<<*itsModel);
        ImagingNormalEquations::ShPtr newNE(new ImagingNormalEquations(*itsModel));
        setNE(newNE);
+    }
+
+    /// @brief factory method creating uv weight calculator based on the current parset
+    /// @details Unlike the static method which gets the parset as the parameter and returns the shared pointer to
+    /// the calculator object, this method uses the current parset passed to the imager in the constructor and assigns
+    /// the result to itsUVWeightCalculator. There is a bit of the technical debt here and it would probably be better to
+    /// factor out this factory into a separate class (and remove this code from the imager). For now, it seems to be the 
+    /// quicker way to be able to quiery the traditional weighting setup without configuring the imager.
+    /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight
+    /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that
+    /// there is no need obtaining the density because either no traditional weighting is done or
+    /// we're using some special algorithm which does not require iteration over data
+    void ImagerParallel::createUVWeightCalculator()
+    {
+       // this is hopefully a legacy method, need some cleanup
+       itsUVWeightCalculator = createUVWeightCalculator(parset());
     }
 
     /// @brief factory method creating uv weight calculator based on the parset
@@ -1016,18 +1048,15 @@ namespace askap
     /// iteration over data. This method acts as a factory for weight calculators (i.e. the second
     /// case with the list of effects) or returns an empty pointer if no iteration over data is required
     /// (i.e. either some special algorithm is in use or there is no uv-weighting)
-    /// @note This method updates itsUVWeightCalculator which will be either non-zero shared pointer to the weight
-    /// calculator object to be applied to the density of uv samples, or an empty shared pointer which implies that
-    /// there is no need obtaining the density because either no traditional weighting is done or
-    /// we're using some special algorithm which does not require iteration over data
-    void ImagerParallel::createUVWeightCalculator()
+    /// @param[in] parset configuration parset to use
+    /// @return shared pointer to the uv-weight calculator object
+    boost::shared_ptr<IUVWeightCalculator> ImagerParallel::createUVWeightCalculator(const LOFAR::ParameterSet &parset) 
     {
        const std::string keyword = "uvweight";
-       if (!parset().isDefined(keyword)) {
-           itsUVWeightCalculator.reset();
-           return;
+       if (!parset.isDefined(keyword)) {
+           return boost::shared_ptr<IUVWeightCalculator>();
        }
-       const std::vector<std::string> wtCalcList = parset().getStringVector(keyword);
+       const std::vector<std::string> wtCalcList = parset.getStringVector(keyword);
        ASKAPCHECK(wtCalcList.size() > 0u, "Cimager.uvweight should contain either a single keyword describing how the weight is obtained or a vector with procedure names to apply these to measured uv-density");
 
        // also need to check here later on that Cimager.uvweight parameter is set to one of the resereved keywords and return an empty
@@ -1042,7 +1071,7 @@ namespace askap
             const std::string name = wtCalcList[index];
             if (name == "Robust") {
                 // we could've had parameters in the form Cimager.uvweight.Robust.robustness to follow a more structured apporach - can be changed if we want it
-                const float robustness = parset().getFloat(keyword + ".robustness");
+                const float robustness = parset.getFloat(keyword + ".robustness");
                 ASKAPLOG_INFO_STR(logger, "        + "<<name<<": robust weighting with robustness = "<<robustness);
                 const boost::shared_ptr<RobustUVWeightCalculator> calc(new RobustUVWeightCalculator(robustness));
                 calculators[index]  = calc;
@@ -1053,7 +1082,7 @@ namespace askap
                     calculators[index] = calc;
                 } else {
                     if (name == "Reciprocal") {
-                        const float threshold = parset().getFloat(keyword + ".recipthreshold", 1e-5);
+                        const float threshold = parset.getFloat(keyword + ".recipthreshold", 1e-5);
                         ASKAPLOG_INFO_STR(logger, "        + "<<name<<": calculating reciprocal for weight application (threshold = "<<threshold<<")");
                         const boost::shared_ptr<ReciprocalUVWeightCalculator> calc(new ReciprocalUVWeightCalculator(threshold));
                         calculators[index] = calc;
@@ -1064,13 +1093,14 @@ namespace askap
                 }
             }
        }
+
        if (calculators.size() == 1) {
-           itsUVWeightCalculator = calculators[0];
-       } else {
-           // there are several effects which need to be applied one by one, create composite calculator to achieve this
-           const boost::shared_ptr<CompositeUVWeightCalculator> result(new CompositeUVWeightCalculator(calculators.begin(), calculators.end()));
-           itsUVWeightCalculator = result;
-       }
+           return calculators[0];
+       } 
+
+       // there are several effects which need to be applied one by one, create composite calculator to achieve this
+       const boost::shared_ptr<CompositeUVWeightCalculator> result(new CompositeUVWeightCalculator(calculators.begin(), calculators.end()));
+       return result;
     }
 
 
