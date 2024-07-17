@@ -20,9 +20,4 @@ set ( BASE_ASKAPPARALLEL_TAG       tags/1.9.3      CACHE  STRING    "base-askapp
 set ( BASE_SCIMATH_TAG             tags/1.14.3     CACHE  STRING    "base-scimath version"             FORCE )
 set ( BASE_ACCESSORS_TAG           tags/1.16.3     CACHE  STRING    "base-accessors version"           FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.13.3     CACHE  STRING    "base-components version"          FORCE )
-set ( ASKAP_ANALYSIS_TAG           tags/1.14.3     CACHE  STRING    "askap-analysis version"           FORCE )
-set ( ASKAP_YANDASOFT_TAG          tags/1.16.5     CACHE  STRING    "yandasoft version"                FORCE )
-set ( ASKAP_PIPELINETASKS_TAG      tags/1.17.6     CACHE  STRING    "askap-pipelinetasks version"      FORCE )
-set ( ASKAP_INTERFACES_TAG         tags/1.2.0      CACHE  STRING    "askap-interfaces version"         FORCE )
-set ( ASKAP_SMS_TAG                tags/1.14.3     CACHE  STRING    "askap-sms version"                FORCE )
 # TOS related repos are not versioned yet, so pinned this build with commit hash values.
