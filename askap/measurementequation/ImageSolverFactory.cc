@@ -330,7 +330,7 @@ namespace askap
           ASKAPCHECK(!parset.isDefined("solver.nterms"), "Specify nterms for each image instead of using solver.nterms");
           ASKAPCHECK(!parset.isDefined("solver.Clean.nterms"),
               "Specify nterms for each image instead of using solver.Clean.nterms");
-          solver.reset(new ImageAMSMFSolver(casacore::Vector<float>(scales)));
+          solver.reset(new ImageAMSMFSolver());
           ASKAPLOG_INFO_STR(logger, "Constructed basis function multi-frequency solver" );
         }
         else {
