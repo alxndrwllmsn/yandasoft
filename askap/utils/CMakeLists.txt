@@ -8,6 +8,7 @@ add_sources_to_yandasoft(
     DelaySolverImpl.cc
     StatsAndMask.cc
 	TilingUtils.cc
+    DeconvolveTimerUtils.cc
 )
 
 install (FILES
@@ -20,5 +21,6 @@ install (FILES
     DelaySolverImpl.h
     StatsAndMask.h
 	TilingUtils.h
+    DeconvolveTimerUtils.h
     DESTINATION include/askap/utils
 )
