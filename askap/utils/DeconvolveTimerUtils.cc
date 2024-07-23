@@ -45,14 +45,16 @@ using namespace askap::utils;
 Timer::Timer()
 {
 #ifdef HAVE_MPI
-    std::cout << "creating a MPI timer" << std::endl;
-    //itsTimer.reset(new MPITimer, Timer{});
-    //itsTimer = std::shared_ptr<MPITimer>(new MPITimer, Timer{});
-    itsTimer = std::shared_ptr<MPITimer>(new MPITimer);
+    int flag = 0;
+    int r = MPI_Initialized(&flag);
+    if (r == MPI_SUCCESS && flag == 1) {
+        itsTimer.reset(new MPITimer {});
+    } else {
+        ASKAPLOG_INFO_STR(logger,"MPI is installed but MPI_Initialized() is not yet called. Using StdTimer instead");
+        itsTimer.reset(new StdTimer {});
+    }
 #else
-    std::cout << "creating a STD timer" << std::endl;
-    //itsTimer.reset(new StdTimer{}, Timer{});
-    itsTimer = std::shared_ptr<StdTimer>(new StdTimer, Timer{});
+    itsTimer.reset(new StdTimer {});
 #endif
 }
 
@@ -77,10 +79,6 @@ Timer::summary() const
     return itsTimer->summary();
 }
 
-//void
-//Timer::operator()(MPITimer* p) const { delete p;}
-//void
-//Timer::operator()(StdTimer* p) const { delete p;}
 /////////////////////////////////
 
 StdTimer::StdTimer()
@@ -206,7 +204,7 @@ void SectionTimer::summary() const
 {
     for ( const auto& kvp : itsTimers ) {
         const auto& timer = kvp.second;
-        ASKAPLOG_INFO_STR(logger,timer->summary());
+        ASKAPLOG_INFO_STR(logger,"timer " << kvp.first << ", " << timer->summary());
     }
 }
 

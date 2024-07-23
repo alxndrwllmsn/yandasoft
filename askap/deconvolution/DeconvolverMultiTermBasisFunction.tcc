@@ -41,7 +41,7 @@ ASKAP_LOGGER(decmtbflogger, ".deconvolution.multitermbasisfunction");
 #include <askap/deconvolution/MultiScaleBasisFunction.h>
 #include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 #include <askap/scimath/utils/OptimizedArrayMathUtils.h>
-#include <mpi.h>
+//#include <mpi.h>
 
 #include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/utils/DeconvolveTimerUtils.h>

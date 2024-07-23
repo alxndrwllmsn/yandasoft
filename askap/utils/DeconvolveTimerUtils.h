@@ -40,10 +40,10 @@ namespace utils {
 
 enum class State {START, STOP};
 
-class StdTimer;
-#ifdef HAVE_MPI
-class MPITimer;
-#endif
+//class StdTimer;
+//#ifdef HAVE_MPI
+//class MPITimer;
+//#endif
 
 class ITimer {
     public:
@@ -68,23 +68,19 @@ class Timer final : public ITimer {
         std::string summary() const override;
         double elapsedTime() const override;
 
-    protected:
-#ifdef HAVE_MPI
-        std::shared_ptr<MPITimer> itsTimer;
-#else
-        std::shared_ptr<StdTimer> itsTimer;
-#endif
+    private:
+        std::shared_ptr<ITimer> itsTimer;
 };
 
 class StdTimer final : public ITimer
 {
   public:
     friend class Timer;
+    ~StdTimer() {}
   private:
     StdTimer();
     StdTimer(const StdTimer&) = default;
     StdTimer& operator=(const StdTimer&) = default;
-    ~StdTimer() {}
 
     void start() override;
     void stop() override;
