@@ -32,6 +32,7 @@
 
 // own includes
 #include <askap/gridding/GenericUVWeightAccessor.h>
+#include <askap/askap/AskapUtil.h>
 
 namespace askap {
 
@@ -48,11 +49,25 @@ namespace synthesis {
 /// @param[in] coeffField field index coefficient
 /// @param[in] coeffSource source index coefficient
 GenericUVWeightAccessor::GenericUVWeightAccessor(const UVWeightCollection &wts, casacore::uInt coeffBeam,
-                           casacore::uInt coeffField, casacore::uInt coeffSource) : itsWeights(wts)
+                           casacore::uInt coeffField, casacore::uInt coeffSource) : itsWeights(&wts, utility::NullDeleter())
 {
    // could've used the constructor directly, but it is safer this way and more clear that we won't have a dangling pointer
    const boost::shared_ptr<GenericUVWeightIndexTranslator> translator(new GenericUVWeightIndexTranslator(coeffBeam, coeffField, coeffSource));
    setTranslator(translator);
+}
+
+/// @brief construct weight accessor via shared pointer interfaces
+/// @details This constructor should be used when weight accessor is expected to absorb the ownership of the collection, i.e.
+/// it is not used as an adapter. This is handy if say a collection is built based on the model parameters. Care must be taken to
+/// manage the life-cycle, i.e. the weight data will be preserved as long as all copies of the accessor object are alive.
+/// @param[in] wts shared pointer to weight collection
+/// @param[in] translator shared pointer to the index translator object 
+GenericUVWeightAccessor::GenericUVWeightAccessor(const boost::shared_ptr<UVWeightCollection const> &wts, 
+             const boost::shared_ptr<IUVWeightIndexTranslator const> &translator) : 
+             UVWeightIndexTranslationHelper<IUVWeightAccessor>(translator), itsWeights(wts) 
+{
+   ASKAPCHECK(translator, "Empty shared pointer to the index translator object is passed to GenericUVWeightAccessor constructor");
+   ASKAPCHECK(wts, "Empty shared pointer to the weight collection is passed to GenericUVWeightAccessor constructor");
 }
 
 /// @brief obtain weight grid for a given index
@@ -69,8 +84,9 @@ GenericUVWeightAccessor::GenericUVWeightAccessor(const UVWeightCollection &wts, 
 /// @return UVWeight object with the selected grid of weights
 UVWeight GenericUVWeightAccessor::getWeight(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const
 {
+   ASKAPDEBUGASSERT(itsWeights);
    const casacore::uInt index = indexOf(beam, field, source);
-   return itsWeights.get(index);
+   return itsWeights->get(index);
 }
 
 } // namespace synthesis

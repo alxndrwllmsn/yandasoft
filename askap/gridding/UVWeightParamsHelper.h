@@ -89,10 +89,33 @@ struct UVWeightParamsHelper : public boost::noncopyable {
    /// @param[in] params shared pointer to the params class to work with
    explicit UVWeightParamsHelper(const boost::shared_ptr<scimath::Params> &params);
 
+   /// @brief initialise for the particular params specified via reference
+   /// @details This version of the constructor assumes that the ownership of the reference/pointer is managed by the caller
+   /// (i.e. a temporary shared pointer is created under assumption that the supplied reference would never go out of scope - 
+   /// this is handy for operations within one code block/method). As before, it has been made explicit to make the intentions 
+   /// to wrap Params class more clear in the code.
+   /// @param[in] params non-const reference to the params class to work with
+   /// @note Although it may be handy to have both const and non-const versions, it is only possible if one splits this class into
+   /// two (const and non-const). At present, we have to always supply a non-const reference as this class has some non-const operations.
+   /// One could use const_cast or mutable flag to counteract this. Although this is a bit of the technical debt, it shouldn't lead to 
+   /// big consequences.
+   explicit UVWeightParamsHelper(scimath::Params &params);
+
    /// @brief check that uv-weight exists for a particular name
    /// @param[in] name corresponding image name to query
    /// @return true if uv-weight exists
    bool exists(const std::string &name) const;
+
+   /// @brief copy given parameter to another Params object
+   /// @details This method encapsulates both read and write operations required to copy one weight-related parameter
+   /// (corresponding to a certain image name) to another Params. 
+   /// @param[in] dest non-const reference to the destination Params object
+   /// @param[in] name image name corresponding to the parameter to copy
+   /// @note Nothing is copied if the given parameter doesn't exist. If the destination has 
+   /// old data, the appropriate parameters are removed first even if the required parameter is
+   /// missing in the source and nothing would be copied. At this stage, we're trying to copy by
+   /// reference if we can (because of double vs. float options it is not always possible).
+   void copyTo(scimath::Params &dest, const std::string &name) const;
 
    /// @brief obtain index translator
    /// @details This method returns shared pointer to the index translation class which can be used together with 

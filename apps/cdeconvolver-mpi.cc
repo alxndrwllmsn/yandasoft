@@ -56,7 +56,7 @@
 #include <askap/imageaccess/WeightsLog.h>
 #include <askap/askapparallel/AskapParallel.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
-#include <askap/scimath/fft/FFTWrapper.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/scimath/utils/SpheroidalFunction.h>
 #include <askap/gridding/SphFuncVisGridder.h>
 
@@ -86,7 +86,7 @@ class CdeconvolverApp : public askap::Application
         int itsBeamReferenceChannel;
         LOFAR::ParameterSet itsParset;
 
-        void getRealFFT(casacore::Array<casacore::Float> &fArray, casacore::Array<casacore::Complex> &cArray);
+        void getRealFFT(casacore::Matrix<casacore::Float> &fArray, casacore::Matrix<casacore::Complex> &cArray);
 
         // Precondition and deconvolve the inputs to produce the outputs, note inputs are modified (used as scratch)
         void doTheWork(const LOFAR::ParameterSet subset,
@@ -130,7 +130,7 @@ class CdeconvolverApp : public askap::Application
             return std::make_pair(first_chan, num_chans);
         }
 
-        virtual int run(int argc, char* argv[]) override
+        int run(int argc, char* argv[]) final
         {
             askap::askapparallel::AskapParallel comms(argc, const_cast<const char**>(argv));
             try {
@@ -502,14 +502,14 @@ class CdeconvolverApp : public askap::Application
                     ASKAPLOG_INFO_STR(logger, "Processing from position: " << curpos);
 
                     // the inputs
-                    casacore::Array<casacore::Float> psfIn;
-                    casacore::Array<casacore::Float> pcfIn;
-                    casacore::Array<casacore::Float> dirtyIn;
+                    casacore::Matrix<casacore::Float> psfIn;
+                    casacore::Matrix<casacore::Float> pcfIn;
+                    casacore::Matrix<casacore::Float> dirtyIn;
 
                     if (!imagePlaneInput) {
-                        casacore::Array<casacore::Complex> psfPlane = planeIter.getPlane(psfGrid, curpos);
-                        casacore::Array<casacore::Complex> pcfPlane = planeIter.getPlane(pcfGrid, curpos);
-                        casacore::Array<casacore::Complex> visPlane = planeIter.getPlane(visGrid, curpos);
+                        casacore::Matrix<casacore::Complex> psfPlane = planeIter.getPlane(psfGrid, curpos).nonDegenerate();
+                        casacore::Matrix<casacore::Complex> pcfPlane = planeIter.getPlane(pcfGrid, curpos).nonDegenerate();
+                        casacore::Matrix<casacore::Complex> visPlane = planeIter.getPlane(visGrid, curpos).nonDegenerate();
                         getRealFFT(psfIn,psfPlane);
                         getRealFFT(pcfIn,pcfPlane);
                         getRealFFT(dirtyIn,visPlane);
@@ -577,7 +577,7 @@ class CdeconvolverApp : public askap::Application
                       comms.send((void *) &buf,sizeof(int),to);
                     }
                     if ( calcstats && writeRestored) {
-                      statsAndMask.calculate("",channel,restored);
+                      statsAndMask.calculate(channel,restored);
                     }
                 }
             }
@@ -613,24 +613,26 @@ class CdeconvolverApp : public askap::Application
         }
 
     private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
             return pkgVersion;
         }
 };
 
 /// get the real part of the FFT of the input
-void CdeconvolverApp::getRealFFT(casacore::Array<casacore::Float> &fArray,
-                                casacore::Array<casacore::Complex> &cArray) {
+void CdeconvolverApp::getRealFFT(casacore::Matrix<casacore::Float> &fArray,
+                                casacore::Matrix<casacore::Complex> &cArray) {
 
     fArray.resize(cArray.shape());
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     #ifdef ASKAP_FLOAT_IMAGE_PARAMS
-    askap::scimath::fft2d(cArray,false);
+    fft2d(cArray,false);
     casacore::real(fArray,cArray);
     #else
-    casacore::Array<casacore::DComplex> scratch(cArray.shape());
+    casacore::Matrix<casacore::DComplex> scratch(cArray.shape());
     casacore::convertArray<casacore::DComplex,casacore::Complex>(scratch, cArray);
-    askap::scimath::fft2d(scratch, false);
+    fft2d(scratch, false);
     casacore::convertArray<casacore::Float, casacore::Double>(fArray,real(scratch));
     #endif
     fArray *= static_cast<casacore::Float>(fArray.nelements());

@@ -1,4 +1,5 @@
 add_sources_to_yandasoft(
+	CleanUtils.cc
 	LinmosUtils.cc
     EigenSolve.cc
 	IlluminationUtils.cc
@@ -10,6 +11,7 @@ add_sources_to_yandasoft(
 )
 
 install (FILES
+	CleanUtils.h
 	LinmosUtils.h
 	EigenSolve.h
 	IlluminationUtils.h

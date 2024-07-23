@@ -34,6 +34,10 @@
 
 // casa includes
 
+// other 3rd party
+#include <Blob/BlobArray.h>
+#include <Blob/BlobSTL.h>
+
 
 namespace askap {
 
@@ -159,6 +163,26 @@ std::set<casacore::uInt> UVWeightCollection::indices() const
         result.insert(ci->first);
    }
    return result;
+}
+
+/// @brief write the object to a blob stream
+/// @param[in] os the output stream
+void UVWeightCollection::writeToBlob(LOFAR::BlobOStream& os) const
+{
+   os.putStart("UVWeightCollection", theirPayloadVersion); 
+   os << itsData;
+   os.putEnd(); 
+}
+
+/// @brief read the object from a blob stream
+/// @param[in] is the input stream
+/// @note Not sure whether the parameter should be made const or not
+void UVWeightCollection::readFromBlob(LOFAR::BlobIStream& is)
+{
+   const int version = is.getStart("UVWeightCollection");
+   ASKAPCHECK(version == theirPayloadVersion, "Payload version mismatch reading UVWeightCollection from blob");
+   is >> itsData;
+   is.getEnd();
 }
 
 } // namespace synthesis

@@ -28,23 +28,13 @@ ASKAP_LOGGER(logger, ".measurementequation.imageamsmfsolver");
 #include <askap/askap/AskapError.h>
 #include <askap/profile/AskapProfiler.h>
 
-#include <casacore/casa/aips.h>
-#include <casacore/casa/Arrays/Array.h>
-#include <casacore/casa/Arrays/ArrayMath.h>
-#include <casacore/casa/Arrays/Matrix.h>
-#include <casacore/casa/Arrays/MatrixMath.h>
-#include <casacore/scimath/Mathematics/MatrixMathLA.h>
-#include <casacore/casa/Arrays/Vector.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/measurementequation/ImageParamsHelper.h>
+#include <askap/utils/CleanUtils.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
 #include <askap/scimath/utils/PaddingUtils.h>
 
 #include <askap/deconvolution/DeconvolverMultiTermBasisFunction.h>
-
-#include <casacore/lattices/LatticeMath/LatticeCleaner.h>
-#include <casacore/lattices/LatticeMath/MultiTermLatticeCleaner.h>
-#include <casacore/lattices/Lattices/ArrayLattice.h>
 
 #include <askap/measurementequation/ImageAMSMFSolver.h>
 
@@ -130,6 +120,16 @@ namespace askap
       // per facet in this case
       std::map<std::string, int> taylorMap;
       SynthesisParamsHelper::listTaylor(names, taylorMap);
+
+      // Work out overlap of offset fields with main field and create mask
+      // Main field is expected to be the first and largest encountered
+      Matrix<imtype> extraMask = (itsUseOverlapMask ?
+          utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
+
+      std::string firstImage;
+      double peakRes1 = 0;
+      double originalTarget = 0;
+      double originalTarget2 = 0;
 
       uint nParameters=0;
       ASKAPCHECK(taylorMap.size() != 0, "Solver doesn't have any images to solve for");
@@ -311,6 +311,10 @@ namespace askap
             const std::string imageTag = tmIt->first + planeIter.tag();
             firstcycle = !SynthesisParamsHelper::hasValue(itsCleaners,imageTag);
 
+            if (firstImage.size()==0) {
+                firstImage = imageTag;
+            }
+
             Vector<Array<Float> > cleanVec(itsNumberTaylor);
             Vector<Array<Float> > dirtyVec(itsNumberTaylor);
             Vector<Array<Float> > dirtyLongVec(2*itsNumberTaylor-1);
@@ -409,7 +413,7 @@ namespace askap
             uInt ny(planeIter.planeShape()(1));
             IPosition centre(2, nx/2, ny/2);
 
-            itsPSFZeroArray=psfLongVec(0);
+            itsPSFZeroArray.assign(psfLongVec(0));
             if (firstcycle) {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._fc_norm+precnd");
 
@@ -496,7 +500,10 @@ namespace askap
             if (itsExtraOversamplingFactor) {
                 ASKAPLOG_INFO_STR(logger,
                     "Oversampling by an extra factor of "<<*itsExtraOversamplingFactor<<" before cleaning");
-                SynthesisParamsHelper::oversample(maskArray,*itsExtraOversamplingFactor);
+                // Should we be oversampling (by FFT) the mask array? It could have sharp edges
+                if (maskArray.nelements()) {
+                    SynthesisParamsHelper::oversample(maskArray,*itsExtraOversamplingFactor);
+                }
                 for (uInt order=0; order < limit; ++order) {
                     SynthesisParamsHelper::oversample(psfLongVec(order),*itsExtraOversamplingFactor);
                     if(order < this->itsNumberTaylor) {
@@ -521,6 +528,14 @@ namespace askap
                 }
             }
 
+            // get noise for thresholds if needed
+            float sigma = 0.;
+            if (noiseThreshold()>0) {
+                // get mad estimate for sigma
+                // may need to take mask into account?
+                sigma = 1.48f * casacore::madfm(dirtyVec(0));
+            }
+
             // Now that we have all the required images, we can initialise the deconvolver
             if (firstcycle) {// Initialize everything only once.
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._fc_initdeconvolver");
@@ -531,8 +546,18 @@ namespace askap
                 ASKAPDEBUGASSERT(itsCleaners[imageTag]);
 
                 itsCleaners[imageTag]->setMonitor(itsMonitor);
-                itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
-                itsControl->setTargetObjectiveFunction2(deepThreshold());
+                if (sigma > 0) {
+                    // set thresholds based on robust noise estimate
+                    itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
+                    itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                } else {
+                    itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
+                    itsControl->setTargetObjectiveFunction2(deepThreshold());
+                }
+                if (imageTag == firstImage) {
+                    originalTarget = itsControl->targetObjectiveFunction();
+                    originalTarget2 = itsControl->targetObjectiveFunction2();
+                }
                 itsControl->setFractionalThreshold(fractionalThreshold());
 
                 itsCleaners[imageTag]->setControl(itsControl);
@@ -544,9 +569,23 @@ namespace askap
                 itsCleaners[imageTag]->setBasisFunction(itsBasisFunction);
                 itsCleaners[imageTag]->setSolutionType(itsSolutionType);
                 itsCleaners[imageTag]->setDecoupled(itsDecoupled);
+                itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
+                itsCleaners[imageTag]->setUseScalePixels(itsUseScalePixels);
+                itsCleaners[imageTag]->setUsePixelLists(itsUsePixelLists);
+                itsCleaners[imageTag]->setPixelListTolerance(itsPixelListTolerance);
+                itsCleaners[imageTag]->setPixelListNSigma(itsPixelListNSigma);
+
                 if (maskArray.nelements()) {
+                    if (imageTag == firstImage &&
+                        extraMask.nelements()== maskArray.nelements()) {
+                        maskArray *= extraMask.addDegenerate(2);
+                    }
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
+                }
+                if (itsReadScaleMask) {
+                    ASKAPLOG_INFO_STR(logger, "Read scale mask from image: "<<itsScaleMaskName);
+                    itsCleaners[imageTag]->setScaleMask(SynthesisParamsHelper::imageHandler().read(itsScaleMaskName).nonDegenerate());
                 }
             } else {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._updatedeconvolver");
@@ -555,6 +594,16 @@ namespace askap
                 ASKAPLOG_INFO_STR(logger, "Multi-Term Basis Function deconvolver already exists - update dirty images");
                 itsCleaners[imageTag]->updateDirty(dirtyVec);
                 ASKAPLOG_INFO_STR(logger, "Successfully updated dirty images");
+                // update thresholds based on robust noise estimate
+                if (sigma > 0) {
+                    itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
+                    itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                    if (imageTag == firstImage) {
+                        originalTarget = itsControl->targetObjectiveFunction();
+                        originalTarget2 = itsControl->targetObjectiveFunction2();
+                    }
+                    itsCleaners[imageTag]->setControl(itsControl);
+                }
             }
 
             // We have to reset the initial objective function
@@ -563,6 +612,27 @@ namespace askap
             // By convention, iterations are counted from scratch each
             // major cycle
             itsCleaners[imageTag]->state()->setCurrentIter(0);
+
+            if (useFirstImageForThresholds()) {
+                if (imageTag == firstImage ) {
+                    // restore the thresholds for first field
+                    itsControl->setTargetObjectiveFunction(originalTarget);
+                    itsControl->setTargetObjectiveFunction2(originalTarget2);
+                } else {
+                    // need to use final peak residual of first image as limit for cleaning of next images
+                    // to avoid overcleaning offset fields with little flux
+                    if (peakRes1 > originalTarget) {
+                        // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
+                        itsControl->setTargetObjectiveFunction(peakRes1);
+                        itsControl->setTargetObjectiveFunction2(0);
+                    } else {
+                        // if peakRes1 < firstTarget: set 1st target to original value, set 2nd Target to peakRes1
+                        itsControl->setTargetObjectiveFunction(originalTarget);
+                        itsControl->setTargetObjectiveFunction2(peakRes1);
+                    }
+                }
+                itsCleaners[imageTag]->setControl(itsControl);
+            }
 
             for (uInt order=0; order < itsNumberTaylor; ++order) {
                 if (this->itsNumberTaylor>1) {
@@ -627,6 +697,9 @@ namespace askap
             // Now update the stored peak residual
             const std::string peakResParam = std::string("peak_residual.") + imageTag;
             double peakRes = itsCleaners[imageTag]->state()->peakResidual();
+            if (imageTag == firstImage) {
+                peakRes1 = peakRes;
+            }
             // force a stop of the major cycles - clean diverging
             if (stop) {
               peakRes *= -1;
@@ -637,6 +710,29 @@ namespace askap
                 ip.add(peakResParam, peakRes);
             }
             ip.fix(peakResParam);
+
+            // check if we're below the noise thresholds
+            bool below = false;
+            if (peakRes > 0 && sigma > 0) {
+                if (deepNoiseThreshold()>0) {
+                    if (peakRes < itsControl->targetObjectiveFunction2()) {
+                        below = true;
+                    }
+                } else if (noiseThreshold()>0) {
+                    if (peakRes < itsControl->targetObjectiveFunction()) {
+                        below = true;
+                    }
+                } else {
+                    ASKAPTHROW(AskapError,"Logic error in ImageAMSMFSolver::solveNormalEquations");
+                }
+            }
+            const std::string noiseParam = std::string("noise_threshold_reached.") + imageTag;
+            if (ip.has(noiseParam)) {
+                ip.update(noiseParam, below ? 1.0 : -1.0);
+            } else {
+                ip.add(noiseParam, below ? 1.0 : -1.0);
+            }
+            ip.fix(noiseParam);
 
             // Write the final vector of clean model images into parameters
             for( uInt order=0; order < itsNumberTaylor; ++order) {
@@ -649,6 +745,19 @@ namespace askap
                   ASKAPLOG_INFO_STR(logger, "No Taylor terms were solved");
                 }
                 const std::string thisOrderParam = iph.paramName();
+                if (order == 0 && itsWriteScaleMask) {
+                    string fullResName = thisOrderParam;
+                    if (itsExtraOversamplingFactor) {
+                        const size_t index = fullResName.find("image");
+                        ASKAPCHECK(index == 0, "Swapping to full-resolution param name but something is wrong");
+                        fullResName.replace(index,5,"fullres");
+                    }
+                    Array<float> tmpImg = itsCleaners[imageTag]->scaleMask();
+                    const uInt numDegenerate = ip.shape(fullResName).size() - tmpImg.ndim();
+
+                    saveArrayIntoParameter(ip, fullResName, ip.shape(fullResName),
+                        "scalemask", tmpImg.addDegenerate(numDegenerate), planeIter.position());
+                }
 
                 ASKAPLOG_INFO_STR(logger, "About to get model for plane="<<plane<<" Taylor order="<<order<<
                     " for image "<<tmIt->first);
@@ -684,6 +793,8 @@ namespace askap
                 const std::string thisOrderParam = iph.paramName();
                 parametersToBeFixed.insert(thisOrderParam);
             }
+
+            itsCleaners[imageTag]->releaseMemory();
 
         } // end of polarisation (i.e. plane) loop
 
@@ -772,7 +883,34 @@ namespace askap
       if (this->itsDecoupled) {
           ASKAPLOG_DEBUG_STR(logger, "Using decoupled residuals");
       }
-
+      // Find out if we are reading or writing the scalemask, or just using it
+      itsScaleMaskName = parset.getString("readscalemask","");
+      itsReadScaleMask = (itsScaleMaskName != "");
+      itsWriteScaleMask = !itsReadScaleMask && parset.getBool("writescalemask",false);
+      itsUseScaleMask = parset.getBool("usescalemask",true) || itsReadScaleMask || itsWriteScaleMask;
+      itsUseScalePixels = parset.getBool("usescalepixels",itsUseScaleMask);
+      itsUsePixelLists = parset.getBool("usepixellists", false);
+      if (itsUseScaleMask) {
+          if (itsUseScalePixels) {
+              ASKAPLOG_INFO_STR(logger, "Using pixel lists for scale masks");
+          } else {
+              ASKAPLOG_INFO_STR(logger, "Using bitmask image for scale masks");
+          }
+          if (itsReadScaleMask) {
+              ASKAPLOG_INFO_STR(logger, "Will read scale mask image "<<itsScaleMaskName);
+          }
+          if (itsWriteScaleMask) {
+              ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
+          }
+      } else {
+          ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
+      }
+      if (itsUsePixelLists) {
+          ASKAPLOG_INFO_STR(logger, "Using pixel lists with active (high) pixels");
+      }
+      itsUseOverlapMask = parset.getBool("useoverlapmask", true);
+      itsPixelListTolerance = parset.getFloat("usepixellists.tolerance",0.1);
+      itsPixelListNSigma = parset.getFloat("usepixellists.nsigma",4.0);
     }
   }
 }

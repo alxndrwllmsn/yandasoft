@@ -123,8 +123,17 @@ namespace askap
       BasisFunction<Float>::ShPtr itsBasisFunction;
 
       String itsSolutionType;
+      String itsScaleMaskName;
 
       Bool itsDecoupled;
+      Bool itsUseScaleMask;
+      Bool itsUseScalePixels;
+      Bool itsReadScaleMask;
+      Bool itsWriteScaleMask;
+      Bool itsUseOverlapMask;
+      Bool itsUsePixelLists;
+      Float itsPixelListTolerance;
+      Float itsPixelListNSigma;
 
       casacore::Array<Float> itsPSFZeroArray;
 

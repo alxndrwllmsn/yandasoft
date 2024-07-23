@@ -52,6 +52,7 @@
 #include <askap/gridding/GenericUVWeightIndexTranslator.h> 
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapLogging.h>
+#include <askap/askap/AskapUtil.h>
 
 ASKAP_LOGGER(logger, ".gridding.uvweightparamshelper");
 
@@ -69,6 +70,21 @@ UVWeightParamsHelper::UVWeightParamsHelper(const boost::shared_ptr<scimath::Para
 {
    ASKAPCHECK(params, "Attempt to initialise UVWeightParamsHelper with an empty Params shared pointer");
 }
+
+/// @brief initialise for the particular params specified via reference
+/// @details This version of the constructor assumes that the ownership of the reference/pointer is managed by the caller
+/// (i.e. a temporary shared pointer is created under assumption that the supplied reference would never go out of scope - 
+/// this is handy for operations within one code block/method). As before, it has been made explicit to make the intentions 
+/// to wrap Params class more clear in the code.
+/// @param[in] params non-const reference to the params class to work with
+/// @note Although it may be handy to have both const and non-const versions, it is only possible if one splits this class into
+/// two (const and non-const). At present, we have to always supply a non-const reference as this class has some non-const operations.
+/// One could use const_cast or mutable flag to counteract this. Although this is a bit of the technical debt, it shouldn't lead to 
+/// big consequences.
+UVWeightParamsHelper::UVWeightParamsHelper(scimath::Params &params) : itsParams(&params, utility::NullDeleter())
+{
+}
+
 
 
 /// @brief check that uv-weight exists for a particular name
@@ -247,6 +263,45 @@ bool UVWeightParamsHelper::addIndexTranslator(const std::string &name, const boo
    itsParams->add(indexTranslationKey, buf);
    itsParams->fix(indexTranslationKey);
    return true;
+}
+
+/// @brief copy given parameter to another Params object
+/// @details This method encapsulates both read and write operations required to copy one weight-related parameter
+/// (corresponding to a certain image name) to another Params. 
+/// @param[in] dest non-const reference to the destination Params object
+/// @param[in] name image name corresponding to the parameter to copy
+/// @note Nothing is copied if the given parameter doesn't exist. If the destination has 
+/// old data, the appropriate parameters are removed first even if the required parameter is
+/// missing in the source and nothing would be copied. At this stage, we're trying to copy by
+/// reference if we can (because of double vs. float options it is not always possible).
+void UVWeightParamsHelper::copyTo(scimath::Params &dest, const std::string &name) const
+{
+   UVWeightParamsHelper destHlp(dest);
+   // always remove first, if the parameter with the given name doesn't exist in the current object,
+   // it won't exist in the destination either - this is a safer behaviour
+   destHlp.remove(name);
+   if (exists(name)) {
+       // we could've used high-level methods to read and write, but doing it from first principles allows us to 
+       // cut down on unnecessary operations.
+       ASKAPDEBUGASSERT(itsParams);
+       // The second parameter passed to completions() ensures that fixed parameters are also included 
+       // (uv-weight related parameters are expected to be fixed as we're not solving for them)
+       const std::string baseKey = "uvweight."+name+".";
+       const std::vector<std::string> completions = itsParams->completions(baseKey, true);
+       for (std::vector<std::string>::const_iterator ci = completions.begin(); ci != completions.end(); ++ci) {
+            const std::string parName = baseKey + *ci;
+            dest.add(parName, itsParams->valueF(parName));
+            // we expect all parameters related to uv-weights to always be fixed, so just fix the copied one without checking
+            // whether the original one was fixed (although it should be)
+            dest.fix(parName);
+       }
+       // now add index translation details if present 
+       const std::string indexTranslationKey = "uvweight_indices."+name;
+       if (itsParams->has(indexTranslationKey)) {
+           dest.add(indexTranslationKey, itsParams->valueF(indexTranslationKey));
+           dest.fix(indexTranslationKey);
+       }
+   }
 }
 
 } // namespace synthesis

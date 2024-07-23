@@ -64,12 +64,12 @@ struct UVWeightIndexTranslationHelper : virtual public Base {
    /// @brief constructor setting translator class up front
    /// @param[in] translator shared pointer to the translator class to be used with this adapter
    /// @note It is assumed that the Base class is default constructable
-   explicit UVWeightIndexTranslationHelper(const boost::shared_ptr<IUVWeightIndexTranslator> &translator) :
+   explicit UVWeightIndexTranslationHelper(const boost::shared_ptr<IUVWeightIndexTranslator const> &translator) :
            itsTranslator(translator) {}
 
    /// @brief set the translator class
    /// @param[in] translator shared pointer to the translator class to be used with this adapter
-   void setTranslator(const boost::shared_ptr<IUVWeightIndexTranslator> &translator) {
+   void setTranslator(const boost::shared_ptr<IUVWeightIndexTranslator const> &translator) {
         itsTranslator = translator;
    }
 
@@ -92,7 +92,7 @@ struct UVWeightIndexTranslationHelper : virtual public Base {
    };
 private:
    /// @brief shared pointer for the actual index translation class
-   boost::shared_ptr<IUVWeightIndexTranslator> itsTranslator;
+   boost::shared_ptr<IUVWeightIndexTranslator const> itsTranslator;
 };
 
 } // namespace synthesis

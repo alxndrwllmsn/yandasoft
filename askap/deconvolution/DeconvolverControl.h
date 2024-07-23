@@ -84,6 +84,14 @@ namespace askap {
                 /// used to evaluate termination.
                 casacore::Bool terminate(const DeconvolverState<T>& ds);
 
+                /// @brief Return the current termination level
+                /// @detail The state of the deconvolver is passed via the
+                /// DeconvolverState instance. Information in that is
+                /// combined with the thresholds to determine the termination level.
+                /// @param[in] ds The deconvolver state
+                /// @param[in] safetyMargin fraction by which to lower the level
+                T level(const DeconvolverState<T>& ds, T safetyMargin = 0.1) const;
+
                 /// @brief Return the termination as a string
                 /// @param[out] Termination cause returned as a string
                 casacore::String terminationString() const;

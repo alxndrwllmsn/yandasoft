@@ -57,6 +57,14 @@ leakagecalibtest: test of polarisation leakage calibration
     [Tags]          test1934  
     [Template]      Run PythonTest ${thetest}
     test1934  
+ddcal: test DDCal calibration application in imager
+    [Tags]          ddcal   newimager
+    [Template]      Run PythonTest ${thetest}
+    ddcal
+delaysolver: test delaysolver app on real ATCA data"
+    [Tags]          testdelaysolver
+    [Template]      Run PythonTest ${thetest}
+    testdelaysolver
 
 *** Keywords ***
 Run PythonTest ${thetest}

@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
-set (VERSION "1.11.1")
+set(VERSION "1.16.5")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
+
 
 # ASKAP Integration (askapsoft)
 #
@@ -374,4 +375,6 @@ if (BUILD_TESTING)
     add_subdirectory(tests/gridding)
 	add_subdirectory(tests/measurementequation)
 	add_subdirectory(tests/opcal)
+	add_subdirectory(tests/distributedimager)
+	add_subdirectory(tests/utils)
 endif ()

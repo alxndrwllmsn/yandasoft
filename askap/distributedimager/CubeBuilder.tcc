@@ -528,7 +528,7 @@ void CubeBuilder<T>::writeRigidSlice(const casacore::Array<T>& arr, const casaco
 }
 
 template < class T >
-void CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
+const casacore::Array<float> CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
 {
 
     if (itsExtraOversamplingFactor) {
@@ -537,9 +537,11 @@ void CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const
         scimath::PaddingUtils::fftPad(arr,fullresarr);
         casacore::IPosition where(4, 0, 0, 0, chan);
         itsCube->write(itsFilename, fullresarr, where);
+        return fullresarr;
     }
     else {
         writeRigidSlice(arr, chan);
+        return arr;
     }
 
 }
@@ -571,8 +573,9 @@ CubeBuilder<T>::createCoordinateSystem(const LOFAR::ParameterSet& parset,
         Matrix<Double> xform(2, 2);
         xform = 0.0;
         xform.diagonal() = 1.0;
-        const Quantum<Double> ra = asQuantity(dirVector.at(0), "deg");
-        const Quantum<Double> dec = asQuantity(dirVector.at(1), "deg");
+        const MDirection dir = asMDirection(dirVector);
+        const Quantum<Double> ra = dir.getValue().getLong("deg");
+        const Quantum<Double> dec = dir.getValue().getLat("deg");
         ASKAPLOG_DEBUG_STR(CubeBuilderLogger, "Direction: " << ra.getValue() << " degrees, "
                            << dec.getValue() << " degrees");
 

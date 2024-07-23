@@ -46,6 +46,7 @@ class UVWeightParamsHelperTest : public CppUnit::TestFixture
    CPPUNIT_TEST_EXCEPTION(testAddWrongIndex, AskapError);
    CPPUNIT_TEST(testGet);
    CPPUNIT_TEST(testGetIndexTranslator);
+   CPPUNIT_TEST(testCopy);
    CPPUNIT_TEST_SUITE_END();
 public:
    void setUp() {
@@ -196,6 +197,46 @@ public:
       testAdd2();
       UVWeightParamsHelper hlp(itsParams);
       const boost::shared_ptr<UVWeightCollection> collectionPtr = hlp.getUVWeights("gc");
+      checkCollectionFromTestAdd(collectionPtr);
+   }
+
+   void testGetIndexTranslator() {
+      testAdd();
+      UVWeightParamsHelper hlp(itsParams);
+
+      // check that the index translator behaves as expected 
+      // note, the trivial translator is checked in testAdd2
+      const boost::shared_ptr<IUVWeightIndexTranslator> ttor = hlp.getIndexTranslator("gc");
+      CPPUNIT_ASSERT(ttor);
+      CPPUNIT_ASSERT_EQUAL(1u, ttor->indexOf(1u,0u,0u));
+      CPPUNIT_ASSERT_EQUAL(2u, ttor->indexOf(0u,1u,0u));
+      CPPUNIT_ASSERT_EQUAL(3u, ttor->indexOf(0u,0u,1u));
+   }
+
+   void testCopy() {
+      testAdd();
+      testAdd2();
+      UVWeightParamsHelper hlp(itsParams);
+      scimath::Params dest;
+      hlp.copyTo(dest, "gc");
+      // test an alternative constructor from reference as well
+      UVWeightParamsHelper hlp2(dest);
+      CPPUNIT_ASSERT(hlp2.exists("gc"));
+
+      // check that the required stuff has been copied
+      const boost::shared_ptr<IUVWeightIndexTranslator> ttor = hlp2.getIndexTranslator("gc");
+      CPPUNIT_ASSERT(ttor);
+      CPPUNIT_ASSERT_EQUAL(1u, ttor->indexOf(1u,0u,0u));
+      CPPUNIT_ASSERT_EQUAL(2u, ttor->indexOf(0u,1u,0u));
+      CPPUNIT_ASSERT_EQUAL(3u, ttor->indexOf(0u,0u,1u));
+
+      const boost::shared_ptr<UVWeightCollection> collectionPtr = hlp2.getUVWeights("gc");
+      checkCollectionFromTestAdd(collectionPtr);
+   }
+
+protected:
+   // helper method to check collection to be what is expected after testAdd
+   void checkCollectionFromTestAdd(const boost::shared_ptr<UVWeightCollection> &collectionPtr) {
       CPPUNIT_ASSERT(collectionPtr);
       // get non-const interface to get cube interface for access, although we use it read-only
       UVWeightCollection& collection = *collectionPtr;
@@ -218,19 +259,6 @@ public:
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, wt2(row, col, 0), 1e-5);
            }
       }
-   }
-
-   void testGetIndexTranslator() {
-      testAdd();
-      UVWeightParamsHelper hlp(itsParams);
-
-      // check that the index translator behaves as expected 
-      // note, the trivial translator is checked in testAdd2
-      const boost::shared_ptr<IUVWeightIndexTranslator> ttor = hlp.getIndexTranslator("gc");
-      CPPUNIT_ASSERT(ttor);
-      CPPUNIT_ASSERT_EQUAL(1u, ttor->indexOf(1u,0u,0u));
-      CPPUNIT_ASSERT_EQUAL(2u, ttor->indexOf(0u,1u,0u));
-      CPPUNIT_ASSERT_EQUAL(3u, ttor->indexOf(0u,0u,1u));
    }
 
 private:
