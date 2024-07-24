@@ -37,6 +37,10 @@
 #include <mpi.h>
 #endif
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 ASKAP_LOGGER(logger, ".deconvolveTimerUtils");
 
 using namespace askap;
@@ -48,35 +52,41 @@ Timer::Timer()
     int flag = 0;
     int r = MPI_Initialized(&flag);
     if (r == MPI_SUCCESS && flag == 1) {
-        itsTimer.reset(new MPITimer {});
+        itsTimerImpl.reset(new MPITimer {});
     } else {
-        ASKAPLOG_INFO_STR(logger,"MPI is installed but MPI_Initialized() is not yet called. Using StdTimer instead");
-        itsTimer.reset(new StdTimer {});
+        ASKAPLOG_INFO_STR(logger,"MPI is installed but MPI_Initialized() is not yet called.");
+#ifdef _OPENMP
+        ASKAPLOG_INFO_STR(logger,"Using OPENMP timer instead of MPI timer.");
+        itsTimerImpl.reset(new OpenMPTimer {});
+#else
+        ASKAPLOG_INFO_STR(logger,"Using standard timer instead of MPI timer.");
+        itsTimerImpl.reset(new StdTimer {});
+#endif
     }
 #else
-    itsTimer.reset(new StdTimer {});
+    itsTimerImpl.reset(new StdTimer {});
 #endif
 }
 
 double Timer::elapsedTime() const
 {
-    return itsTimer->elapsedTime();
+    return itsTimerImpl->elapsedTime();
 }
 
 void Timer::start()
 {
-    itsTimer->start();
+    itsTimerImpl->start();
 }
 
 void Timer::stop()
 {
-    itsTimer->stop();
+    itsTimerImpl->stop();
 }
 
 std::string
 Timer::summary() const
 {
-    return itsTimer->summary();
+    return itsTimerImpl->summary();
 }
 
 /////////////////////////////////
@@ -85,6 +95,11 @@ StdTimer::StdTimer()
 : itsElapsedTime(0)
 {
     itsState = State::STOP;
+}
+
+StdTimer::~StdTimer()
+{
+    ASKAPLOG_DEBUG_STR(logger,"StdTimer::~STDTimer()");
 }
 
 void StdTimer::start()
@@ -132,6 +147,10 @@ MPITimer::MPITimer()
     itsState = State::STOP;
 }
 
+MPITimer::~MPITimer()
+{
+    ASKAPLOG_DEBUG_STR(logger,"MPITimer::~MPITimer()");
+}
 
 void MPITimer::start()
 {
@@ -162,6 +181,54 @@ std::string MPITimer::summary() const
 }
 
 double MPITimer::elapsedTime() const
+{
+    ASKAPASSERT(itsState == State::STOP);
+    return itsElapsedTime;
+}
+#endif
+
+//////////////////////////
+#ifdef _OPENMP
+OpenMPTimer::OpenMPTimer()
+:  itsElapsedTime(0.0)
+{
+    itsState = State::STOP;
+}
+
+OpenMPTimer::~OpenMPTimer()
+{
+    ASKAPLOG_DEBUG_STR(logger,"MPITimer::~MPITimer()");
+}
+
+void OpenMPTimer::start()
+{
+    if ( itsState == State::STOP ) {
+        itsStartTime = omp_get_wtime();
+        itsState = State::START;
+    }
+}
+
+void OpenMPTimer::stop()
+{
+    if ( itsState == State::START ) {
+        itsStopTime = omp_get_wtime();;
+        if ( itsElapsedTime == 0.0 ) {
+            itsElapsedTime = itsStopTime - itsStartTime;
+        } else {
+            itsElapsedTime += itsStopTime - itsStartTime;
+        }
+        itsState = State::STOP;
+    }
+}
+
+std::string OpenMPTimer::summary() const
+{
+    ASKAPASSERT(itsState == State::STOP);
+    std::string summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    return summary;
+}
+
+double OpenMPTimer::elapsedTime() const
 {
     ASKAPASSERT(itsState == State::STOP);
     return itsElapsedTime;

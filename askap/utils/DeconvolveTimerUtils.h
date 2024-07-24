@@ -69,14 +69,14 @@ class Timer final : public ITimer {
         double elapsedTime() const override;
 
     private:
-        std::shared_ptr<ITimer> itsTimer;
+        std::shared_ptr<ITimer> itsTimerImpl;
 };
 
 class StdTimer final : public ITimer
 {
   public:
     friend class Timer;
-    ~StdTimer() {}
+    ~StdTimer();
   private:
     StdTimer();
     StdTimer(const StdTimer&) = default;
@@ -97,7 +97,7 @@ class MPITimer final : public ITimer
 {
   public:
     friend class Timer;
-    ~MPITimer() {};
+    ~MPITimer();
   private:
     MPITimer();
     MPITimer(const MPITimer&) = default;
@@ -109,7 +109,26 @@ class MPITimer final : public ITimer
     double itsElapsedTime;
     double itsStartTime;
     double itsStopTime;
-    askap::utils::State itsState;
+};
+#endif
+
+#ifdef _OPENMP
+class OpenMPTimer final : public ITimer
+{
+  public:
+    friend class Timer;
+    ~OpenMPTimer();
+  private:
+    OpenMPTimer();
+    OpenMPTimer(const OpenMPTimer&) = default;
+    OpenMPTimer& operator=(const OpenMPTimer &) = default;
+    void start() override;
+    void stop() override;
+    double elapsedTime() const override;
+    std::string summary() const override;
+    double itsElapsedTime;
+    double itsStartTime;
+    double itsStopTime;
 };
 #endif
 
