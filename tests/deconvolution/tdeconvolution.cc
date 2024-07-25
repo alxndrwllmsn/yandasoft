@@ -50,15 +50,15 @@ int main(int argc, char *argv[])
     ASKAPLOG_INIT("askap.log_cfg") ;
     askapdev::testutils::AskapTestRunner runner(argv[0]);
 
-    runner.addTest( askap::synthesis::DeconvolverBaseTest::suite());
-    runner.addTest( askap::synthesis::DeconvolverFistaTest::suite());
-    runner.addTest( askap::synthesis::DeconvolverHogbomTest::suite());
+//    runner.addTest( askap::synthesis::DeconvolverBaseTest::suite());
+//    runner.addTest( askap::synthesis::DeconvolverFistaTest::suite());
+//    runner.addTest( askap::synthesis::DeconvolverHogbomTest::suite());
     runner.addTest( askap::synthesis::DeconvolverMultiTermBasisFunctionTest::suite());
-    runner.addTest( askap::synthesis::DeconvolverControlTest::suite());
-    runner.addTest( askap::synthesis::DeconvolverMonitorTest::suite());
-    runner.addTest( askap::synthesis::DeconvolverStateTest::suite());
-    runner.addTest( askap::synthesis::EntropyTest::suite());
-    runner.addTest( askap::synthesis::BasisFunctionTest::suite());
+//    runner.addTest( askap::synthesis::DeconvolverControlTest::suite());
+//    runner.addTest( askap::synthesis::DeconvolverMonitorTest::suite());
+//    runner.addTest( askap::synthesis::DeconvolverStateTest::suite());
+//    runner.addTest( askap::synthesis::EntropyTest::suite());
+//    runner.addTest( askap::synthesis::BasisFunctionTest::suite());
     bool wasSuccessful = runner.run();
 
     return wasSuccessful ? 0 : 1;

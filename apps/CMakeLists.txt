@@ -61,6 +61,7 @@ statsAndMaskChanApp
 tWeightsLogGather
 tMajorCycleComms
 tClearMSCache
+tDeconvolveTimerUtils
 )
 
 
