@@ -104,24 +104,30 @@ StdTimer::~StdTimer()
 
 void StdTimer::start()
 {
-    if ( itsState == State::STOP ) {
-        auto now = std::chrono::system_clock::now();
-        itsStartTime = std::chrono::system_clock::to_time_t(now);
-        itsState = State::START;
+    #pragma omp single
+    {
+        if ( itsState == State::STOP ) {
+            auto now = std::chrono::system_clock::now();
+            itsStartTime = std::chrono::system_clock::to_time_t(now);
+            itsState = State::START;
+        }
     }
 }
 
 void StdTimer::stop()
 {
-    if ( itsState == State::START ) {
-        auto now = std::chrono::system_clock::now();
-        itsStopTime = std::chrono::system_clock::to_time_t(now);
-        if ( itsElapsedTime == 0 ) {
-            itsElapsedTime = itsStopTime - itsStartTime;
-        } else {
-            itsElapsedTime += itsStopTime - itsStartTime;
+    #pragma omp single
+    {
+        if ( itsState == State::START ) {
+            auto now = std::chrono::system_clock::now();
+            itsStopTime = std::chrono::system_clock::to_time_t(now);
+            if ( itsElapsedTime == 0 ) {
+                itsElapsedTime = itsStopTime - itsStartTime;
+            } else {
+                itsElapsedTime += itsStopTime - itsStartTime;
+            }
+            itsState = State::STOP;
         }
-        itsState = State::STOP;
     }
 }
 
@@ -236,34 +242,34 @@ double OpenMPTimer::elapsedTime() const
 #endif
 
 //////////////////////////////
-SectionTimer::SectionTimer(unsigned int sections)
+SectionTimer::SectionTimer(unsigned int numTimer)
 {
-    for(unsigned int section = 0; section < sections; section++) {
-        itsTimers.insert(std::make_pair(section, new Timer{}));
+    for(unsigned int t = 0; t < numTimer; t++) {
+        itsTimers.insert(std::make_pair(t, new Timer{}));
     }
 }
 
-void SectionTimer::start(unsigned int section)
+void SectionTimer::start(unsigned int timerNum)
 {
-    auto timerIter = itsTimers.find(section);
+    auto timerIter = itsTimers.find(timerNum);
     if ( timerIter != itsTimers.end() ) {
         auto timer = timerIter->second;
         timer->start();
     } else {
         ASKAPLOG_WARN_STR(logger,"SectionTimer::start - section = " 
-                            << section << " is not in the map");
+                            << timerNum << " is not in the map");
     }
 }
 
-void SectionTimer::stop(unsigned int section)
+void SectionTimer::stop(unsigned int timerNum)
 {
-    auto timerIter = itsTimers.find(section);
+    auto timerIter = itsTimers.find(timerNum);
     if ( timerIter != itsTimers.end() ) {
         auto timer = timerIter->second;
         timer->stop();
     } else {
         ASKAPLOG_WARN_STR(logger,"SectionTimer::start - section = "
-                            << section << " is not in the map");
+                            << timerNum << " is not in the map");
     }
 }
 

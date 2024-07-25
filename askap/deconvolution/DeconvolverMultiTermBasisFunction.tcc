@@ -384,8 +384,6 @@ namespace askap {
 
             ASKAPLOG_INFO_STR(decmtbflogger,
                               "Calculating convolutions of residual images with basis functions");
-            //const double start_time = MPI_Wtime();
-            // const time_t start_time = time(0);
             askap::utils::Timer timer;
             timer.start();
             
@@ -432,11 +430,7 @@ namespace askap {
                     }
                 }
             }
-            //const double end_time = MPI_Wtime();
-            //const time_t end_time = time(0);
             timer.stop();
-            //ASKAPLOG_INFO_STR(decmtbflogger,
-            //                  "Time to calculate residual images * basis functions: "<<end_time-start_time<<" sec");
             ASKAPLOG_INFO_STR(decmtbflogger,
                               "Time to calculate residual images * basis functions: "<< timer.elapsedTime() << " sec");
         }
@@ -691,7 +685,6 @@ namespace askap {
 
             // Timers for analysis
             const int no_timers = 8;
-            //Vector<double> TimerStart(no_timers,0), TimerStop(no_timers,0), Times(no_timers,0);
             askap::utils::SectionTimer sectionTimer(no_timers);
 
 	      	// Termination
@@ -708,7 +701,6 @@ namespace askap {
                 highPixels.resize(nBases);
             }
 
-            //const double start_time = MPI_Wtime();
             askap::utils::Timer timer;
             timer.start();
 
@@ -725,8 +717,6 @@ namespace askap {
                 // =============== Set weights =======================
 
                 // Section 0
-                #pragma omp single
-                //TimerStart[0] = MPI_Wtime();
                 sectionTimer.start(0);
                 
 
@@ -751,9 +741,7 @@ namespace askap {
                     }
                 }
 
-                #pragma omp single
-                { sectionTimer.stop(0); }
-                //{ TimerStop[0] = MPI_Wtime(); Times[0] += (TimerStop[0]-TimerStart[0]); }
+                sectionTimer.stop(0);
 
                 // Commence cleaning iterations
                 do {
@@ -782,9 +770,7 @@ namespace askap {
                         if (itsSolutionType == "MAXBASE") {
 
                             // Section 1 Timer
-                            #pragma omp single
                             sectionTimer.start(1);
-                            //TimerStart[1] = MPI_Wtime();
 
                             #pragma omp single
                             res.reference(itsResidualBasis(base)(0));
@@ -819,16 +805,12 @@ namespace askap {
                                 maxVal *= norm;
                             }
 
-                            #pragma omp single
-                            { sectionTimer.stop(1); }
-                            //{ TimerStop[1] = MPI_Wtime(); Times[1] += (TimerStop[1]-TimerStart[1]); }
+                            sectionTimer.stop(1);
 
                         } else if (itsSolutionType == "MAXCHISQ") {
 
                             // section 2
-                            #pragma omp single
                             sectionTimer.start(2);
-                            //TimerStart[2] = MPI_Wtime();
 
                             for (uInt term1 = 0; term1 < this->nTerms(); ++term1) {
 
@@ -850,16 +832,9 @@ namespace askap {
                                 }
                             } // End of for loop over terms
 
-                            #pragma omp single
-                            { sectionTimer.stop(2); }
-                            //{ TimerStop[2] = MPI_Wtime(); Times[2] += (TimerStop[2]-TimerStart[2]); }
+                            sectionTimer.stop(2);
 
-
-
-                            #pragma omp single
                             sectionTimer.start(3);
-                            //TimerStart[3] = MPI_Wtime();
-
                             #pragma omp single
                             {
                                 negchisq.resize(this->dirty(0).shape().nonDegenerate());
@@ -901,9 +876,7 @@ namespace askap {
                             }
 
                             // End of section 3
-                            #pragma omp single
-                            { sectionTimer.stop(3); }
-                            //{ TimerStop[3] = MPI_Wtime(); Times[3] += (TimerStop[3]-TimerStart[3]); }
+                            sectionTimer.stop(3);
                         } // End of else decision
 
                         #pragma omp single
@@ -923,9 +896,7 @@ namespace askap {
                     // that we have to decouple the answer
 
                     // Section 4
-                    #pragma omp single
                     sectionTimer.start(4);
-                    //TimerStart[4] = MPI_Wtime();
 
                     #pragma omp single
                     {
@@ -948,14 +919,11 @@ namespace askap {
                     } // End of omp single section
 
                     // End of section 4
-                    #pragma omp single
-                    { sectionTimer.stop(4); }
-                    //{ TimerStop[4] = MPI_Wtime(); Times[4] += (TimerStop[4]-TimerStart[4]); }
+                    sectionTimer.stop(4);
 
                     // Section 5
                     #pragma omp single
                     {
-                        //TimerStart[5] = MPI_Wtime();
                         sectionTimer.start(5);
 
                         if (this->state()->initialObjectiveFunction() == 0.0) {
@@ -986,26 +954,18 @@ namespace askap {
                         ASKAPLOG_DEBUG_STR(decmtbflogger,"Peak="<<absPeakVal<<", Pos="<< absPeakPos <<", Base="<<optimumBase<<", Total flux = "<<sumFlux);
                     }
                     // End of section 5
-                    #pragma omp single
-                    { sectionTimer.stop(5); }
-                    // { TimerStop[5] = MPI_Wtime(); Times[5] += (TimerStop[5]-TimerStart[5]); }
+                    sectionTimer.stop(5);
 
                     // Section 6
-                    #pragma omp single
                     sectionTimer.start(6);
-                    //TimerStart[6] = MPI_Wtime();
                     getResidualAndPSFSlice(absPeakPos, shape, resStart, psfStart);
                     addComponentToModel(peakValues, shape, resStart, psfStart, optimumBase, mat1);
 
                     // End of section 6
-                    #pragma omp single
-                    { sectionTimer.stop(6); }
-                    //{ TimerStop[6] = MPI_Wtime(); Times[6] += (TimerStop[6]-TimerStart[6]); }
+                    sectionTimer.stop(6);
 
                     // Section 7
-                    #pragma omp single
                     sectionTimer.start(7);
-                    //TimerStart[7] = MPI_Wtime();
 
                     const bool useScalePixels = this->control()->deepCleanMode();
                     const bool useHighPixels = itsUsePixelLists && !useScalePixels && !firstCycle ;
@@ -1029,9 +989,7 @@ namespace askap {
                     }
 
                     // End of section 7
-                    #pragma omp single
-                    { sectionTimer.stop(7); }
-                    //{ TimerStop[7] = MPI_Wtime(); Times[7] += (TimerStop[7]-TimerStart[7]); }
+                    sectionTimer.stop(7);
 
                     //End of all iterations
                     #pragma omp barrier
@@ -1046,10 +1004,7 @@ namespace askap {
 
             } // End of parallel section
 
-            //const double end_time = MPI_Wtime();
             timer.stop();
-            //ASKAPLOG_INFO_STR(decmtbflogger,
-            //                  "Time for minor cycles: "<<end_time-start_time<<" sec");
             ASKAPLOG_INFO_STR(decmtbflogger,
                               "Time for minor cycles: "<< timer.elapsedTime()<<" sec");
 
@@ -1057,14 +1012,6 @@ namespace askap {
             const double sum_time = sectionTimer.totalElapsedTime();
             sectionTimer.summary();
             
-            //double sum_time = 0.0;
-            //for (int i = 0; i < no_timers; i++) {
-            //    if (Times[i] > 0) {
-            //        ASKAPLOG_INFO_STR(decmtbflogger, "Section "<<i<<" Time: "<<Times[i]);
-            //        sum_time += Times[i];
-            //    }
-            //}
-
             ASKAPLOG_INFO_STR(decmtbflogger, "Performed Multi-Term BasisFunction CLEAN for "
                                   << this->state()->currentIter() << " iterations");
             ASKAPLOG_INFO_STR(decmtbflogger, this->control()->terminationString());
@@ -1264,13 +1211,9 @@ namespace askap {
             // This is the parallel version of deconvolve using ManyIterations()
             ASKAPTRACE("DeconvolverMultiTermBasisFunction::deconvolve");
             initialise();
-            //const double start_time = MPI_Wtime();
-            //const time_t start_time = time(0);
             askap::utils::Timer timer;
             timer.start();
             ManyIterations();
-            //const double end_time = MPI_Wtime();
-            //const time_t end_time = time(0);
             timer.stop();
             finalise();
             //ASKAPLOG_INFO_STR(decmtbflogger, "Time Required: "<<end_time - start_time);

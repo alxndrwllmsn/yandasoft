@@ -40,38 +40,51 @@ namespace utils {
 
 enum class State {START, STOP};
 
-//class StdTimer;
-//#ifdef HAVE_MPI
-//class MPITimer;
-//#endif
-
+/// @brief An abstract class which defines the interface for the timer.
 class ITimer {
     public:
         virtual ~ITimer() {}
+        /// @brief - start the time
         virtual void start() = 0;
+        /// @brief - stop the time
         virtual void stop() = 0;
+        /// @return a string summary of the timer
         virtual std::string summary() const = 0;
+        /// @return the timer elapsed time when the timer
+        ///  first started and the last timer it is stopped.
         virtual double elapsedTime() const = 0;
 
     protected:
+        /// brief - timer's internal state
         askap::utils::State itsState;
 };
 
+/// @detail A general timer class which is accessable from client code.
+///         It determines the real implementation timer to use based
+///         on what is available on the system. The preferred timer it
+///         uses is in this order (1) MPI_Wtime, (2) omp_get_wtime and
+///         std::chrono::system_clock
 class Timer final : public ITimer {
     public:
         Timer();
         Timer(const Timer&) = default;
         Timer& operator=(const Timer&) = default;
         ~Timer() {}
+        /// @brief delegate the call to itsTimerImpl start
         void start() override;
+        /// @brief delegate the call to itsTimerImpl stop
         void stop() override;
+        /// @brief delegate the call to itsTimerImpl summary
         std::string summary() const override;
+        /// @brief delegate the call to itsTimerImpl elapsedTime
         double elapsedTime() const override;
 
     private:
+        /// @brief Real implementation timer.
         std::shared_ptr<ITimer> itsTimerImpl;
 };
 
+/// @brief A Standard timer class using the std::chrono::system_clock
 class StdTimer final : public ITimer
 {
   public:
@@ -79,12 +92,16 @@ class StdTimer final : public ITimer
     ~StdTimer();
   private:
     StdTimer();
-    StdTimer(const StdTimer&) = default;
-    StdTimer& operator=(const StdTimer&) = default;
+    StdTimer(const StdTimer&) = delete;
+    StdTimer& operator=(const StdTimer&) = delete;
 
+    /// @brief implementation of ITimer::start
     void start() override;
+    /// @brief implementation of ITimer::stop
     void stop() override;
+    /// @brief implementation of ITimer::summary
     double elapsedTime() const override;
+    /// @brief implementation of ITimer::elapsedTime
     std::string summary() const override;
 
     std::time_t itsElapsedTime;
@@ -93,6 +110,7 @@ class StdTimer final : public ITimer
 };
 
 #ifdef HAVE_MPI
+/// @brief A Standard timer class using the MPI MPI_Wtime
 class MPITimer final : public ITimer
 {
   public:
@@ -100,12 +118,17 @@ class MPITimer final : public ITimer
     ~MPITimer();
   private:
     MPITimer();
-    MPITimer(const MPITimer&) = default;
-    MPITimer& operator=(const MPITimer&) = default;
+    MPITimer(const MPITimer&) = delete;
+    MPITimer& operator=(const MPITimer&) = delete;
+    /// @brief implementation of ITimer::start
     void start() override;
+    /// @brief implementation of ITimer::stop
     void stop() override;
+    /// @brief implementation of ITimer::elapsedTime
     double elapsedTime() const override;
+    /// @brief implementation of ITimer::summary
     std::string summary() const override;
+
     double itsElapsedTime;
     double itsStartTime;
     double itsStopTime;
@@ -113,6 +136,7 @@ class MPITimer final : public ITimer
 #endif
 
 #ifdef _OPENMP
+// @brief A Standard timer class using the OpenMP omp_get_wtime
 class OpenMPTimer final : public ITimer
 {
   public:
@@ -120,29 +144,44 @@ class OpenMPTimer final : public ITimer
     ~OpenMPTimer();
   private:
     OpenMPTimer();
-    OpenMPTimer(const OpenMPTimer&) = default;
-    OpenMPTimer& operator=(const OpenMPTimer &) = default;
+    OpenMPTimer(const OpenMPTimer&) = delete;
+    OpenMPTimer& operator=(const OpenMPTimer &) = delete;
+    /// @brief implementation of ITimer::start
     void start() override;
+    /// @brief implementation of ITimer::stop
     void stop() override;
+    /// @brief implementation of ITimer::elapsedTime
     double elapsedTime() const override;
+    /// @brief implementation of ITimer::summary
     std::string summary() const override;
+
     double itsElapsedTime;
     double itsStartTime;
     double itsStopTime;
 };
 #endif
 
+///@brief SectionTimer contains a map of timers
 class SectionTimer final
 {
   public:
-    SectionTimer(unsigned int sections);
+    /// @brief constructor
+    /// @param numTimer - number of timers to create
+    SectionTimer(unsigned int numTimer);
     SectionTimer(const SectionTimer&) = delete;
     SectionTimer& operator=(const SectionTimer&) = delete;
     ~SectionTimer() {}
 
-    void start(unsigned int section);
-    void stop(unsigned int section);
+    /// @brief - start the timer number timerNum
+    /// @param timerNum - timer number
+    void start(unsigned int timerNum );
+
+    /// @brief - stop the timer number timerNum
+    /// @param timerNum - timer number
+    void stop(unsigned int timerNum);
+    /// @brief - log the elapsed time of each of the timer in this class
     void summary() const;
+    /// @brief return the total elapsed time of all the timers in this class
     double totalElapsedTime() const;
   private:
     std::map<unsigned int, std::shared_ptr<Timer>> itsTimers;
