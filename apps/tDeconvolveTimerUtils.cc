@@ -60,7 +60,7 @@ class DeconvolveTimerApp : public askap::Application
             try {
                 askap::utils::Timer timer;
                 timer.start();
-                const int no_timers = 3;
+                const int no_timers = 5;
                 askap::utils::SectionTimer sectionTimer(no_timers);
                 const int N = 5;
                 for (int n = 0; n < N; n++) {

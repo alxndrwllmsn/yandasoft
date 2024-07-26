@@ -130,7 +130,10 @@ void StdTimer::stop()
 std::string StdTimer::summary() const
 {
     ASKAPASSERT(itsState == State::STOP);
-    std::string summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    std::string summary("");
+    if ( itsElapsedTime != 0 ) {
+        summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    }
     return summary;
 }
 
@@ -180,7 +183,10 @@ void MPITimer::stop()
 std::string MPITimer::summary() const
 {
     ASKAPASSERT(itsState == State::STOP);
-    std::string summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    std::string summary("");
+    if ( itsElapsedTime != 0.0 ) {
+        summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    }
     return summary;
 }
 
@@ -232,7 +238,10 @@ void OpenMPTimer::stop()
 std::string OpenMPTimer::summary() const
 {
     ASKAPASSERT(itsState == State::STOP);
-    std::string summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    std::string summary("");
+    if ( itsElapsedTime != 0.0 ) {
+        summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    }
     return summary;
 }
 
@@ -253,7 +262,6 @@ SectionTimer::SectionTimer(unsigned int numTimer)
 
 void SectionTimer::start(unsigned int timerNum)
 {
-//#pragma omp single
 {
     auto timerIter = itsTimers.find(timerNum);
     if ( timerIter != itsTimers.end() ) {
@@ -268,7 +276,6 @@ void SectionTimer::start(unsigned int timerNum)
 
 void SectionTimer::stop(unsigned int timerNum)
 {
-//#pragma omp single
 {
     auto timerIter = itsTimers.find(timerNum);
     if ( timerIter != itsTimers.end() ) {
@@ -285,7 +292,10 @@ void SectionTimer::summary() const
 {
     for ( const auto& kvp : itsTimers ) {
         const auto& timer = kvp.second;
-        ASKAPLOG_INFO_STR(logger,"timer " << kvp.first << ", " << timer->summary());
+        std::string s = timer->summary();
+        if ( s != "") {
+            ASKAPLOG_INFO_STR(logger,"timer " << kvp.first << ", " << s);
+        }
     }
 }
 
