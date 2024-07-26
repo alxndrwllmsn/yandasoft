@@ -45,6 +45,7 @@
 
 #include <askap/deconvolution/DeconvolverBase.h>
 #include <askap/deconvolution/BasisFunction.h>
+#include <askap/utils/DeconvolveTimerUtils.h>
 
 
 namespace askap {
@@ -165,8 +166,10 @@ namespace askap {
                 // Initialise the PSFs - only need to do this once per change in basis functions
                 virtual void initialiseForBasisFunction(bool force);
 
-                // Not currently implemented, extract from ManyIterations and reinstate after timer update
-                void chooseComponent(uInt& optimumBase, IPosition& absPeakPos, T& absPeakVal, Vector<T>& peakValues);
+                // Find the peak
+                void chooseComponent(uInt& optimumBase, IPosition& absPeakPos, T& absPeakVal, bool firstCycle,
+                    const std::vector<std::vector<uInt>>&highPixels, askap::utils::SectionTimer& sectionTimer,
+                    IPosition& maxPos, T& maxVal, const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients);
 
                 /// Fill the vector of high (or active) pixels for each base
                 void fillHighPixelList(std::vector<std::vector<uInt>>& highPixels, const Matrix<T>& weight);

@@ -44,7 +44,6 @@ ASKAP_LOGGER(decmtbflogger, ".deconvolution.multitermbasisfunction");
 //#include <mpi.h>
 
 #include <askap/scimath/fft/FFT2DWrapper.h>
-#include <askap/utils/DeconvolveTimerUtils.h>
 
 namespace askap {
 
@@ -386,20 +385,23 @@ namespace askap {
                               "Calculating convolutions of residual images with basis functions");
             askap::utils::Timer timer;
             timer.start();
-            
 
+            // We can do bases in parallel & reduce #threads for FFTs - but it uses more memory,
+            //  this is OK for continuum, but not for spectral line
+            // const uInt nthreads = LOFAR::OpenMP::maxThreads();
+            // const uInt nFFTthreads = min(8u,max(1u, nthreads / nBases));
+            // scimath::FFT2DWrapper<FT> fft2d(true,8), nFFTthreads);
             // Do harmonic reorder as with the original wrapper (hence, pass true to the wrapper), it may be possible to
             // skip it here as we use FFT to do convolutions and don't care about particular harmonic placement in the Fourier space
             // Limit number of fft threads to 8 (more is slower for our fft sizes)
-            // Alternatively we could do bases in parallel & reduce #threads for FFTs
-            #pragma omp parallel
+            scimath::FFT2DWrapper<FT> fft2d(true,8);
+            //#pragma omp parallel
             {
-                scimath::FFT2DWrapper<FT> fft2d(true,1);
-                #pragma omp for
+                //#pragma omp for
                 for (uInt base = 0; base < nBases; base++) {
                      // Calculate transform of basis function [nx,ny,nbases]
-                     const Matrix<T> bfRef(itsBasisFunction->basisFunction(base));
-                     Matrix<FT> basisFunctionFFT(bfRef.shape().nonDegenerate(2), 0.);
+                     const Matrix<T>& bfRef(itsBasisFunction->basisFunction(base));
+                     Matrix<FT> basisFunctionFFT(bfRef.shape(), 0.);
                      setReal(basisFunctionFFT, bfRef);
                      fft2d(basisFunctionFFT, true);
 
@@ -655,41 +657,33 @@ namespace askap {
             const uInt nx(this->psf(0).shape()(0));
             const uInt ny(this->psf(0).shape()(1));
             const IPosition subPsfStart(2, (nx - subPsfShape(0)) / 2, (ny - subPsfShape(1)) / 2);
-            const Slicer subPsfSlicer(subPsfStart, subPsfShape);
-            this->validatePSF(subPsfSlicer);
+            this->validatePSF(Slicer(subPsfStart, subPsfShape));
 
             const uInt nBases(itsBasisFunction->numberBases());
             IPosition absPeakPos(2, 0);
             T absPeakVal(0.0);
             uInt optimumBase(0);
             Vector<T> peakValues(this->nTerms());
-            Vector<T> maxValues(this->nTerms());
-            Matrix<T> weights;
             IPosition maxPos(2, 0);
             T maxVal(0.0);
-            bool haveMask;
-            T norm;
-            Vector<Array<T>> coefficients(this->nTerms());
-            Matrix<T> res, wt;
-            Array<T> negchisq;
+            Vector<Matrix<T>> coefficients(this->nTerms());
+            Matrix<T> weights;
+            Matrix<T> negchisq;
             IPosition residualShape(2);
             IPosition psfShape(2);
-            bool isWeighted((this->itsWeight.size() > 0) &&
+            const bool isWeighted((this->itsWeight.size() > 0) &&
                 (this->weight(0).shape().nonDegenerate().conform(itsResidualBasis(0)(0).shape())));
-            Vector<T> maxTermVals(this->nTerms());
-            Vector<T> maxBaseVals(nBases);
             IPosition shape(2,0), resStart(2,0), psfStart(2,0);
 
-            // temporary matrix references
-            Matrix<T> mat1, mat2;
+            // temporary matrix reference
+            Matrix<T> mat;
 
             // Timers for analysis
-            const int no_timers = 8;
+            const int no_timers = 9;
             askap::utils::SectionTimer sectionTimer(no_timers);
 
 	      	// Termination
 	      	int converged;
-            this->control()->maskNeedsResetting(true);
 
             bool fillHighPixels = itsUsePixelLists;
             bool listScalePixels = true;
@@ -706,10 +700,9 @@ namespace askap {
 
             #pragma omp parallel
             {
-                bool IsNotCont;
                 #pragma omp master
                 {
-                    uInt nthreads = LOFAR::OpenMP::numThreads();
+                    const uInt nthreads = LOFAR::OpenMP::numThreads();
                     if (nthreads>1) ASKAPLOG_INFO_STR(decmtbflogger, "Cleaning using "<<nthreads<< " threads");
                 }
 
@@ -718,7 +711,6 @@ namespace askap {
 
                 // Section 0
                 sectionTimer.start(0);
-                
 
                 if (isWeighted) {
 
@@ -731,7 +723,7 @@ namespace askap {
                     }
 
                     if  (itsSolutionType == "MAXCHISQ") {
-                        uInt n = weights.size();
+                        const uInt n = weights.size();
                         T* pWeights = weights.data();
                         // square weights for MAXCHISQ
                         #pragma omp for schedule(static)
@@ -754,142 +746,9 @@ namespace askap {
                     optimumBase = 0;
 
                     // =============== Choose Component =======================
-
-                    for (uInt base = 0; base < nBases; base++) {
-
-                        maxPos = 0;
-                        maxVal = 0.0;
-
-                        #pragma omp single
-                        haveMask = weights.size()>0;
-
-                        // We implement various approaches to finding the peak. The first is the cheapest
-                        // and evidently the best (according to Urvashi).
-
-                        // Look for the maximum in term=0 for this base
-                        if (itsSolutionType == "MAXBASE") {
-
-                            // Section 1 Timer
-                            sectionTimer.start(1);
-
-                            #pragma omp single
-                            res.reference(itsResidualBasis(base)(0));
-
-                            if (haveMask) {
-                                if (this->control()->deepCleanMode()) {
-                                    absMaxPosMaskedOMP(maxVal,maxPos,res,weights,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                                } else if (itsUsePixelLists && !firstCycle) {
-                                    absMaxPosMaskedOMP(maxVal,maxPos,res,weights,highPixels[base]);
-                                } else {
-                                    absMaxPosMaskedOMP(maxVal,maxPos,res,weights);
-                                }
-                            } else {
-                                if (this->control()->deepCleanMode()) {
-                                    absMaxPosOMP(maxVal,maxPos,res,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                                } else if (itsUsePixelLists && !firstCycle) {
-                                    absMaxPosOMP(maxVal,maxPos,res,highPixels[base]);
-                                } else {
-                                    absMaxPosOMP(maxVal,maxPos,res);
-                                }
-                            }
-
-                            #pragma omp for schedule(static)
-                            for (uInt term = 0; term < this->nTerms(); ++term) {
-                                maxValues(term) = itsResidualBasis(base)(term)(maxPos);
-                            }
-                            // In performing the search for the peak across bases, we want to take into account
-                            // the SNR so we normalise out the coupling matrix for term=0 to term=0.
-                            #pragma omp single
-                            {
-                                norm = 1.0 / sqrt(itsCouplingMatrix(base)(0, 0));
-                                maxVal *= norm;
-                            }
-
-                            sectionTimer.stop(1);
-
-                        } else if (itsSolutionType == "MAXCHISQ") {
-
-                            // section 2
-                            sectionTimer.start(2);
-
-                            for (uInt term1 = 0; term1 < this->nTerms(); ++term1) {
-
-                                #pragma omp single
-                                {
-                                    coefficients(term1).resize(this->dirty(0).shape().nonDegenerate());
-                                    coefficients(term1).set(T(0.0));
-                                    ASKAPDEBUGASSERT(coefficients(term1).contiguousStorage());
-                                }
-
-                                for (uInt term2 = 0; term2 < this->nTerms(); ++term2) {
-                                    T* coeff_pointer = coefficients(term1).data();
-                                    const T* res_pointer = itsResidualBasis(base)(term2).data();
-                                    #pragma omp for schedule(static)
-                                    for (size_t index = 0; index < coefficients(term1).size(); index++) {
-                                        coeff_pointer[index] += res_pointer[index] *
-                                               T(itsInverseCouplingMatrix(base)(term1,term2));
-                                    }
-                                }
-                            } // End of for loop over terms
-
-                            sectionTimer.stop(2);
-
-                            sectionTimer.start(3);
-                            #pragma omp single
-                            {
-                                negchisq.resize(this->dirty(0).shape().nonDegenerate());
-                                negchisq.set(T(0.0));
-                                ASKAPDEBUGASSERT(negchisq.contiguousStorage());
-                            }
-
-                            T* negchisq_pointer = negchisq.data();
-                            for (uInt term1 = 0; term1 < this->nTerms(); ++term1) {
-                                const T* coeff_pointer = coefficients(term1).data();
-                                const T* res_pointer = itsResidualBasis(base)(term1).data();
-                                #pragma omp for schedule(static)
-                                for (size_t index = 0; index < negchisq.size(); index++) {
-                                    negchisq_pointer[index] += coeff_pointer[index]*res_pointer[index];
-                                }
-                            }
-
-                            #pragma omp single
-                            res.reference(negchisq);
-
-                            if (haveMask) {
-                                if (this->control()->deepCleanMode()) {
-                                    absMaxPosMaskedOMP(maxVal,maxPos,res,weights,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                                } else {
-                                    absMaxPosMaskedOMP(maxVal,maxPos,res,weights);
-                                }
-                            } else {
-                                if (this->control()->deepCleanMode()) {
-                                    absMaxPosOMP(maxVal,maxPos,res,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                                } else {
-                                    absMaxPosOMP(maxVal,maxPos,res);
-                                }
-                            }
-
-                            // Small loop
-                            #pragma omp for schedule(static)
-                            for (uInt term = 0; term < this->nTerms(); ++term) {
-                                        maxValues(term) = coefficients(term)(maxPos);
-                            }
-
-                            // End of section 3
-                            sectionTimer.stop(3);
-                        } // End of else decision
-
-                        #pragma omp single
-                        {
-                            // We use the minVal and maxVal to find the optimum base
-                            if (abs(maxVal) > absPeakVal) {
-                                    optimumBase = base;
-                                    absPeakVal = abs(maxVal);
-                                    absPeakPos = maxPos;
-                            }
-                        }
-
-                    } // End of iteration over number of bases
+                    // Note we pass the section timer and use slots for section 1, 2 and 3
+                    chooseComponent(optimumBase, absPeakPos, absPeakVal, firstCycle, highPixels,
+                        sectionTimer, maxPos, maxVal, weights, negchisq, coefficients);
 
                     // Now that we know the location of the peak found using one of the
                     // above methods we can look up the values of the residuals. Remember
@@ -922,9 +781,9 @@ namespace askap {
                     sectionTimer.stop(4);
 
                     // Section 5
+                    sectionTimer.start(5);
                     #pragma omp single
                     {
-                        sectionTimer.start(5);
 
                         if (this->state()->initialObjectiveFunction() == 0.0) {
                             this->state()->setInitialObjectiveFunction(abs(absPeakVal));
@@ -959,14 +818,12 @@ namespace askap {
                     // Section 6
                     sectionTimer.start(6);
                     getResidualAndPSFSlice(absPeakPos, shape, resStart, psfStart);
-                    addComponentToModel(peakValues, shape, resStart, psfStart, optimumBase, mat1);
-
+                    addComponentToModel(peakValues, shape, resStart, psfStart, optimumBase, mat);
                     // End of section 6
                     sectionTimer.stop(6);
 
                     // Section 7
                     sectionTimer.start(7);
-
                     const bool useScalePixels = this->control()->deepCleanMode();
                     const bool useHighPixels = itsUsePixelLists && !useScalePixels && !firstCycle ;
                     if (useScalePixels || useHighPixels) {
@@ -974,7 +831,11 @@ namespace askap {
                     } else {
                         subtractPSF(peakValues, shape, resStart, psfStart, optimumBase);
                     }
+                    // End of section 7
+                    sectionTimer.stop(7);
 
+                    // Section 8
+                    sectionTimer.start(8);
                     // if needed fill the list of high pixels we'll use for peak finding and cleaning residuals
                     if (fillHighPixels && itsUsePixelLists && !useScalePixels) {
                         fillHighPixelList(highPixels,weights);
@@ -988,9 +849,6 @@ namespace askap {
 						this->state()->incIter();
                     }
 
-                    // End of section 7
-                    sectionTimer.stop(7);
-
                     //End of all iterations
                     #pragma omp barrier
 
@@ -999,19 +857,20 @@ namespace askap {
 						converged = this->control()->terminate(*(this->state()));
                         firstCycle = false;
 					}
+                    // End of section 8
+                    sectionTimer.stop(8);
 
                 } while (!converged);
 
             } // End of parallel section
 
             timer.stop();
-            ASKAPLOG_INFO_STR(decmtbflogger,
-                              "Time for minor cycles: "<< timer.elapsedTime()<<" sec");
 
             // Report Times
-            const double sum_time = sectionTimer.totalElapsedTime();
+            ASKAPLOG_INFO_STR(decmtbflogger,
+                              "Time for minor cycles: "<< timer.elapsedTime()<<" sec");
             sectionTimer.summary();
-            
+
             ASKAPLOG_INFO_STR(decmtbflogger, "Performed Multi-Term BasisFunction CLEAN for "
                                   << this->state()->currentIter() << " iterations");
             ASKAPLOG_INFO_STR(decmtbflogger, this->control()->terminationString());
@@ -1022,6 +881,136 @@ namespace askap {
             }
 
         } // End of many iterations function
+
+        template<class T, class FT>
+        void DeconvolverMultiTermBasisFunction<T, FT>::chooseComponent(uInt& optimumBase, IPosition& absPeakPos, T& absPeakVal, bool firstCycle,
+            const std::vector<std::vector<uInt>>&highPixels, askap::utils::SectionTimer& sectionTimer,
+            IPosition& maxPos, T& maxVal, const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients)
+        {
+            const uInt nBases(itsBasisFunction->numberBases());
+
+            for (uInt base = 0; base < nBases; base++) {
+
+                #pragma omp single
+                {
+                    maxPos = 0;
+                    maxVal = 0.0;
+                }
+                bool haveMask = weights.size()>0;
+
+                // We implement various approaches to finding the peak. The first is the cheapest
+                // and evidently the best (according to Urvashi).
+
+                // Look for the maximum in term=0 for this base
+                if (itsSolutionType == "MAXBASE") {
+
+                    // Section 1 Timer
+                    sectionTimer.start(1);
+
+                    const Matrix<T>& res =itsResidualBasis(base)(0);
+
+                    if (haveMask) {
+                        if (this->control()->deepCleanMode()) {
+                            absMaxPosMaskedOMP(maxVal,maxPos,res,weights,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
+                        } else if (itsUsePixelLists && !firstCycle) {
+                            absMaxPosMaskedOMP(maxVal,maxPos,res,weights,highPixels[base]);
+                        } else {
+                            absMaxPosMaskedOMP(maxVal,maxPos,res,weights);
+                        }
+                    } else {
+                        if (this->control()->deepCleanMode()) {
+                            absMaxPosOMP(maxVal,maxPos,res,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
+                        } else if (itsUsePixelLists && !firstCycle) {
+                            absMaxPosOMP(maxVal,maxPos,res,highPixels[base]);
+                        } else {
+                            absMaxPosOMP(maxVal,maxPos,res);
+                        }
+                    }
+
+                    // In performing the search for the peak across bases, we want to take into account
+                    // the SNR so we normalise out the coupling matrix for term=0 to term=0.
+                    #pragma omp single
+                    maxVal /= sqrt(itsCouplingMatrix(base)(0, 0));
+
+                    sectionTimer.stop(1);
+
+                } else if (itsSolutionType == "MAXCHISQ") {
+
+                    // section 2
+                    sectionTimer.start(2);
+
+                    for (uInt term1 = 0; term1 < this->nTerms(); ++term1) {
+
+                        #pragma omp single
+                        {
+                            coefficients(term1).resize(this->dirty(0).shape().nonDegenerate());
+                            coefficients(term1).set(T(0.0));
+                            ASKAPDEBUGASSERT(coefficients(term1).contiguousStorage());
+                        }
+
+                        for (uInt term2 = 0; term2 < this->nTerms(); ++term2) {
+                            T* coeff_pointer = coefficients(term1).data();
+                            const T* res_pointer = itsResidualBasis(base)(term2).data();
+                            #pragma omp for schedule(static)
+                            for (size_t index = 0; index < coefficients(term1).size(); index++) {
+                                coeff_pointer[index] += res_pointer[index] *
+                                       T(itsInverseCouplingMatrix(base)(term1,term2));
+                            }
+                        }
+                    } // End of for loop over terms
+
+                    sectionTimer.stop(2);
+
+                    sectionTimer.start(3);
+                    #pragma omp single
+                    {
+                        negchisq.resize(this->dirty(0).shape().nonDegenerate());
+                        negchisq.set(T(0.0));
+                        ASKAPDEBUGASSERT(negchisq.contiguousStorage());
+                    }
+
+                    T* negchisq_pointer = negchisq.data();
+                    for (uInt term1 = 0; term1 < this->nTerms(); ++term1) {
+                        const T* coeff_pointer = coefficients(term1).data();
+                        const T* res_pointer = itsResidualBasis(base)(term1).data();
+                        #pragma omp for schedule(static)
+                        for (size_t index = 0; index < negchisq.size(); index++) {
+                            negchisq_pointer[index] += coeff_pointer[index]*res_pointer[index];
+                        }
+                    }
+
+                    if (haveMask) {
+                        if (this->control()->deepCleanMode()) {
+                            absMaxPosMaskedOMP(maxVal,maxPos,negchisq,weights,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
+                        } else {
+                            absMaxPosMaskedOMP(maxVal,maxPos,negchisq,weights);
+                        }
+                    } else {
+                        if (this->control()->deepCleanMode()) {
+                            absMaxPosOMP(maxVal,maxPos,negchisq,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
+                        } else {
+                            absMaxPosOMP(maxVal,maxPos,negchisq);
+                        }
+                    }
+
+                    // End of section 3
+                    sectionTimer.stop(3);
+                } // End of else decision
+
+                #pragma omp single
+                {
+                    // We use the minVal and maxVal to find the optimum base
+                    if (abs(maxVal) > absPeakVal) {
+                            optimumBase = base;
+                            absPeakVal = abs(maxVal);
+                            absPeakPos = maxPos;
+                    }
+                }
+
+            } // End of iteration over number of bases
+
+        }
+
 
         template<class T, class FT>
         void DeconvolverMultiTermBasisFunction<T, FT>::fillHighPixelList(std::vector<std::vector<uInt>>&highPixels, const Matrix<T>& weights)
@@ -1098,8 +1087,6 @@ namespace askap {
                 // Now we have to deal with the PSF. Here we want to use enough of the
                 // PSF to clean the residual image.
                 psfStart(dim) = max(0, Int(peakPSFPos(dim) - (absPeakPos(dim) - residualStart(dim))));
-                //psfEnd(dim) = min(Int(peakPSFPos(dim) - (absPeakPos(dim) - residualEnd(dim))),
-                //                Int(psfShape(dim) - 1));
             }
             shape = residualEnd - residualStart + 1; // +1 added
         }
@@ -1216,7 +1203,6 @@ namespace askap {
             ManyIterations();
             timer.stop();
             finalise();
-            //ASKAPLOG_INFO_STR(decmtbflogger, "Time Required: "<<end_time - start_time);
             ASKAPLOG_INFO_STR(decmtbflogger, "Time Required: "<< timer.elapsedTime());
             // signal failure and finish the major cycles if we started to diverge
             return (this->control()->terminationCause() != DeconvolverControl<T>::DIVERGED);
