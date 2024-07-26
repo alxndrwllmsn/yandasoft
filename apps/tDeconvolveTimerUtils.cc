@@ -58,7 +58,9 @@ class DeconvolveTimerApp : public askap::Application
         int run(int argc, char* argv[]) final {
             askap::askapparallel::AskapParallel comms(argc, const_cast<const char**>(argv));
             try {
-                const int no_timers = 3;
+                askap::utils::Timer timer;
+                timer.start();
+                const int no_timers = 5;
                 askap::utils::SectionTimer sectionTimer(no_timers);
                 const int N = 5;
                 for (int n = 0; n < N; n++) {
@@ -67,32 +69,52 @@ class DeconvolveTimerApp : public askap::Application
                         // why not use omp master and omp barrier instead of
                         // omp single ? because we want to time the master thread
                         // each time through the for loop
+
                         #pragma omp master
                         {
                             sectionTimer.start(0);
-                            std::chrono::seconds bedTime(10);
+                            std::chrono::seconds bedTime(1);
                             std::this_thread::sleep_for(bedTime);
                             sectionTimer.stop(0);
                         }
                         #pragma omp barrier
 
-                        unsigned long long sum = 0;
+                        double sum = 0;
+
                         sectionTimer.start(0);
+                        #pragma omp for
+                        for (int i = 0; i < 100000000; i++) {
+                            // dont worry about race condition
+                            //sum += i;
+                            sum += sin(1.0/(i+1));
+                        }
+                        sectionTimer.stop(0);
+
                         sectionTimer.start(1);
+
+                        #pragma omp for
+                        for (int i = 0; i < 100000000; i++) {
+                            // dont worry about race condition
+                            sum += sin(1.0/(i+1));
+                        }
+                        sectionTimer.stop(1);
                         sectionTimer.start(2);
 
                         #pragma omp for
-                        for (int i = 0; i < 10000000; i++) {
+                        for (int i = 0; i < 100000000; i++) {
                             // dont worry about race condition
-                            sum += i;
+                            sum += sin(1.0/(i+1));
                         }
 
-                        sectionTimer.stop(0);
-                        sectionTimer.stop(1);
                         sectionTimer.stop(2);
+                        #pragma omp master
+                        std::cout<<"n = "<<n<<", sum = "<<sum<<std::endl;
+
                     }
                 }
+                timer.stop();
                 sectionTimer.summary();
+                std::cout<<"outer loop: " <<  timer.summary()<<std::endl;
                 return 0;
             } catch (...) {
                 return 1;

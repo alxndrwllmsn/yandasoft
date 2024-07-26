@@ -32,8 +32,7 @@
 #include <string>
 #include <memory>
 #include <ctime>
-#include <new>
-
+#include <mutex>
 
 namespace askap {
 namespace utils {
@@ -57,6 +56,7 @@ class ITimer {
     protected:
         /// brief - timer's internal state
         askap::utils::State itsState;
+        std::mutex itsMutex;
 };
 
 /// @detail A general timer class which is accessable from client code.

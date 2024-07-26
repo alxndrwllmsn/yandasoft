@@ -104,37 +104,36 @@ StdTimer::~StdTimer()
 
 void StdTimer::start()
 {
-    #pragma omp single
-    {
-        if ( itsState == State::STOP ) {
-            auto now = std::chrono::system_clock::now();
-            itsStartTime = std::chrono::system_clock::to_time_t(now);
-            itsState = State::START;
-        }
+    std::lock_guard<std::mutex> guard(itsMutex);
+    if ( itsState == State::STOP ) {
+        auto now = std::chrono::system_clock::now();
+        itsStartTime = std::chrono::system_clock::to_time_t(now);
+        itsState = State::START;
     }
 }
 
 void StdTimer::stop()
 {
-    #pragma omp single
-    {
-        if ( itsState == State::START ) {
-            auto now = std::chrono::system_clock::now();
-            itsStopTime = std::chrono::system_clock::to_time_t(now);
-            if ( itsElapsedTime == 0 ) {
-                itsElapsedTime = itsStopTime - itsStartTime;
-            } else {
-                itsElapsedTime += itsStopTime - itsStartTime;
-            }
-            itsState = State::STOP;
+    std::lock_guard<std::mutex> guard(itsMutex);
+    if ( itsState == State::START ) {
+        auto now = std::chrono::system_clock::now();
+        itsStopTime = std::chrono::system_clock::to_time_t(now);
+        if ( itsElapsedTime == 0 ) {
+            itsElapsedTime = itsStopTime - itsStartTime;
+        } else {
+            itsElapsedTime += itsStopTime - itsStartTime;
         }
+        itsState = State::STOP;
     }
 }
 
 std::string StdTimer::summary() const
 {
     ASKAPASSERT(itsState == State::STOP);
-    std::string summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    std::string summary("");
+    if ( itsElapsedTime != 0 ) {
+        summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    }
     return summary;
 }
 
@@ -160,6 +159,7 @@ MPITimer::~MPITimer()
 
 void MPITimer::start()
 {
+    std::lock_guard<std::mutex> guard(itsMutex);
     if ( itsState == State::STOP ) {
         itsStartTime = MPI_Wtime();
         itsState = State::START;
@@ -168,6 +168,7 @@ void MPITimer::start()
 
 void MPITimer::stop()
 {
+    std::lock_guard<std::mutex> guard(itsMutex);
     if ( itsState == State::START ) {
         itsStopTime = MPI_Wtime();;
         if ( itsElapsedTime == 0.0 ) {
@@ -182,7 +183,10 @@ void MPITimer::stop()
 std::string MPITimer::summary() const
 {
     ASKAPASSERT(itsState == State::STOP);
-    std::string summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    std::string summary("");
+    if ( itsElapsedTime != 0.0 ) {
+        summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    }
     return summary;
 }
 
@@ -208,6 +212,8 @@ OpenMPTimer::~OpenMPTimer()
 
 void OpenMPTimer::start()
 {
+    std::lock_guard<std::mutex> guard(itsMutex);
+
     if ( itsState == State::STOP ) {
         itsStartTime = omp_get_wtime();
         itsState = State::START;
@@ -216,6 +222,8 @@ void OpenMPTimer::start()
 
 void OpenMPTimer::stop()
 {
+    std::lock_guard<std::mutex> guard(itsMutex);
+
     if ( itsState == State::START ) {
         itsStopTime = omp_get_wtime();;
         if ( itsElapsedTime == 0.0 ) {
@@ -230,7 +238,10 @@ void OpenMPTimer::stop()
 std::string OpenMPTimer::summary() const
 {
     ASKAPASSERT(itsState == State::STOP);
-    std::string summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    std::string summary("");
+    if ( itsElapsedTime != 0.0 ) {
+        summary = std::string("Elapsed Time: ") + std::to_string(itsElapsedTime);
+    }
     return summary;
 }
 
@@ -251,6 +262,7 @@ SectionTimer::SectionTimer(unsigned int numTimer)
 
 void SectionTimer::start(unsigned int timerNum)
 {
+{
     auto timerIter = itsTimers.find(timerNum);
     if ( timerIter != itsTimers.end() ) {
         auto timer = timerIter->second;
@@ -260,8 +272,10 @@ void SectionTimer::start(unsigned int timerNum)
                             << timerNum << " is not in the map");
     }
 }
+}
 
 void SectionTimer::stop(unsigned int timerNum)
+{
 {
     auto timerIter = itsTimers.find(timerNum);
     if ( timerIter != itsTimers.end() ) {
@@ -272,12 +286,16 @@ void SectionTimer::stop(unsigned int timerNum)
                             << timerNum << " is not in the map");
     }
 }
+}
 
 void SectionTimer::summary() const
 {
     for ( const auto& kvp : itsTimers ) {
         const auto& timer = kvp.second;
-        ASKAPLOG_INFO_STR(logger,"timer " << kvp.first << ", " << timer->summary());
+        std::string s = timer->summary();
+        if ( s != "") {
+            ASKAPLOG_INFO_STR(logger,"timer " << kvp.first << ", " << s);
+        }
     }
 }
 
