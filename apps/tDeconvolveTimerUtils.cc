@@ -72,11 +72,9 @@ class DeconvolveTimerApp : public askap::Application
 
                         #pragma omp master
                         {
-                            #pragma omp single
                             sectionTimer.start(0);
                             std::chrono::seconds bedTime(1);
                             std::this_thread::sleep_for(bedTime);
-                            #pragma omp single
                             { sectionTimer.stop(0); }
                         }
                         #pragma omp barrier
