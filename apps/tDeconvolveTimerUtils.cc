@@ -75,42 +75,38 @@ class DeconvolveTimerApp : public askap::Application
                             sectionTimer.start(0);
                             std::chrono::seconds bedTime(1);
                             std::this_thread::sleep_for(bedTime);
-                            { sectionTimer.stop(0); }
+                            sectionTimer.stop(0);
                         }
                         #pragma omp barrier
 
                         double sum = 0;
 
-                        #pragma omp single
                         sectionTimer.start(0);
                         #pragma omp for
                         for (int i = 0; i < 100000000; i++) {
                             // dont worry about race condition
+                            //sum += i;
                             sum += sin(1.0/(i+1));
                         }
-                        #pragma omp single
-                        { sectionTimer.stop(0); }
+                        sectionTimer.stop(0);
 
-                        #pragma omp single
                         sectionTimer.start(1);
+
                         #pragma omp for
                         for (int i = 0; i < 100000000; i++) {
                             // dont worry about race condition
                             sum += sin(1.0/(i+1));
                         }
-                        #pragma omp single
-                        { sectionTimer.stop(1); }
-
-                        #pragma omp single
+                        sectionTimer.stop(1);
                         sectionTimer.start(2);
+
                         #pragma omp for
                         for (int i = 0; i < 100000000; i++) {
                             // dont worry about race condition
                             sum += sin(1.0/(i+1));
                         }
-                        #pragma omp single
-                        { sectionTimer.stop(2); }
 
+                        sectionTimer.stop(2);
                         #pragma omp master
                         std::cout<<"n = "<<n<<", sum = "<<sum<<std::endl;
 

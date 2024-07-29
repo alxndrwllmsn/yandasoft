@@ -717,7 +717,6 @@ namespace askap {
                 // =============== Set weights =======================
 
                 // Section 0
-                #pragma omp single
                 sectionTimer.start(0);
                 
 
@@ -741,8 +740,8 @@ namespace askap {
                         }
                     }
                 }
-                #pragma omp single
-                { sectionTimer.stop(0); }
+
+                sectionTimer.stop(0);
 
                 // Commence cleaning iterations
                 do {
@@ -771,7 +770,6 @@ namespace askap {
                         if (itsSolutionType == "MAXBASE") {
 
                             // Section 1 Timer
-                            #pragma omp single
                             sectionTimer.start(1);
 
                             #pragma omp single
@@ -806,13 +804,12 @@ namespace askap {
                                 norm = 1.0 / sqrt(itsCouplingMatrix(base)(0, 0));
                                 maxVal *= norm;
                             }
-                            #pragma omp single
-                            { sectionTimer.stop(1); }
+
+                            sectionTimer.stop(1);
 
                         } else if (itsSolutionType == "MAXCHISQ") {
 
                             // section 2
-                            #pragma omp single
                             sectionTimer.start(2);
 
                             for (uInt term1 = 0; term1 < this->nTerms(); ++term1) {
@@ -834,10 +831,9 @@ namespace askap {
                                     }
                                 }
                             } // End of for loop over terms
-                            #pragma omp single
-                            { sectionTimer.stop(2); }
-                            
-                            #pragma omp single
+
+                            sectionTimer.stop(2);
+
                             sectionTimer.start(3);
                             #pragma omp single
                             {
@@ -880,8 +876,7 @@ namespace askap {
                             }
 
                             // End of section 3
-                            #pragma omp single
-                            { sectionTimer.stop(3); }
+                            sectionTimer.stop(3);
                         } // End of else decision
 
                         #pragma omp single
@@ -901,7 +896,6 @@ namespace askap {
                     // that we have to decouple the answer
 
                     // Section 4
-                    #pragma omp single
                     sectionTimer.start(4);
 
                     #pragma omp single
@@ -925,8 +919,7 @@ namespace askap {
                     } // End of omp single section
 
                     // End of section 4
-                    #pragma omp single
-                    { sectionTimer.stop(4); }
+                    sectionTimer.stop(4);
 
                     // Section 5
                     #pragma omp single
@@ -961,21 +954,17 @@ namespace askap {
                         ASKAPLOG_DEBUG_STR(decmtbflogger,"Peak="<<absPeakVal<<", Pos="<< absPeakPos <<", Base="<<optimumBase<<", Total flux = "<<sumFlux);
                     }
                     // End of section 5
-                    #pragma omp single
-                    { sectionTimer.stop(5); }
+                    sectionTimer.stop(5);
 
                     // Section 6
-                    #pragma omp single
                     sectionTimer.start(6);
                     getResidualAndPSFSlice(absPeakPos, shape, resStart, psfStart);
                     addComponentToModel(peakValues, shape, resStart, psfStart, optimumBase, mat1);
 
                     // End of section 6
-                    #pragma omp single
-                    { sectionTimer.stop(6); }
+                    sectionTimer.stop(6);
 
                     // Section 7
-                    #pragma omp single
                     sectionTimer.start(7);
 
                     const bool useScalePixels = this->control()->deepCleanMode();
@@ -1000,8 +989,7 @@ namespace askap {
                     }
 
                     // End of section 7
-                    #pragma omp single
-                    { sectionTimer.stop(7); }
+                    sectionTimer.stop(7);
 
                     //End of all iterations
                     #pragma omp barrier
