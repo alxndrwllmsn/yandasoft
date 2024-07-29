@@ -67,8 +67,8 @@ class ITimer {
 class Timer final : public ITimer {
     public:
         Timer();
-        Timer(const Timer&) = default;
-        Timer& operator=(const Timer&) = default;
+        Timer(const Timer&) = delete;
+        Timer& operator=(const Timer&) = delete; 
         ~Timer() {}
         /// @brief delegate the call to itsTimerImpl start
         void start() override;
