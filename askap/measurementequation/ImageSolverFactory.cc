@@ -183,12 +183,12 @@ namespace askap
         }
       } // if - parameter defined
 
-      const std::string parName3 = "threshold.usefirstimage";
+      const std::string parName3 = "threshold.firstimage";
       if (parset.isDefined(parName3)) {
         boost::shared_ptr<ImageCleaningSolver> ics =
                 boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
         if (ics) {
-            ics->setUseFirstImageForThresholds(parset.getBool(parName3, false));
+            ics->setUseFirstImageForThresholds(parset.getBool(parName3, true));
         } else {
             ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
                 "to use thresholds from first image, ignoring "<<parName3);
