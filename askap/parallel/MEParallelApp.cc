@@ -87,19 +87,20 @@ MEParallelApp::MEParallelApp(askap::askapparallel::AskapParallel& comms, const L
                for (int i=0; i<nProcs; ++i) {
                    itsMs[i] = substitute(tmpl);
                    if (rank == i) {
-                       ASKAPLOG_INFO_STR(logger, "Measurement set "<<tmpl<<
+                       ASKAPLOG_DEBUG_STR(logger, "Measurement set "<<tmpl<<
                                " for rank "<<itsComms.rank()<<" is substituted by "<<itsMs[i]);
                    }
                }
            } else {
-               ASKAPLOG_INFO_STR(logger,
+               ASKAPLOG_DEBUG_STR(logger,
                        "Skip measurement set substitution, names are given explicitly: "<<itsMs);
            }
-           if (nProcs>1) {
-               if (int(itsMs.size()) != (nProcs)) {
-                   ASKAPLOG_WARN_STR(logger,"Running in parallel, dataset per rank usually required");
-               }
-           }
+           // commented out warning: joint imaging many MSs is now a standard processing mode
+           // if (nProcs>1) {
+           //     if (int(itsMs.size()) != (nProcs)) {
+           //         ASKAPLOG_WARN_STR(logger,"Running in parallel, dataset per rank usually required");
+           //     }
+           // }
        }
        // configure uvw-machine cache parameters (to be set up via Data Source)
        const int cacheSize = parset.getInt32("nUVWMachines",1);
