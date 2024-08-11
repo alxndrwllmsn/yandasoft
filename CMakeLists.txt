@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(VERSION "1.16.5")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
@@ -166,18 +169,19 @@ configure_file(askap_synthesis.cc.in askap/askap_synthesis.cc)
 #
 set(REQUIRED_VERSION "${VERSION_MAJOR}.${VERSION_MINOR}")
 
-option (CXX11 "Compile as C++11 if possible" YES)
+#option (CXX11 "Compile as C++11 if possible" YES)
+option (CXX11 "Compile as C++11 if possible" NO)
 # Detect if the compiler supports C++11 if we want to use it.
-if (CXX11)
-    check_cxx_compiler_flag(-std=c++11 HAS_CXX11)
-    if (HAS_CXX11)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-      set(CXX11 ON)
-    else()
-	    message(STATUS "CASA_BUILD requires a c++11 compatible compiler")
-      option(CXX11 "" NO)
-    endif()
-endif()
+#if (CXX11)
+#    check_cxx_compiler_flag(-std=c++11 HAS_CXX11)
+#    if (HAS_CXX11)
+#      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+#      set(CXX11 ON)
+#    else()
+#	    message(STATUS "CASA_BUILD requires a c++11 compatible compiler")
+#      option(CXX11 "" NO)
+#    endif()
+#endif()
 
 check_cxx_compiler_flag(-fcx-limited-range HAS_FCX)
 if (HAS_FCX)
@@ -250,10 +254,10 @@ if (ENABLE_OPENMP)
     endif (OPENMP_FOUND)
 endif()
 
-if (CASACORE3 OR CXX11)
-	set(CMAKE_CXX_STANDARD 11)
-	set(CMAKE_CXX_STANDARD_REQUIRED ON)
-endif()
+#if (CASACORE3 OR CXX11)
+#	set(CMAKE_CXX_STANDARD 11)
+#	set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#endif()
 
 add_library(yandasoft SHARED
 	${CMAKE_CURRENT_BINARY_DIR}/askap/askap_synthesis.cc
