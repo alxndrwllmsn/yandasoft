@@ -246,6 +246,12 @@ namespace askap {
                 /// The noise is determined separately for each scale / residual basis
                 float itsPixelListNSigma;
 
+                /// @brief pixellist range of number of pixels
+                /// @detail Avoid putting way too many pixels in the list
+                /// Try to get the number between the first and second entry times
+                /// the maximum number of iterations
+                std::vector<float> itsPixelListNPixRange;
+
                 /// Read a pre-existing scale mask with the name given if not empty
                 std::string itsScaleMaskName;
         };

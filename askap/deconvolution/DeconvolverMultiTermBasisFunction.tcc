@@ -200,7 +200,7 @@ namespace askap {
                 Vector<Array<T>>& psfLong)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
                 itsSolutionType("MAXBASE"), itsUsePixelLists(true),
-                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0)
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0}))
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There are " << this->nTerms() << " terms to be solved");
 
@@ -218,7 +218,7 @@ namespace askap {
                 Array<T>& psf)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
                 itsSolutionType("MAXBASE"), itsUsePixelLists(true),
-                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0)
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0}))
 
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There is only one term to be solved");
@@ -314,6 +314,10 @@ namespace askap {
             }
             itsPixelListTolerance = parset.getFloat("usepixellists.tolerance",0.1);
             itsPixelListNSigma = parset.getFloat("usepixellists.nsigma",4.0);
+            itsPixelListNPixRange = parset.getFloatVector("usepixellists.npixrange",std::vector<float>({2.0,10.0}));
+            ASKAPCHECK(itsPixelListNPixRange.size()==2,"npixrange needs to have 2 values");
+            ASKAPCHECK(itsPixelListNPixRange[0]<itsPixelListNPixRange[1],"first value of npixrange needs to be smaller than second");
+
         }
 
         template<class T, class FT>
@@ -1018,9 +1022,11 @@ namespace askap {
             const T level = this->control()->level(*(this->state()),itsPixelListTolerance);
             const bool haveMask = weights.size()>0;
             const uInt nBases = highPixels.size();
-            // debugging
-            float cutoffLevel[nBases];
-
+            // Added code to limit the number of high pixels collected - above 1e5 things get slow
+            // no more than 10 x nIter pixels to be collected per base
+            const uInt upperLimit = itsPixelListNPixRange[1] * this->control()->targetIter();
+            // but try to get at least 2 x nIter pixels
+            const uInt lowerLimit = itsPixelListNPixRange[0] * this->control()->targetIter();
             #pragma omp for schedule(static)
             for (uInt base = 0; base < nBases; base++) {
                 const Matrix<T>& res = itsResidualBasis(base)(0);
@@ -1034,38 +1040,57 @@ namespace askap {
                 const uInt n = res.size();
                 // check we don't overflow uInt
                 ASKAPDEBUGASSERT(n==res.size());
-                highPixels[base].clear();
                 std::vector<uInt>& pixels = highPixels[base];
                 // scale the level down for larger scales, but not below n sigma
                 const float cutoff = max(itsPixelListNSigma*sigma,sqrt(itsCouplingMatrix(base)(0, 0)) * level);
-                cutoffLevel[base] = cutoff;
-                if (itsScalePixels.size()>0) {
-                    auto it = itsScalePixels[base].begin();
-                    // add pixels to the list if they are above the cutoff or cleaned before
-                    // uses the fact that itsScalePixels[base] is a sorted set
-                    for (uInt j = 0; j < n; j++ ) {
-                        const T val = haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j]);
-                        const bool doInc = (it != itsScalePixels[base].end()) && (*it == j);
-                        if (val > cutoff || doInc) {
-                            pixels.push_back(j);
+                const float prev = this->state()->initialObjectiveFunction();
+                float step = 1.0;
+                float scale = 0.0;
+                bool tooManyPixels = true;
+                bool tooFewPixels = false;
+                float trialCutoff = cutoff;
+                while (tooManyPixels || tooFewPixels) {
+                    pixels.clear();
+                    float trialCutoff = cutoff + scale * (prev-cutoff);
+                    if (itsScalePixels.size()>0) {
+                        auto it = itsScalePixels[base].begin();
+                        // add pixels to the list if they are above the cutoff or cleaned before
+                        // uses the fact that itsScalePixels[base] is a sorted set
+                        for (uInt j = 0; j < n; j++ ) {
+                            const T val = haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j]);
+                            const bool doInc = (it != itsScalePixels[base].end()) && (*it == j);
+                            if (val > trialCutoff || doInc) {
+                                pixels.push_back(j);
+                            }
+                            if (doInc) {
+                                ++it;
+                            }
                         }
-                        if (doInc) {
-                            ++it;
+                    } else {
+                        // add pixels above the cutoff to the list
+                        for (uInt j = 0; j < n; j++ ) {
+                            const T val = haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j]);
+                            if (val > trialCutoff) {
+                                pixels.push_back(j);
+                            }
                         }
                     }
-                } else {
-                    // add pixels above the cutoff to the list
-                    for (uInt j = 0; j < n; j++ ) {
-                        const T val = haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j]);
-                        if (val > cutoff) {
-                            pixels.push_back(j);
-                        }
+                    // Check if we have way too many components (>>maxiter) and change the cutoff until we don't
+                    // We do a binary search to land between tooFewPixels and tooManyPixels
+                    // Except if we never have too many
+                    int nPixels = pixels.size();
+                    if (itsScalePixels.size()>0) nPixels -= itsScalePixels[base].size();
+                    tooManyPixels = nPixels > upperLimit;
+                    step /= 2;
+                    if (tooManyPixels) {
+                        scale += step;
+                    }
+                    tooFewPixels = nPixels < lowerLimit && scale > 0.;
+                    if (tooFewPixels) {
+                        scale -= step;
                     }
                 }
-            }
-            #pragma omp master
-            for (uInt base = 0; base < nBases; base++) {
-                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" has "<<highPixels[base].size()<<" pixels above "<<cutoffLevel[base]);
+                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" is using "<<highPixels[base].size()<<" pixels above "<<trialCutoff);
             }
         }
 
