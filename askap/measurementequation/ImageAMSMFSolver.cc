@@ -587,13 +587,21 @@ namespace askap
                     // need to use final peak residual of first image as limit for cleaning of next images
                     // to avoid overcleaning offset fields with little flux
                     if (peakRes1 > originalTarget) {
-                        // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
-                        itsControl->setTargetObjectiveFunction(peakRes1);
-                        itsControl->setTargetObjectiveFunction2(0);
+                        // leave target alone if it is higher (high noise in offset field)
+                        if (itsControl->targetObjectiveFunction() < peakRes1) {
+                            // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
+                            itsControl->setTargetObjectiveFunction(peakRes1);
+                            itsControl->setTargetObjectiveFunction2(0);
+                        }
                     } else {
                         // if peakRes1 < firstTarget: set 1st target to original value, set 2nd Target to peakRes1
-                        itsControl->setTargetObjectiveFunction(originalTarget);
-                        itsControl->setTargetObjectiveFunction2(peakRes1);
+                        // but leave alone if sigma target is higher
+                        if (itsControl->targetObjectiveFunction() < originalTarget) {
+                            itsControl->setTargetObjectiveFunction(originalTarget);
+                        }
+                        if (itsControl->targetObjectiveFunction2() < peakRes1) {
+                            itsControl->setTargetObjectiveFunction2(peakRes1);
+                        }
                     }
                 }
                 itsCleaners[imageTag]->setControl(itsControl);
