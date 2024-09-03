@@ -591,8 +591,9 @@ namespace askap
                         if (itsControl->targetObjectiveFunction() < peakRes1) {
                             // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
                             itsControl->setTargetObjectiveFunction(peakRes1);
-                            itsControl->setTargetObjectiveFunction2(0);
                         }
+                        // offset fields don't get to switch on deep clean
+                        itsControl->setTargetObjectiveFunction2(0);
                     } else {
                         // if peakRes1 < firstTarget: set 1st target to original value, set 2nd Target to peakRes1
                         // but leave alone if sigma target is higher
