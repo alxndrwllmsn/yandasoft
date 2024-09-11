@@ -289,6 +289,9 @@ namespace askap
 
         bool itsUsePreconGridder;
 
+        /// @brief true, if we grid the offset fields using the default spheroidal function gridder
+        bool itsSphFuncOffsetFields;
+
         /// @brief if set, visibility cube will be passed through this object function
         /// @details For the parallel implementation of the measurement equation we need
         /// inter-rank communication. To avoid introducing cross-dependency of the measurement
