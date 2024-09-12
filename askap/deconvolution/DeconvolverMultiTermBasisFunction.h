@@ -69,7 +69,7 @@ namespace askap {
                 typedef boost::shared_ptr<DeconvolverMultiTermBasisFunction<T, FT>> ShPtr;
 
                 /// @brief Construct from dirty image and psf
-                /// @detail Construct a deconvolver from a dirty image and
+                /// @details Construct a deconvolver from a dirty image and
                 /// the corresponding PSF. Note that both dirty image
                 /// and psf can have more than 2 dimensions. We use a vector
                 /// here to allow multiple dirty images and PSFs for the
@@ -82,7 +82,7 @@ namespace askap {
                                                   Vector<Array<T>>& psfLong);
 
                 /// @brief Construct from dirty image and psf
-                /// @detail Construct a deconvolver from a dirty image and
+                /// @details Construct a deconvolver from a dirty image and
                 /// the corresponding PSF. Note that both dirty image
                 /// and psf can have more than 2 dimensions. We keep this
                 /// version for compatibility
@@ -110,15 +110,15 @@ namespace askap {
                 void ManyIterations();
 
                 /// @brief Perform the deconvolution
-                /// @detail This is the main deconvolution method.
+                /// @details This is the main deconvolution method.
                 virtual bool deconvolve();
 
                 /// @brief Initialize the deconvolution
-                /// @detail Initialise e.g. set weighted mask
+                /// @details Initialise e.g. set weighted mask
                 virtual void initialise();
 
                 /// @brief Finalise the deconvolution
-                /// @detail Finalise the deconvolution
+                /// @details Finalise the deconvolution
                 virtual void finalise();
 
                 /// @brief configure basic parameters of the solver
@@ -127,25 +127,34 @@ namespace askap {
                 virtual void configure(const LOFAR::ParameterSet &parset);
 
                 /// @brief Update only the dirty image
-                /// @detail Update an existing deconvolver for a changed dirty image
+                /// @details Update an existing deconvolver for a changed dirty image
                 /// @param[in] dirty Dirty image (array)
                 /// @param[in] term term to update
                 virtual void updateDirty(Array<T>& dirty, uInt term = 0);
 
                 /// @brief Update only the dirty images
-                /// @detail Update an existing deconvolver for a changed dirty images.
+                /// @details Update an existing deconvolver for a changed dirty images.
                 /// @param[in] dirty Dirty image (vector of arrays)
                 virtual void updateDirty(Vector<Array<T>>& dirty);
 
                 /// @brief export the scale mask
-                /// @detail Give access to the scale mask used in the deconvolution
+                /// @details Give access to the scale mask used in the deconvolution
                 /// @return Matrix<T> scale mask (bitmask of scales for each pixel)
                 const Matrix<T> scaleMask();
 
                 /// @brief import initial scale mask
-                /// @detail Load an initial scale mask to use in the deconvolution
+                /// @details Load an initial scale mask to use in the deconvolution
                 /// @param[in]scaleMask a Matrix<T> with bitmask of scales for each pixel
                 void setScaleMask(const Matrix<T>& scaleMask);
+
+                /// @brief set noise map to spatially variable noise thresholds
+                /// @details to allow spatially variant threshold we need a map of how
+                /// the noise varies across the image. The noise map should be normalised
+                /// to the average noise
+                /// @param[in] noiseMap a Matrix<T> with normalised noise across the image
+                /// @param[in] noiseBoxSize box size used for the noise map
+                void setNoiseMap(const Matrix<T>& noiseMap, uInt noiseBoxSize)
+                { itsNoiseMap = noiseMap; itsNoiseBoxSize = noiseBoxSize;}
 
                 /// @brief release working memory not needed between major cycles
                 /// @details Deconvolvers can use a lot of memory, try to release as
@@ -242,18 +251,28 @@ namespace askap {
                 float itsPixelListTolerance;
 
                 /// @brief pixel list n sigma limit
-                /// @detail Don't put pixels in the pixellist with amplitude < limit*noise
+                /// @details Don't put pixels in the pixellist with amplitude < limit*noise
                 /// The noise is determined separately for each scale / residual basis
                 float itsPixelListNSigma;
 
                 /// @brief pixellist range of number of pixels
-                /// @detail Avoid putting way too many pixels in the list
+                /// @details Avoid putting way too many pixels in the list
                 /// Try to get the number between the first and second entry times
                 /// the maximum number of iterations
                 std::vector<float> itsPixelListNPixRange;
 
                 /// Read a pre-existing scale mask with the name given if not empty
                 std::string itsScaleMaskName;
+
+                /// @brief image (map) of the noise level across the image
+                /// @details to allow spatially variant threshold we need a map of how
+                /// the noise varies across the image. The noise map should be normalised
+                /// to the average noise
+                Matrix<T> itsNoiseMap;
+
+                /// @brief size of the box used to calculate the noise map
+                uInt itsNoiseBoxSize;
+
         };
 
     } // namespace synthesis

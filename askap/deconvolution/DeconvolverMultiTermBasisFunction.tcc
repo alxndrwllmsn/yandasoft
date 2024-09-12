@@ -56,129 +56,38 @@ namespace askap {
         /// e.g. DeconvolverMultiTermBasisFunction<double, DComplex>
         /// @ingroup Deconvolver
 
-        template<class T>
-        void absMaxPosOMP(T& maxVal, IPosition& maxPos, const Matrix<T>& im) {
-
-            // Set Shared values
-            maxVal = T(0.0);
-            // Create and shared private values
-            T maxVal_private(0.0);
-            IPosition maxPos_private(2,0);
-            const uInt ncol = im.ncolumn();
-            const uInt nrow = im.nrow();
-            #pragma omp for schedule(static)
-            for (uInt j = 0; j < ncol; j++ ) {
-                const T* pIm = &im(0,j);
-                for (uInt i = 0; i < nrow; i++ ) {
-                    T val = abs(*pIm++);
-                    if (val > maxVal_private) {
-                        maxVal_private = val;
-                        maxPos_private(0) = i;
-                        maxPos_private(1) = j;
-                    }
-                }
-            }
-            // Update shared max values and positions
-            #pragma omp critical
-            {
-                if (maxVal_private > maxVal) {
-                    maxVal = maxVal_private;
-                    maxPos = maxPos_private;
-                }
-            }
-            #pragma omp barrier
-        }
-
-        template<class T>
-        void absMaxPosMaskedOMP(T& maxVal, IPosition& maxPos, const Matrix<T>& im, const Matrix<T>& mask) {
-
+        template<class T> 
+        void absMaxPos(T& maxVal, IPosition& maxPos, const Matrix<T>& im,
+            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize) 
+        {
             // Set Shared Values
             maxVal = T(0.0);
             // Set Private Values
-            T maxVal_private(0.0);
-            IPosition maxPos_private(2,0);
-            const uInt ncol = mask.ncolumn();
-            const uInt nrow = mask.nrow();
-
-            #pragma omp for schedule(static)
-            for (uInt j = 0; j < ncol; j++ ) {
-                const T* pIm = &im(0,j);
-                const T* pMask = &mask(0,j);
-                for (uInt i = 0; i < nrow; i++ ) {
-                        T val = abs(*pIm++ * *pMask++);
-                        if (val > maxVal_private) {
-                            maxVal_private = val;
-                            maxPos_private(0) = i;
-                            maxPos_private(1) = j;
-                        }
-                }
-            }
-            #pragma omp critical
-            {
-                if (maxVal_private > maxVal) {
-                    maxVal = maxVal_private;
-                    maxPos = maxPos_private;
-                }
-            }
-            #pragma omp barrier
-        }
-
-        template<class T>
-        void absMaxPosOMP(T& maxVal, IPosition& maxPos, const Matrix<T>& im,
-            const std::vector<uInt>& pixels) {
-
-            // Set Shared Values
-            maxVal = T(0.0);
-            // Set Private Values
-            T maxVal_private(0.0);
-            uInt maxIndex_private = 0;
-            ASKAPASSERT(im.contiguousStorage());
-            const T* pIm = im.data();
-            const uInt n = pixels.size();
-            const uInt nrow = im.nrow();
-            ASKAPDEBUGASSERT(nrow > 0);
-
-            #pragma omp for schedule(static)
-            for (uInt j = 0; j < n; j++ ) {
-                const uInt pixel = pixels[j];
-                const T val = abs(pIm[pixel]);
-                if (val > maxVal_private) {
-                    maxVal_private = val;
-                    maxIndex_private = pixel;
-                }
-            }
-            #pragma omp critical
-            {
-                if (maxVal_private > maxVal) {
-                    maxVal = maxVal_private;
-                    maxPos(0) = maxIndex_private % nrow;
-                    maxPos(1) = maxIndex_private / nrow;
-                }
-            }
-            #pragma omp barrier
-        }
-
-        template<class T>
-        void absMaxPosMaskedOMP(T& maxVal, IPosition& maxPos, const Matrix<T>& im, const Matrix<T>& mask,
-            const std::vector<uInt>& pixels) {
-
-            // Set Shared Values
-            maxVal = T(0.0);
-            // Set Private Values
-            T maxVal_private(0.0);
+            T maxVal_private(0), maxVal_scaled_private(0);
             uInt maxIndex_private = 0;
             ASKAPASSERT(im.contiguousStorage() && mask.contiguousStorage());
             const T* pIm = im.data();
             const T* pMask = mask.data();
-            const uInt n = pixels.size();
-            const uInt nrow = mask.nrow();
+            const bool useMask = mask.size() > 0;
+            const bool usePixels = pixels.size() > 0;
+            const bool useNoise = noise.size() > 0 && boxSize > 0;
+            const uInt n = (usePixels ? pixels.size() : im.size());
+            const uInt nrow = im.nrow();
             ASKAPDEBUGASSERT(nrow > 0);
 
             #pragma omp for schedule(static)
             for (uInt j = 0; j < n; j++ ) {
-                const uInt pixel = pixels[j];
-                const T val = abs(pIm[pixel] * pMask[pixel]);
-                if (val > maxVal_private) {
+                const uInt pixel = (usePixels ? pixels[j] : j);
+                T val = abs(pIm[pixel]);
+                if (useMask) val *= pMask[pixel];
+                T testVal = val;
+                if (useNoise) {
+                    const uInt row = (pixel % nrow) / boxSize;
+                    const uInt col = (pixel / nrow) / boxSize;
+                    testVal /= noise(row, col);
+                } 
+                if (testVal > maxVal_scaled_private) {
+                    maxVal_scaled_private = testVal;
                     maxVal_private = val;
                     maxIndex_private = pixel;
                 }
@@ -200,7 +109,8 @@ namespace askap {
                 Vector<Array<T>>& psfLong)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
                 itsSolutionType("MAXBASE"), itsUsePixelLists(true),
-                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0}))
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0})),
+                itsNoiseBoxSize(0)
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There are " << this->nTerms() << " terms to be solved");
 
@@ -218,7 +128,8 @@ namespace askap {
                 Array<T>& psf)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
                 itsSolutionType("MAXBASE"), itsUsePixelLists(true),
-                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0}))
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0})),
+                itsNoiseBoxSize(0)
 
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There is only one term to be solved");
@@ -912,24 +823,12 @@ namespace askap {
                     sectionTimer.start(1);
 
                     const Matrix<T>& res =itsResidualBasis(base)(0);
+                    // initialise list of pixels depending on mode we're in
+                    const std::vector<uInt>& pixels (this->control()->deepCleanMode() ? 
+                        std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
+                        ( (itsUsePixelLists && !firstCycle) ? highPixels[base] : std::vector<uInt>()));
 
-                    if (haveMask) {
-                        if (this->control()->deepCleanMode()) {
-                            absMaxPosMaskedOMP(maxVal,maxPos,res,weights,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                        } else if (itsUsePixelLists && !firstCycle) {
-                            absMaxPosMaskedOMP(maxVal,maxPos,res,weights,highPixels[base]);
-                        } else {
-                            absMaxPosMaskedOMP(maxVal,maxPos,res,weights);
-                        }
-                    } else {
-                        if (this->control()->deepCleanMode()) {
-                            absMaxPosOMP(maxVal,maxPos,res,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                        } else if (itsUsePixelLists && !firstCycle) {
-                            absMaxPosOMP(maxVal,maxPos,res,highPixels[base]);
-                        } else {
-                            absMaxPosOMP(maxVal,maxPos,res);
-                        }
-                    }
+                    absMaxPos(maxVal,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
 
                     // In performing the search for the peak across bases, we want to take into account
                     // the SNR so we normalise out the coupling matrix for term=0 to term=0.
@@ -982,20 +881,12 @@ namespace askap {
                             negchisq_pointer[index] += coeff_pointer[index]*res_pointer[index];
                         }
                     }
+                    // initialise list of pixels depending on mode we're in
+                    const std::vector<uInt>& pixels (this->control()->deepCleanMode() ? 
+                        std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
+                        std::vector<uInt>());
 
-                    if (haveMask) {
-                        if (this->control()->deepCleanMode()) {
-                            absMaxPosMaskedOMP(maxVal,maxPos,negchisq,weights,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                        } else {
-                            absMaxPosMaskedOMP(maxVal,maxPos,negchisq,weights);
-                        }
-                    } else {
-                        if (this->control()->deepCleanMode()) {
-                            absMaxPosOMP(maxVal,maxPos,negchisq,std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()));
-                        } else {
-                            absMaxPosOMP(maxVal,maxPos,negchisq);
-                        }
-                    }
+                    absMaxPos(maxVal,maxPos,negchisq,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
 
                     // End of section 3
                     sectionTimer.stop(3);
@@ -1003,7 +894,7 @@ namespace askap {
 
                 #pragma omp single
                 {
-                    // We use the minVal and maxVal to find the optimum base
+                    // We use the maxVal to find the optimum base
                     if (abs(maxVal) > absPeakVal) {
                             optimumBase = base;
                             absPeakVal = abs(maxVal);

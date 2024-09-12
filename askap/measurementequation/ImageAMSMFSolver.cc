@@ -38,6 +38,8 @@ ASKAP_LOGGER(logger, ".measurementequation.imageamsmfsolver");
 
 #include <askap/measurementequation/ImageAMSMFSolver.h>
 
+#include <casacore/casa/Arrays/ArrayPartMath.h>
+
 using namespace casacore;
 using namespace askap;
 using namespace askap::scimath;
@@ -511,10 +513,21 @@ namespace askap
 
             // get noise for thresholds if needed
             float sigma = 0.;
+            Matrix<imtype> madMap;
             if (noiseThreshold()>0) {
                 // get mad estimate for sigma
                 // may need to take mask into account?
-                sigma = 1.48f * casacore::madfm(dirtyVec(0));
+                float mad = casacore::madfm(dirtyVec(0));
+                sigma = 1.48f * mad;
+                if (noiseBoxSize()>0) {
+                    // get mad map for position dependent threshold
+                    madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
+                        IPosition(2,noiseBoxSize()),MadfmFunc<imtype>());
+                    //normalise madMap to overall mad and send it to cleaner
+                    if (mad > 0) {
+                        madMap /= mad;
+                    }
+                }
             }
 
             // Now that we have all the required images, we can initialise the deconvolver
@@ -531,6 +544,9 @@ namespace askap
                     // set thresholds based on robust noise estimate
                     itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
                     itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                    if (madMap.size()>0) {
+                        itsCleaners[imageTag]->setNoiseMap(madMap,noiseBoxSize());
+                    }
                 } else {
                     itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
                     itsControl->setTargetObjectiveFunction2(deepThreshold());
@@ -568,6 +584,9 @@ namespace askap
                         originalTarget2 = itsControl->targetObjectiveFunction2();
                     }
                     itsCleaners[imageTag]->setControl(itsControl);
+                    if (madMap.size()>0) {
+                        itsCleaners[imageTag]->setNoiseMap(madMap,noiseBoxSize());
+                    }
                 }
             }
 
