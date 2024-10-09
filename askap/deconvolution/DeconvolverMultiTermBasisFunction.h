@@ -176,9 +176,9 @@ namespace askap {
                 virtual void initialiseForBasisFunction(bool force);
 
                 // Find the peak
-                void chooseComponent(uInt& optimumBase, IPosition& absPeakPos, T& absPeakVal, bool firstCycle,
+                void chooseComponent(uInt& optimumBase, IPosition& absPeakPos, T& absPeakVal, T& absPealValScaled, bool firstCycle,
                     const std::vector<std::vector<uInt>>&highPixels, askap::utils::SectionTimer& sectionTimer,
-                    IPosition& maxPos, T& maxVal, const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients);
+                    IPosition& maxPos, T& maxVal, T& maxValScaled, const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients);
 
                 /// Fill the vector of high (or active) pixels for each base
                 void fillHighPixelList(std::vector<std::vector<uInt>>& highPixels, const Matrix<T>& weight);

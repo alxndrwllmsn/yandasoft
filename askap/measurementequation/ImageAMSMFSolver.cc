@@ -526,6 +526,7 @@ namespace askap
                     //normalise madMap to overall mad and send it to cleaner
                     if (mad > 0) {
                         madMap /= mad;
+                        // do we want to enforce madMap >= 1 ?
                     }
                 }
             }

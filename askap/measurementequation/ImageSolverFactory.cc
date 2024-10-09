@@ -90,8 +90,8 @@ namespace askap
           // check for noise thresholds
           const string sigma("sigma");
           const size_t pos = t.rfind(sigma);
-          // do we want spatially variant sigma thresholds
-           uInt boxSize = parset.getInt("noiseboxsize",0);
+          // do we want spatially variant sigma thresholds?
+           uInt boxSize = parset.getInt("solver.Clean.noiseboxsize",0);
 
           if (pos != std::string::npos && pos == t.size() - sigma.size()) {
               ASKAPCHECK(!noiseThreshold2Defined, "Parameter "<<parName<<
