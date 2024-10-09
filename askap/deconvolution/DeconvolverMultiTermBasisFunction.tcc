@@ -806,7 +806,7 @@ namespace askap {
         void DeconvolverMultiTermBasisFunction<T, FT>::chooseComponent(uInt& optimumBase, IPosition& absPeakPos, 
             T& absPeakVal, T& absPeakValScaled, bool firstCycle, const std::vector<std::vector<uInt>>&highPixels, 
             askap::utils::SectionTimer& sectionTimer, IPosition& maxPos, T& maxVal, T& maxValScaled, 
-            const Matrix<T>& weights, Matrix<T>& negchisq,ipj Vector<Matrix<T>>& coefficients)
+            const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients)
         {
             const uInt nBases(itsBasisFunction->numberBases());
 
