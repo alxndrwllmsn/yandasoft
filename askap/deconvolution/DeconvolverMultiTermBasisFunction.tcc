@@ -72,8 +72,9 @@ namespace askap {
             const bool useMask = mask.size() > 0;
             const bool usePixels = pixels.size() > 0;
             const bool useNoise = noise.size() > 0 && boxSize > 0;
-            const uInt n = (usePixels ? pixels.size() : im.size());
             const uInt nrow = im.nrow();
+            ASKAPDEBUGASSERT(!useNoise || (noise.nrow() >= (nrow - 1)/boxSize && noise.ncolumn() >= (im.ncolumn() - 1)/boxSize));
+            const uInt n = (usePixels ? pixels.size() : im.size());
             ASKAPDEBUGASSERT(nrow > 0);
 
             #pragma omp for schedule(static)
@@ -251,8 +252,6 @@ namespace askap {
             for (uInt base = 0; base < itsTermBaseFlux.size(); base++) {
               ASKAPLOG_INFO_STR(decmtbflogger,"Total flux for scale "<<base<<" : "<<itsTermBaseFlux(base)(0));
             }
-
-            // Can we return some memory here?
         }
 
         template<class T, class FT>
@@ -270,8 +269,6 @@ namespace askap {
 
             // Force change in basis function
             initialiseForBasisFunction(true);
-
-            //this->state()->resetInitialObjectiveFunction();
         }
 
         template<class T, class FT>
@@ -841,8 +838,10 @@ namespace askap {
                     // the SNR so we normalise out the coupling matrix for term=0 to term=0.
                     #pragma omp single
                     {
-                        maxVal /= sqrt(itsCouplingMatrix(base)(0, 0));
-                        maxValScaled /= sqrt(itsCouplingMatrix(base)(0, 0));
+                        T couplingFactor = sqrt(itsCouplingMatrix(base)(0, 0));
+                        ASKAPDEBUGASSERT(couplingFactor > 0);
+                        maxVal /= couplingFactor;
+                        maxValScaled /= couplingFactor;
                     }
                     sectionTimer.stop(1);
 

@@ -91,7 +91,7 @@ namespace askap
           const string sigma("sigma");
           const size_t pos = t.rfind(sigma);
           // do we want spatially variant sigma thresholds?
-           uInt boxSize = parset.getInt("solver.Clean.noiseboxsize",0);
+           const uInt boxSize = parset.getUint("solver.Clean.noiseboxsize",0);
 
           if (pos != std::string::npos && pos == t.size() - sigma.size()) {
               ASKAPCHECK(!noiseThreshold2Defined, "Parameter "<<parName<<
@@ -128,9 +128,6 @@ namespace askap
                     ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
                                       "a noise threshold, ignoring "<<t<<" in "<<parName);
                   }
-              }
-              if (boxSize > 0) {
-
               }
           } else {
               casacore::Quantity::read(cThreshold, t);

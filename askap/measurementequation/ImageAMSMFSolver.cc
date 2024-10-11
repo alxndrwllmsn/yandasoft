@@ -517,7 +517,7 @@ namespace askap
             if (noiseThreshold()>0) {
                 // get mad estimate for sigma
                 // may need to take mask into account?
-                float mad = casacore::madfm(dirtyVec(0));
+                imtype mad = casacore::madfm(dirtyVec(0));
                 sigma = 1.48f * mad;
                 if (noiseBoxSize()>0) {
                     // get mad map for position dependent threshold
