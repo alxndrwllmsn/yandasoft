@@ -69,7 +69,7 @@ namespace askap {
                 typedef boost::shared_ptr<DeconvolverMultiTermBasisFunction<T, FT>> ShPtr;
 
                 /// @brief Construct from dirty image and psf
-                /// @detail Construct a deconvolver from a dirty image and
+                /// @details Construct a deconvolver from a dirty image and
                 /// the corresponding PSF. Note that both dirty image
                 /// and psf can have more than 2 dimensions. We use a vector
                 /// here to allow multiple dirty images and PSFs for the
@@ -82,7 +82,7 @@ namespace askap {
                                                   Vector<Array<T>>& psfLong);
 
                 /// @brief Construct from dirty image and psf
-                /// @detail Construct a deconvolver from a dirty image and
+                /// @details Construct a deconvolver from a dirty image and
                 /// the corresponding PSF. Note that both dirty image
                 /// and psf can have more than 2 dimensions. We keep this
                 /// version for compatibility
@@ -104,21 +104,26 @@ namespace askap {
                 boost::shared_ptr<BasisFunction<T>> basisFunction();
 
                 /// @brief Set the type of solution used in finding the optimum component
+                /// @details When trying to find the optimum component we can use MAXBASE
+                /// to find the peak over term 0 bases or MAXCHISQ to also use the higher 
+                /// order taylor terms in the optimization.
+                /// @params[in] solutionType, specify either MAXBASE or MAXCHISQ
                 void setSolutionType(const std::string& solutionType);
 
-                // Perform many iterations using OpenMP
+                /// @brief Perform the minor cycle clean iterations
+                /// @details This is where the actual clean is implemented, uses OpenMP to speed it up
                 void ManyIterations();
 
                 /// @brief Perform the deconvolution
-                /// @detail This is the main deconvolution method.
+                /// @details This is the main deconvolution method.
                 virtual bool deconvolve();
 
                 /// @brief Initialize the deconvolution
-                /// @detail Initialise e.g. set weighted mask
+                /// @details Initialise e.g., get residuals for each base and set weighted mask
                 virtual void initialise();
 
                 /// @brief Finalise the deconvolution
-                /// @detail Finalise the deconvolution
+                /// @details Finalise the deconvolution by updating the residuals
                 virtual void finalise();
 
                 /// @brief configure basic parameters of the solver
@@ -127,25 +132,34 @@ namespace askap {
                 virtual void configure(const LOFAR::ParameterSet &parset);
 
                 /// @brief Update only the dirty image
-                /// @detail Update an existing deconvolver for a changed dirty image
+                /// @details Update an existing deconvolver for a changed dirty image
                 /// @param[in] dirty Dirty image (array)
                 /// @param[in] term term to update
                 virtual void updateDirty(Array<T>& dirty, uInt term = 0);
 
                 /// @brief Update only the dirty images
-                /// @detail Update an existing deconvolver for a changed dirty images.
+                /// @details Update an existing deconvolver for a changed dirty images.
                 /// @param[in] dirty Dirty image (vector of arrays)
                 virtual void updateDirty(Vector<Array<T>>& dirty);
 
                 /// @brief export the scale mask
-                /// @detail Give access to the scale mask used in the deconvolution
+                /// @details Give access to the scale mask used in the deconvolution
                 /// @return Matrix<T> scale mask (bitmask of scales for each pixel)
                 const Matrix<T> scaleMask();
 
                 /// @brief import initial scale mask
-                /// @detail Load an initial scale mask to use in the deconvolution
+                /// @details Load an initial scale mask to use in the deconvolution
                 /// @param[in]scaleMask a Matrix<T> with bitmask of scales for each pixel
                 void setScaleMask(const Matrix<T>& scaleMask);
+
+                /// @brief set noise map to spatially variable noise thresholds
+                /// @details to allow spatially variant threshold we need a map of how
+                /// the noise varies across the image. The noise map should be normalised
+                /// to the average noise
+                /// @param[in] noiseMap a Matrix<T> with normalised noise across the image
+                /// @param[in] noiseBoxSize box size used to calculate the noise map
+                void setNoiseMap(const Matrix<T>& noiseMap, uInt noiseBoxSize)
+                { itsNoiseMap = noiseMap; itsNoiseBoxSize = noiseBoxSize;}
 
                 /// @brief release working memory not needed between major cycles
                 /// @details Deconvolvers can use a lot of memory, try to release as
@@ -154,86 +168,151 @@ namespace askap {
 
             private:
 
-                // Initialise the PSFs - only need to do this once per change in basis functions
+                /// @brief Initialise the PSFs
+                /// @details only need to do this once per change in basis functions
                 void initialisePSF();
 
-                // Initialise the residual bases if required
+                /// @brief Initialise the residual bases if required
+                /// @details Recalculates the residual images for each basis
                 void initialiseResidual();
 
-                // Initialise the deep clean masks if required
+                /// @brief Initialise the deep clean masks if required
+                /// @details In practice masks are no longer used, instead a list of active pixels is kept for each base
                 void initialiseMask();
 
-                // Initialise the PSFs - only need to do this once per change in basis functions
+                /// @brief Initialise the basisfunctions
+                /// @details Calculate the basisfunction & PSFs at size needed
+                /// @param[in] force, if true, force an update even if basisfunction hasn't changed
                 virtual void initialiseForBasisFunction(bool force);
 
-                // Find the peak
-                void chooseComponent(uInt& optimumBase, IPosition& absPeakPos, T& absPeakVal, bool firstCycle,
+                /// @brief Find the next peak for clean
+                /// @details Uses the specified algorithm to find the next optimal peak to subtract
+                /// @param[out] optimumBase the base with the optimal peak
+                /// @param[out] absPeakPos IPosition giving location of peak
+                /// @param[out] absPeakVal Value of the peak
+                /// @param[out] absPeakValScale Value of the peak, scaled with local noise noise estimate
+                /// @param[in]  firstCycle bool value indicating we are in the first major cycle
+                /// @param[in,out] highPixels list of high pixels that could be needed for each base
+                /// @param[in,out] sectionTimer timer used to keep track of processing time in sections of the clean
+                /// @param[in,out] maxPos only used as shared variable across threads
+                /// @param[in,out] maxVal only used as shared variable across threads
+                /// @param[in,out] maxValScaled only used as shared variable across threads
+                /// @param[in] weights array with the data weights and/or mask, pixel values are multiplied by this before peak is determined,
+                ///  allowed to be empty, in which case no weighting is done
+                /// @param[in] neqchisq, work array for MAXCHISQ peak finding, can be empty
+                /// @param[in] coefficients, work arrays for MAXCHISQ peak finding, can be empty
+                void chooseComponent(uInt& optimumBase, IPosition& absPeakPos, T& absPeakVal, T& absPealValScaled, bool firstCycle,
                     const std::vector<std::vector<uInt>>&highPixels, askap::utils::SectionTimer& sectionTimer,
-                    IPosition& maxPos, T& maxVal, const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients);
+                    IPosition& maxPos, T& maxVal, T& maxValScaled, const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients);
 
-                /// Fill the vector of high (or active) pixels for each base
+                /// @brief Fill the vector of high (or active) pixels for each base
+                /// @details Rather than working with entire images, the peak search uses a list of high pixels that
+                /// may be needed - with a cutoff a bit below the clean threshold
+                /// @param[out] highPixels, list of high pixels to be considered in peak searching
+                /// @param[in] weight, array with the data weights and/or mask
                 void fillHighPixelList(std::vector<std::vector<uInt>>& highPixels, const Matrix<T>& weight);
 
-                /// Work out the slice of the residual and psf to use
+                /// @brief Work out the slice of the residual and psf to use
+                /// @details Based on the peak position, work out the size and start of the slice
+                /// in the residual image and PSF we need
+                /// @param[in] absPeakPos the peak position
+                /// @param[out] shape the shape of the residual and psf slice to use
+                /// @param[out] residualStart start of the residual slice
+                /// @param[out] psfStart start of the PSF slice
                 void getResidualAndPSFSlice(const IPosition& absPeakPos,
                     IPosition& shape, IPosition& residualStart, IPosition& psfStart);
 
-                /// Add the optimum basisfunction component to the model
+                /// @brief Add the optimum basisfunction component to the model
+                /// @details Updates the model by adding the current component multiplied by its corresponding basisfunction
+                /// @param[in] peakValues the value at the peak location in each of the residual bases
+                /// @param[in] shape the shape of the residual and psf slice to use
+                /// @param[in] residualStart start of the residual slice
+                /// @param[in] psfStart start of the PSF slice
+                /// @param[in] optimumBase the base with the optimal peak
+                /// @param[in,out] model only used as shared variable across threads
                 void addComponentToModel(const Vector<T>& peakValues,
                         const IPosition& shape, const IPosition& resStart, const IPosition& psfStart,
                         const uInt optimumBase, Matrix<T>& model);
 
-                /// Subtract the basisfunction component from all residual bases and terms
+                /// @brief Subtract the basisfunction component from all residual bases and terms
+                /// @details Update the residuals by subtracting the current component multiplied by all relevant PSF crossterms
+                /// @param[in] peakValues the value at the peak location in each of the residual bases
+                /// @param[in] shape the shape of the residual and psf slice to use
+                /// @param[in] residualStart start of the residual slice
+                /// @param[in] psfStart start of the PSF slice
+                /// @param[in] optimumBase the base with the optimal peak
                 void subtractPSF(const Vector<T>& peakValues,
                     const IPosition& shape, const IPosition& resStart, const IPosition& psfStart,
                     uInt optimumBase);
 
-                /// Subtract the basisfunction component from all residual bases and terms
+                /// @brief Subtract the basisfunction component from all residual bases and terms
+                /// @details Update the residuals by subtracting the current component multiplied by all relevant PSF crossterms
                 /// This version uses the list of active pixels instead of the full arrays
+                /// @param[in] peakValues the value at the peak location in each of the residual bases
+                /// @param[in] peakPos the peak position
+                /// @param[in] optimumBase the base with the optimal peak
+                /// @param[in] useHighPixels specify true if using the highPixels vectors of active pixels
+                /// @param[in] highPixels, list of high pixels to be considered
                 void subtractPSFPixels(const Vector<T>& peakValues, const IPosition& peakPos,
                     uInt optimumBase, bool useHighPixels, const std::vector<std::vector<uInt>>& highPixels);
 
-                /// Long vector of PSFs
+                /// @brief Long vector of PSFs
+                /// @details Vector of PSFs, with 2*nterm-1 Taylor terms
                 Vector<Matrix<T>> itsPsfLongVec;
 
-                /// Residual images convolved with basis functions, [nx,ny][nterms][nbases]
+                /// @brief Residual images convolved with basis functions
+                /// @details The shape of this is nbases x nterms x [nx,ny]
                 Vector<Vector<Matrix<T>>> itsResidualBasis;
 
-                /// Number of scales is limited to 24 as we write the scale mask out as a float image
+                /// @brief The maximum number of scale we can deal with
+                /// @details Number of scales is limited to 24 as we write the scale mask out as a float image
                 /// we could use std::numeric_limits<T>::digits, but for double
                 /// the uInt used doesn't have enough range - anyway 24 scales seems plenty
                 const uInt itsMaxScales = 24;
 
-                /// Bitmask listing active pixels for each scale
-                /// Would need to use ulong/size_t instead of uInt for images > 64k^2
+                /// @brief The set of pixels used for each scale/base
+                /// @details We keep a list of pixels we've already cleaned for each scale
+                /// The pixels are recorded as uInt offset from the start of the image.
+                /// We would need to use ulong/size_t here instead of uInt for images > 64k^2
                 std::vector<std::set<uInt>> itsScalePixels;
 
-                /// Point spread functions convolved with cross terms
-                // [nxsub,nysub][nterms,nterms][nbases,nbases]
+                /// @brief Point spread functions convolved with cross terms
+                /// @details The shape of these is [nbases,nbases]x[nterms,nterms]x[nxsub,nysub], where [nxsub,nysub]
+                /// is the PFS sub shape (set by psfwidth parameter)
                 Matrix<Matrix<Matrix<T>>> itsPSFCrossTerms;
 
-                /// The coupling between different terms for each basis [nterms,nterms][nbases]
+                /// @brief The coupling between different terms for each basis
+                /// @details The shape of this is a vector of [nbases] with a matrices of shape [nterms,nterms]
                 Vector<Matrix<double>> itsCouplingMatrix;
 
-                /// Inverse of the coupling matrix [nterms,nterms][nbases]
+                /// @brief Inverse of the coupling matrix [nterms,nterms][nbases]
+                /// @details The shape of this is a vector of [nbases] with a matrices of shape [nterms,nterms]
                 Vector<Matrix<double>> itsInverseCouplingMatrix;
 
-                /// Basis function used in the deconvolution
+                /// @brief Pointer to the basis function used in the deconvolution
+                /// @details This will point to a MultiScaleBasisFunction with a number of scales
                 boost::shared_ptr<BasisFunction<T>> itsBasisFunction;
 
-                /// The flux subtracted on each term and scale [nterms][nbases]
+                /// @brief The flux subtracted on each term and scale 
+                /// @details The shape of this is a vector of [nbases] with vectors of [nterms] values
                 Vector< Vector<T>> itsTermBaseFlux;
 
-                /// Flag to indicate the dirty / residual images have been updated
+                /// @brief Flag to indicate the dirty / residual images have been updated
+                /// @details When the dirty image is updated we need to recalculate the residuals for each base
                 bool itsDirtyChanged;
 
-                /// FLag to indicate the BasisFunction has been updated
+                /// @brief FLag to indicate the BasisFunction has been updated
+                /// @details When the basisfunction changes, we need to recalculate residuals and psf cross terms
                 bool itsBasisFunctionChanged;
 
-                /// The Clean solution type - MAXBASE or MAXCHISQ
+                /// @brief Set the type of solution used in finding the optimum component
+                /// @details When trying to find the optimum component we can use MAXBASE
+                /// to find the peak over term 0 bases or MAXCHISQ to also use the higher 
+                /// order taylor terms in the optimization.
                 std::string itsSolutionType;
 
-                /// Use a list of high / active pixels
+                /// @brief Use a list of high / active pixels
+                /// @details If true, use lists of pixels for each base instead of images to do the minor cycles
                 bool itsUsePixelLists;
 
                 /// @brief pixel list tolerance
@@ -242,18 +321,36 @@ namespace askap {
                 float itsPixelListTolerance;
 
                 /// @brief pixel list n sigma limit
-                /// @detail Don't put pixels in the pixellist with amplitude < limit*noise
+                /// @details Don't put pixels in the pixellist with amplitude < limit*noise
                 /// The noise is determined separately for each scale / residual basis
                 float itsPixelListNSigma;
 
                 /// @brief pixellist range of number of pixels
-                /// @detail Avoid putting way too many pixels in the list
+                /// @details Avoid putting way too many pixels in the list
                 /// Try to get the number between the first and second entry times
                 /// the maximum number of iterations
                 std::vector<float> itsPixelListNPixRange;
 
-                /// Read a pre-existing scale mask with the name given if not empty
+                /// @brief Read a pre-existing scale mask with the name given if not empty
+                /// @details Load an initial scale mask to use in the deconvolution, the mask
+                /// file will contain a bitmask specifying the active scales at each location
                 std::string itsScaleMaskName;
+
+                /// @brief image (map) of the noise level across the image
+                /// @details to allow a spatially variant threshold we need a map of how
+                /// the noise varies across the image. The noise map should be normalised
+                /// to the average noise. Note that it may be smaller than the residual image
+                /// by a factor of about itsNoiseBoxSize. Also note that this noise map is really
+                /// more a map of poor dynamic range areas in the image.
+                Matrix<T> itsNoiseMap;
+
+                /// @brief size of the box used to calculate the noise map
+                /// @details to allow spatially variant threshold we need a map of how
+                /// the noise varies across the image. There are various ways such a noise map
+                /// could be calculated, but setting a window or box size to define a local region
+                /// is a common requirememt
+                uInt itsNoiseBoxSize;
+
         };
 
     } // namespace synthesis
