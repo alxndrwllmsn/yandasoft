@@ -102,21 +102,21 @@ namespace askap
         static void zeroAllModelImages(const askap::scimath::Params::ShPtr& params);
 
         /// @brief set up images according to the parset file
-		/// @param[in] params Images to be created here
-		/// @param[in] parset a parset object to read the parameters from
-		/// @note (MV)This method is probably a duplication of the one of
-		/// add methods - needs to be cleared
-		/// (MV, dec 2008) not any more. With faceting it is handy to have a separate method
-		static void setUpImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
+        /// @param[in] params Images to be created here
+        /// @param[in] parset a parset object to read the parameters from
+        /// @note (MV)This method is probably a duplication of the one of
+        /// add methods - needs to be cleared
+        /// (MV, dec 2008) not any more. With faceting it is handy to have a separate method
+        static void setUpImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
 
-		/// @brief load images according to the parset file
-		/// @details This method is somewhat analogous to setUpImages, but it loads the images
-		/// from the disk instead of setting them up from the scratch. Encapsulation of all loading
-		/// of multiple images in a single method is required to provide a seamless handling of
-		/// the faceted image.
-		/// @param[in] params Images to be created here
-		/// @param[in] parset a parset object to read the parameters from
-		static void loadImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
+        /// @brief load images according to the parset file
+        /// @details This method is somewhat analogous to setUpImages, but it loads the images
+        /// from the disk instead of setting them up from the scratch. Encapsulation of all loading
+        /// of multiple images in a single method is required to provide a seamless handling of
+        /// the faceted image.
+        /// @param[in] params Images to be created here
+        /// @param[in] parset a parset object to read the parameters from
+        static void loadImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
 
         /// @brief load component-related parameters from a parset file
         /// @details Parameter layout is different in scimath::Params and
