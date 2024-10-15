@@ -800,8 +800,8 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     const std::string parName = "threshold.minorcycle";
     if (subset.isDefined(parName)) {
         const std::vector<std::string> thresholds = subset.getStringVector(parName);
-        ASKAPCHECK(thresholds.size() && (thresholds.size()<3), "Parameter "<<parName<<
-                   " must contain either 1 element or a vector of 2 elements, you have "<< thresholds.size());
+        ASKAPCHECK(thresholds.size() && (thresholds.size()<4), "Parameter "<<parName<<
+                   " must contain either 1 element or a vector of 2-3 elements, you have "<< thresholds.size());
         bool absoluteThresholdDefined = false;
         bool relativeThresholdDefined = false;
         bool absoluteThreshold2Defined = false;
@@ -949,9 +949,9 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     }
 
     ASKAPLOG_INFO_STR(logger,"Configure deconvolver");
+    cleanset.replace("configurebase","true");
     deconvolver->configure(cleanset);
-    // Could be done inside deconvolver, but isn't for some reason
-    deconvolver->control()->configure(cleanset);
+
 
     ASKAPLOG_INFO_STR(logger,"Do the deconvolution");
     deconvolver->deconvolve();
