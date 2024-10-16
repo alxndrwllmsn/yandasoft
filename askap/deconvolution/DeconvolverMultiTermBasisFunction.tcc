@@ -182,7 +182,12 @@ namespace askap {
         void DeconvolverMultiTermBasisFunction<T, FT>::configure(const LOFAR::ParameterSet& parset)
         {
             ASKAPTRACE("DeconvolverMultiTermBasisFunction::configure");
-            //DeconvolverBase<T, FT>::configure(parset);
+            // Configuring the base class causes the testspectral test to fail.
+            // I suspect because ImageAMSMFSolver replaces the DeconvolverControl object.
+            // Task cdeconvolver-mpi will set configurebase="true" because it needs this configuration done.
+            if (parset.getString("configurebase","false")=="true") {
+                DeconvolverBase<T, FT>::configure(parset); 
+            }
 
             // Make the basis function
             std::vector<float> defaultScales({0.0,10.0,30.0});
