@@ -517,6 +517,15 @@ const casacore::Array<float> CubeBuilder<T>::writeFlexibleSlice(const casacore::
     }
 
 }
+template < class T >
+const casacore::Array<float> CubeBuilder<T>::readRigidSlice(const casacore::uInt chan)
+{
+    const casacore::IPosition blc(4, 0, 0, 0, chan);
+    casacore::IPosition trc = itsCube->shape(itsFilename) - 1;
+    trc(3) = chan;
+    casacore::Array<float> arr = itsCube->read(itsFilename, blc, trc);
+    return arr;
+}
 
 template < class T >
 casacore::CoordinateSystem

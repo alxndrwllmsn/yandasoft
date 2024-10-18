@@ -71,6 +71,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsDoingPreconditioning(doingPreconditioning(parset)),
     // setup whether we solve locally (spectral line mode) or on the master (continuum mode)
     itsLocalSolver(parset.getBool("solverpercore", false)),
+    // read an initial model cube (standard naming), spectral line case
+    itsReadStartingModelCube(parset.getBool("Images.reuse",false)),
     // setup whether we restore and write restored image
     itsRestore(parset.getBool("restore", false)),
     // setup whether to write the residual image + support of an alternative parameter name
@@ -84,7 +86,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     // write weights log file
     itsWriteWtLog(parset.getBool("write.weightslog", false)),
     // clean model (itsRestore is already initialised by this point and can be used for default value)
-    itsWriteModelImage(parset.getBool("write.modelimage", !itsRestore)),
+    // if we're reading in the model cube, we also write it out again
+    itsWriteModelImage(parset.getBool("write.modelimage", !itsRestore)||itsReadStartingModelCube),
     // write (dump) the gridded data, psf and pcf + support of an alternative parameter name
     itsWriteGrids(parset.getBool("write.grids", parset.getBool("dumpgrids", false))),
     // grid image type
@@ -97,6 +100,10 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsNumWriters(configureNumberOfWriters()),
     // joint gridding of multiple beams/directions
     itsUpdateDir(parset.getBool("updatedirection",false)),
+    // starting MFS model (specify base name)
+    itsStartingMFSModel(parset.getString("read.mfsmodel","")),
+    // starting MFS model nterms
+    itsStartingMFSModelNterms(parset.getUint32("read.mfsmodel.nterms",1)),
     // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether 
     // the shared pointer is not empty. But this is cheap. We can clear this up later)
     // uv-weight calculator object; at the moment, it is an empty pointer if no traditional weighting is done
@@ -146,6 +153,13 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
 
     if (isSampleDensityGridNeeded() && itsParset.getBool("sphfuncforpsf", false) && !itsUpdateDir) {
         ASKAPLOG_WARN_STR(logger, "Using together sphfuncforpsf = true and the traditional weighting mode may lead to unexpected results. Consider using updatedirection=true. See AXA-2792 for details.");
+    }
+
+    // check if we can load in the model cube
+    if (itsLocalSolver && itsReadStartingModelCube) {
+      const int nWriters = itsParset.getInt32("nwriters",1);
+      const string imageType = itsParset.getString("imagetype","casa");
+      ASKAPCHECK(imageType=="fits" && nWriters == nWorkers,"The Images.reuse option in spectral mode requires imagetype=fits and nwriters==nworkers");
     }
 }
 
@@ -460,7 +474,9 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
                 itsParset.replace("header.TIMESYS","["+timesys+",Time System]");
             }
 
-            if (itsWriteModelImage) {
+            if (itsReadStartingModelCube) {
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));             
+            } else if (itsWriteModelImage) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
             }
             if (itsWritePsfRaw) {
@@ -509,7 +525,6 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 
        } else {
             // this is a cube writer rather than creator
-
             if (itsWriteModelImage) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
             }
@@ -630,7 +645,11 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
            // the following will initialise the solver (i.e. default parameter)
            rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
            // setup full size image
-           setupImage(rootImagerPtr->params(), globalFrequency, false);
+           if (itsReadStartingModelCube) {
+              loadImage(rootImagerPtr->params(), globalFrequency, globalChannel);
+           } else {
+              setupImage(rootImagerPtr->params(), globalFrequency, false);
+           }
 
            if (isSampleDensityGridNeeded()) {
                // note, this effectively emulates the same approach as used in the traditional weighting hack, i.e.
@@ -688,7 +707,12 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
        } else {
            if (itsLocalSolver) {
                // setup full sized image
-               setupImage(workingImager.params(), globalFrequency, false);
+               if (itsReadStartingModelCube) {
+                  loadImage(workingImager.params(), globalFrequency, globalChannel);
+               } else {
+                  setupImage(workingImager.params(), globalFrequency, false);
+               }
+
            } else {
                // need to receve the model from master
                // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
@@ -2271,6 +2295,120 @@ void ContinuumWorker::logWeightsInfo() const
     }
   }
 
+}
+
+// this is adapted from SynthesisParamsHelper::loadImageParameter, modified to load a single channel from cube
+void ContinuumWorker::loadImage(const askap::scimath::Params::ShPtr& params,
+                                 double channelFrequency, int channel) const
+{
+  {
+      ASKAPTRACE("SynthesisParamsHelper::loadImageParameter");
+      casacore::Array<float> imagePixels = itsImageCube->readRigidSlice(channel);
+      const std::string imageName = itsImageCube->filename();
+      casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
+
+      /// Fill in the axes information
+      Axes axes;
+      /// First do the direction
+      int whichDir=imageCoords.findCoordinate(Coordinate::DIRECTION);
+      ASKAPCHECK(whichDir>-1, "No direction coordinate present in the image "<<imageName);
+      casacore::DirectionCoordinate radec(imageCoords.directionCoordinate(whichDir));
+      casacore::Vector<casacore::Int> axesDir = imageCoords.pixelAxes(whichDir);
+      ASKAPCHECK(axesDir.nelements() == 2, "Direction axis "<<whichDir<<
+                 " is expected to correspond to just two pixel axes, you have "<<axesDir);
+      ASKAPCHECK((axesDir[0] == 0) && (axesDir[1] == 1),
+               "At present we support only images with first axes being the direction pixel axes, image "<<imageName<<
+               " has "<< axesDir);
+
+      casacore::Vector<casacore::String> units(2);
+      units.set("rad");
+      radec.setWorldAxisUnits(units);
+
+      axes.addDirectionAxis(radec);
+
+      int whichStokes = imageCoords.findCoordinate(Coordinate::STOKES);
+      int nPol = 1;
+      if (whichStokes<0) {
+          const casacore::Vector<casacore::Stokes::StokesTypes> dummyStokes(1,casacore::Stokes::I);
+          axes.addStokesAxis(dummyStokes);
+      } else {
+          casacore::StokesCoordinate sc(imageCoords.stokesCoordinate(whichStokes));
+          const casacore::Vector<casacore::Int> stokesAsInt = sc.stokes();
+          casacore::Vector<casacore::Stokes::StokesTypes> stokes(stokesAsInt.nelements());
+          for (casacore::uInt pol=0; pol<stokes.nelements(); ++pol) {
+               stokes[pol] = casacore::Stokes::StokesTypes(stokesAsInt[pol]);
+          }
+          axes.addStokesAxis(stokes);
+
+          casacore::Vector<casacore::Int> axesStokes = imageCoords.pixelAxes(whichStokes);
+          ASKAPCHECK(axesStokes.nelements() == 1, "Stokes axis "<<whichStokes<<
+                 " is expected to correspond to just one pixel axes, you have "<<axesStokes);
+          ASKAPASSERT(casacore::uInt(axesStokes[0])<imagePixels.shape().nelements());
+          nPol = imagePixels.shape()(axesStokes[0]);
+          ASKAPASSERT(uInt(nPol) == stokesAsInt.nelements());
+      }
+
+      int whichSpectral=imageCoords.findCoordinate(Coordinate::SPECTRAL);
+      ASKAPCHECK(whichSpectral>-1, "No spectral coordinate present in model");
+      casacore::Vector<casacore::Int> axesSpectral = imageCoords.pixelAxes(whichSpectral);
+      ASKAPCHECK(axesSpectral.nelements() == 1, "Spectral axis "<<whichSpectral<<
+                 " is expected to correspond to just one pixel axes, you have "<<axesSpectral);
+      ASKAPASSERT(casacore::uInt(axesSpectral[0])<imagePixels.shape().nelements());
+      const int nChan = 1;
+      casacore::SpectralCoordinate freq(imageCoords.spectralCoordinate(whichSpectral));
+      double startFreq, endFreq;
+      freq.toWorld(startFreq, channel);
+      freq.toWorld(endFreq, channel);
+      axes.add("FREQUENCY", startFreq, endFreq);
+      ASKAPASSERT(abs(startFreq-channelFrequency)<1);
+
+      casacore::IPosition targetShape(4, imagePixels.shape()(0), imagePixels.shape()(1), nPol, nChan);
+      ASKAPDEBUGASSERT(targetShape.product() == imagePixels.shape().product());
+
+      const string name("image.slice");
+      boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
+      if (extraOversampleFactor) {
+          ASKAPCHECK(*extraOversampleFactor > 1.,"Oversampling factor should be > 1, not "<<*extraOversampleFactor);
+
+          // need to add two params: the loaded full-res image and the downsampled image
+
+          // first save the full-res image
+          std::string fullresname = name;
+          const size_t index = fullresname.find("image");
+          ASKAPCHECK(index == 0, "Trying to swap to full-resolution param name but something is wrong");
+          fullresname.replace(index,5,"fullres");
+
+          ASKAPLOG_INFO_STR(logger, "About to add new image parameters with name "<<fullresname<<
+                      " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
+          ASKAPLOG_INFO_STR(logger, "Spectral axis will have startFreq="<<startFreq<<" Hz, endFreq="<<endFreq<<
+                                    "Hz, nChan="<<nChan);
+          params->add(fullresname, imagePixels.reform(targetShape), axes);
+
+          // now downsample the input sky model to the working resolution
+          /// @todo should this be done at higher precision ifndef ASKAP_FLOAT_IMAGE_PARAMS?
+          synthesis::SynthesisParamsHelper::downsample(imagePixels,*extraOversampleFactor);
+          // update the target shape for the new resolution
+          targetShape(0) = imagePixels.shape()(0);
+          targetShape(1) = imagePixels.shape()(1);
+          // update the coordinate system for the new resolution
+          /// @todo double check that the rounding is correct for the ref pixel
+          radec.setReferencePixel(radec.referencePixel()/double(*extraOversampleFactor));
+          radec.setIncrement(radec.increment()*double(*extraOversampleFactor));
+          axes.addDirectionAxis(radec);
+
+          ASKAPLOG_INFO_STR(logger, "Also adding downsampled image parameters with name "<<name<<
+                      " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
+          params->add(name, imagePixels.reform(targetShape), axes);
+
+      }
+      else {
+          ASKAPLOG_INFO_STR(logger, "About to add new image parameter with name "<<name<<
+                      " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
+          ASKAPLOG_INFO_STR(logger, "Spectral axis will have startFreq="<<startFreq<<" Hz, endFreq="<<endFreq<<
+                                    "Hz, nChan="<<nChan);
+          params->add(name, imagePixels.reform(targetShape), axes);
+      }
+  }
 }
 
 
