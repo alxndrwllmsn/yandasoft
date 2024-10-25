@@ -647,6 +647,7 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
            // setup full size image
            if (itsReadStartingModelCube) {
               loadImage(rootImagerPtr->params(), globalFrequency, globalChannel);
+              copyModel(rootImagerPtr->params(),workingImager.params());
            } else {
               setupImage(rootImagerPtr->params(), globalFrequency, false);
            }
