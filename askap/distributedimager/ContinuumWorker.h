@@ -228,9 +228,11 @@ class ContinuumWorker : public boost::noncopyable
         void setupImage(const askap::scimath::Params::ShPtr& params,
                     double channelFrequency, bool shapeOveride = false) const;
 
-        // Load the specified channel from the image specified in parset and add it to the Params instance.
-        void loadImage(const askap::scimath::Params::ShPtr& params,
-                    double channelFrequency, int channel) const;
+        /// @brief Load an image plane into a parameter
+        /// @details Load the specified channel from the image specified in parset and add it to the Params instance.
+        /// @params[in] params shared pointer to params object with image parameters
+        /// @params[in] channel, the (global) channel number for the image plane to load
+        void loadImage(const askap::scimath::Params::ShPtr& params, int channel) const;
 
         void buildSpectralCube();
 
@@ -345,12 +347,6 @@ class ContinuumWorker : public boost::noncopyable
 
         /// @brief updatedirection option (switching on joint gridding)
         const bool itsUpdateDir;
-
-        /// @brief starting MFS model
-        const std::string itsStartingMFSModel;
-
-        /// @brief starting MFS model nterms
-        const int itsStartingMFSModelNterms;
 
         /// @brief shared pointer to the uv-weight calculator object
         /// @details it can also be used as a flag that the sample density grid is needed (and that traditional weighting is done)

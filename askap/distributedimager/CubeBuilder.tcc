@@ -522,6 +522,7 @@ const casacore::Array<float> CubeBuilder<T>::readRigidSlice(const casacore::uInt
 {
     const casacore::IPosition blc(4, 0, 0, 0, chan);
     casacore::IPosition trc = itsCube->shape(itsFilename) - 1;
+    ASKAPDEBUGASSERT(chan >=0 && chan <=trc(3));
     trc(3) = chan;
     casacore::Array<float> arr = itsCube->read(itsFilename, blc, trc);
     return arr;

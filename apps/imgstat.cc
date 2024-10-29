@@ -73,12 +73,12 @@ int main(int argc, const char** argv) {
      // I hope const_cast is temporary here
      parser.process(argc, const_cast<char**> (argv));
      if (!doComplexStats.defined()) {
-        std::shared_ptr<casa::ImageInterface<casa::Float>> img;
-        if (imgfile.getValue().find(".fits") != std::string::npos) {
-            img.reset(new casa::FITSImage(imgfile.getValue()));
-        } else {
-            img.reset(new casa::PagedImage<casa::Float>(imgfile.getValue()));
-        }
+         std::shared_ptr<casa::ImageInterface<casa::Float>> img;
+         if (imgfile.getValue().find(".fits") != std::string::npos) {
+             img.reset(new casa::FITSImage(imgfile.getValue()));
+         } else {
+             img.reset(new casa::PagedImage<casa::Float>(imgfile.getValue()));
+         }
          casa::ImageStatistics<casa::Float> imstat(*img, casa::False);
          float tmin,tmax;
          imstat.getFullMinMax(tmin,tmax);
