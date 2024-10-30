@@ -71,6 +71,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsDoingPreconditioning(doingPreconditioning(parset)),
     // setup whether we solve locally (spectral line mode) or on the master (continuum mode)
     itsLocalSolver(parset.getBool("solverpercore", false)),
+    // read an initial model cube (standard naming), spectral line case
+    itsReadStartingModelCube(parset.getBool("Images.reuse",false)),
     // setup whether we restore and write restored image
     itsRestore(parset.getBool("restore", false)),
     // setup whether to write the residual image + support of an alternative parameter name
@@ -84,7 +86,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     // write weights log file
     itsWriteWtLog(parset.getBool("write.weightslog", false)),
     // clean model (itsRestore is already initialised by this point and can be used for default value)
-    itsWriteModelImage(parset.getBool("write.modelimage", !itsRestore)),
+    // if we're reading in the model cube, we also write it out again
+    itsWriteModelImage(parset.getBool("write.modelimage", !itsRestore)||itsReadStartingModelCube),
     // write (dump) the gridded data, psf and pcf + support of an alternative parameter name
     itsWriteGrids(parset.getBool("write.grids", parset.getBool("dumpgrids", false))),
     // grid image type
@@ -146,6 +149,13 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
 
     if (isSampleDensityGridNeeded() && itsParset.getBool("sphfuncforpsf", false) && !itsUpdateDir) {
         ASKAPLOG_WARN_STR(logger, "Using together sphfuncforpsf = true and the traditional weighting mode may lead to unexpected results. Consider using updatedirection=true. See AXA-2792 for details.");
+    }
+
+    // check if we can load in the model cube
+    if (itsLocalSolver && itsReadStartingModelCube) {
+      const int nWriters = itsParset.getInt32("nwriters",1);
+      const string imageType = itsParset.getString("imagetype","casa");
+      ASKAPCHECK(imageType=="fits" && nWriters == nWorkers,"The Images.reuse option in spectral mode requires imagetype=fits and nwriters==nworkers");
     }
 }
 
@@ -460,7 +470,9 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
                 itsParset.replace("header.TIMESYS","["+timesys+",Time System]");
             }
 
-            if (itsWriteModelImage) {
+            if (itsReadStartingModelCube) {
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));             
+            } else if (itsWriteModelImage) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
             }
             if (itsWritePsfRaw) {
@@ -509,7 +521,6 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 
        } else {
             // this is a cube writer rather than creator
-
             if (itsWriteModelImage) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
             }
@@ -664,6 +675,10 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
               rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
               rootImagerPtr->configureNormalEquationsForMosaicing();
               rootImagerPtr->zero(); // then we delete all our work ....
+              if (itsReadStartingModelCube) {
+                loadImage(rootImagerPtr->params(), globalChannel);
+                copyModel(rootImagerPtr->params(),workingImager.params());
+              }
            }
            catch (const askap::AskapError& e) {
                   ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - dummy run for rootImager in updatedirection mode");
@@ -688,7 +703,11 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
        } else {
            if (itsLocalSolver) {
                // setup full sized image
-               setupImage(workingImager.params(), globalFrequency, false);
+               if (itsReadStartingModelCube) {
+                  loadImage(workingImager.params(), globalChannel);
+               } else {
+                  setupImage(workingImager.params(), globalFrequency, false);
+               }
            } else {
                // need to receve the model from master
                // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
@@ -2271,6 +2290,20 @@ void ContinuumWorker::logWeightsInfo() const
     }
   }
 
+}
+
+void ContinuumWorker::loadImage(const askap::scimath::Params::ShPtr& params, int channel) const
+{
+  {
+      ASKAPTRACE("SynthesisParamsHelper::loadImageParameter");
+      casacore::Array<float> imagePixels = itsImageCube->readRigidSlice(channel);
+      const std::string imageName = itsImageCube->filename();
+      const casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
+      const string name("image.slice");
+      boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
+      SynthesisParamsHelper::loadImageParameter(*params, name, imageName, imagePixels, imageCoords,
+       extraOversampleFactor, channel);
+  }
 }
 
 

@@ -110,6 +110,12 @@ class CubeBuilder {
         /// @return a reference copy of the possibly oversampled array written to the cube
         const casacore::Array<float> writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan);
 
+        /// @brief Read a channel from the cube
+        /// @details This reads a single channel (slice) to the cube
+        /// @param[in] chan - uInt channel in the cube to read
+        /// @return The array read from the cube
+        const casacore::Array<float> readRigidSlice(const casacore::uInt chan);
+
         /// @brief create a coordinate system
         /// @details This creates a coordinate system for a cube
         /// @param[in] parset - ParameterSet, used to get the image parameters

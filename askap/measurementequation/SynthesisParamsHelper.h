@@ -298,12 +298,27 @@ namespace askap
           const std::string& baseKey);
 
         /// @brief Get a parameter from an image
+        /// @details This version reads the image from the imagename given using the image accessor
         /// @param ip Parameters
         /// @param name Name of parameter
         /// @param imagename Name of image file
         /// @param extraOversampleFactor factor to downsample image after loading
         static void loadImageParameter(askap::scimath::Params& ip, const string& name,
           const string& imagename, const boost::optional<float> extraOversampleFactor = boost::none);
+
+        /// @brief Get a parameter from an image, more general version
+        /// @brief In this version the imagepixels and coordinates are supplied, meaning it can be used to load
+        /// e.g., a plane from an image cube
+        /// @param ip Parameters
+        /// @param name Name of parameter
+        /// @param imagename Name of image file
+        /// @param imagePixels Array with image pixels
+        /// @param imageCoords casacore imageCoordinateSystem
+        /// @param extraOversampleFactor factor to downsample image after loading
+        /// @param channel Specify -1 (default) to set coordinates for all channels, or select a specific channel
+        static void loadImageParameter(askap::scimath::Params& ip, const string& name,
+          const string& imagename, casacore::Array<float>& imagePixels, const casacore::CoordinateSystem& imageCoords,
+          const boost::optional<float> extraOversampleFactor = boost::none, int channel = -1);
 
         /// @brief Get parameters corresponding to all facets from a CASA image
         /// @param[in] ip Parameters

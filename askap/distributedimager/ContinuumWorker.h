@@ -228,7 +228,14 @@ class ContinuumWorker : public boost::noncopyable
         void setupImage(const askap::scimath::Params::ShPtr& params,
                     double channelFrequency, bool shapeOveride = false) const;
 
+        /// @brief Load an image plane into a parameter
+        /// @details Load the specified channel from the image specified in parset and add it to the Params instance.
+        /// @params[in] params shared pointer to params object with image parameters
+        /// @params[in] channel, the (global) channel number for the image plane to load
+        void loadImage(const askap::scimath::Params::ShPtr& params, int channel) const;
+
         void buildSpectralCube();
+
 
         // Root Parameter set good for information common to all workUnits
         LOFAR::ParameterSet& itsParset;
@@ -298,6 +305,9 @@ class ContinuumWorker : public boost::noncopyable
         void recordWeight(float wt, const unsigned int globalChannel);
         std::map<unsigned int, float> itsWeightsList;
         void logWeightsInfo() const;
+
+        /// @brief read starting model cube
+        const bool itsReadStartingModelCube;
 
         /// @brief Do we want a restored image?
         const bool itsRestore;

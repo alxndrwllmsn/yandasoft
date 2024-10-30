@@ -65,7 +65,10 @@ delaysolver: test delaysolver app on real ATCA data"
     [Tags]          testdelaysolver
     [Template]      Run PythonTest ${thetest}
     testdelaysolver
-
+restart: restart imager in spectral mode
+    [Tags]          spectralline   newimager
+    [Template]      Run PythonTest ${thetest}
+    testrestart
 *** Keywords ***
 Run PythonTest ${thetest}
     ${start_time} =    Get Current Date
