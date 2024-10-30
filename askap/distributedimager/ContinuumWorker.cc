@@ -641,12 +641,7 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
            // the following will initialise the solver (i.e. default parameter)
            rootImagerPtr.reset(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
            // setup full size image
-           if (itsReadStartingModelCube) {
-              loadImage(rootImagerPtr->params(), globalChannel);
-              copyModel(rootImagerPtr->params(),workingImager.params());
-           } else {
-              setupImage(rootImagerPtr->params(), globalFrequency, false);
-           }
+           setupImage(rootImagerPtr->params(), globalFrequency, false);
 
            if (isSampleDensityGridNeeded()) {
                // note, this effectively emulates the same approach as used in the traditional weighting hack, i.e.
@@ -680,6 +675,10 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
               rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
               rootImagerPtr->configureNormalEquationsForMosaicing();
               rootImagerPtr->zero(); // then we delete all our work ....
+              if (itsReadStartingModelCube) {
+                loadImage(rootImagerPtr->params(), globalChannel);
+                copyModel(rootImagerPtr->params(),workingImager.params());
+              }
            }
            catch (const askap::AskapError& e) {
                   ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - dummy run for rootImager in updatedirection mode");

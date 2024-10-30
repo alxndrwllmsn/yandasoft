@@ -850,7 +850,11 @@ namespace askap
 
           ASKAPLOG_INFO_STR(logger, "About to add new image parameters with name "<<fullresname<<
                       " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
-          ip.add(fullresname, imagePixels.reform(targetShape), axes);
+          if (!ip.has(fullresname)) {
+            ip.add(fullresname, imagePixels.reform(targetShape), axes);
+          } else {
+            ip.update(fullresname, imagePixels.reform(targetShape));
+          }
 
           // now downsample the input sky model to the working resolution
           /// @todo should this be done at higher precision ifndef ASKAP_FLOAT_IMAGE_PARAMS?
@@ -866,13 +870,21 @@ namespace askap
 
           ASKAPLOG_INFO_STR(logger, "Also adding downsampled image parameters with name "<<name<<
                       " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
-          ip.add(name, imagePixels.reform(targetShape), axes);
+          if (!ip.has(name)) {
+            ip.add(name, imagePixels.reform(targetShape), axes);
+          } else {
+            ip.update(name, imagePixels.reform(targetShape));
+          }
 
       }
       else {
           ASKAPLOG_INFO_STR(logger, "About to add new image parameter with name "<<name<<
                       " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
-          ip.add(name, imagePixels.reform(targetShape), axes);
+          if (!ip.has(name)) {
+            ip.add(name, imagePixels.reform(targetShape), axes);
+          } else {
+            ip.update(name, imagePixels.reform(targetShape));
+          }
       }
       ASKAPLOG_INFO_STR(logger, "Spectral axis will have startFreq="<<startFreq<<" Hz, endFreq="<<endFreq<<
                         "Hz, nChan="<<nChan);
