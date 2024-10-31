@@ -730,7 +730,6 @@ namespace askap {
                             sumFlux += itsTermBaseFlux(base)(0);
                         }
                         this->state()->setTotalFlux(sumFlux);
-
                         ASKAPLOG_DEBUG_STR(decmtbflogger,"Peak="<<absPeakVal<<", Pos="<< absPeakPos <<", Base="<<optimumBase<<", Total flux = "<<sumFlux);
                     }
                     // End of section 5
@@ -833,12 +832,14 @@ namespace askap {
 
                     const Matrix<T>& res =itsResidualBasis(base)(0);
                     // initialise list of pixels depending on mode we're in
-                    const std::vector<uInt>& pixels (this->control()->deepCleanMode() ? 
+                    const bool deepClean = this->control()->deepCleanMode();
+                    const bool useHighPixels = !deepClean && itsUsePixelLists && !firstCycle;
+                    const std::vector<uInt>& pixels (deepClean ? 
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
-                        ( (itsUsePixelLists && !firstCycle) ? highPixels[base] : std::vector<uInt>()));
-
-                    absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
-
+                        ( useHighPixels ? highPixels[base] : std::vector<uInt>()));
+                    if (!(deepClean||useHighPixels) || pixels.size()>0) {
+                        absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
+                    }
                     // In performing the search for the peak across bases, we want to take into account
                     // the SNR so we normalise out the coupling matrix for term=0 to term=0.
                     #pragma omp single
@@ -995,7 +996,7 @@ namespace askap {
                         scale -= step;
                     }
                 }
-                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" is using "<<highPixels[base].size()<<" pixels above "<<trialCutoff);
+                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" is using "<<highPixels[base].size()<<" pixels above "<<trialCutoff <<" sigma = "<<sigma);
             }
         }
 
