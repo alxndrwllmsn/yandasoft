@@ -69,6 +69,10 @@ restart: restart imager in spectral mode
     [Tags]          spectralline   newimager
     [Template]      Run PythonTest ${thetest}
     testrestart
+extended: compare standard and pixellist clean on extended source
+    [Tags]          pixellist   newimager
+    [Template]      Run PythonTest ${thetest}
+    testcleanextended
 *** Keywords ***
 Run PythonTest ${thetest}
     ${start_time} =    Get Current Date
