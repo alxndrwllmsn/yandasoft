@@ -1164,14 +1164,23 @@ namespace askap {
         template<class T, class FT>
         void DeconvolverMultiTermBasisFunction<T, FT>::setScaleMask(const Matrix<T>& scaleMask)
         {
-            ASKAPCHECK(this->dirty(0).shape() == scaleMask.shape(),"Mismatch of dirty image and scale mask");
+            // Option to subset the input scaleMask to the size of the dirty image
+            Matrix<T> mask;
+            if (this->dirty(0).shape() == scaleMask.shape()) {
+                mask = scaleMask;
+            } else {
+                ASKAPLOG_INFO_STR(decmtbflogger,"Shape mismatch of dirty image and scale mask, using central part of scale mask");
+                IPosition blc = scaleMask.shape()/2 - this->dirty(0).shape()/2;
+                IPosition trc = scaleMask.shape()/2 + this->dirty(0).shape()/2 - 1;
+                mask = scaleMask(blc, trc);
+            }
             ASKAPCHECK(itsBasisFunction, "Basis function not initialised");
             const uInt nBases(itsBasisFunction->numberBases());
             ASKAPCHECK(nBases <= itsMaxScales,"Scalemask only supports up to "<<itsMaxScales<<" scales");
-            ASKAPASSERT(scaleMask.contiguousStorage());
+            ASKAPASSERT(mask.contiguousStorage());
             itsScalePixels.resize(nBases);
-            for (uInt i=0; i < scaleMask.size(); i++) {
-                const uInt val = static_cast<uInt>(scaleMask.data()[i]);
+            for (uInt i=0; i < mask.size(); i++) {
+                const uInt val = static_cast<uInt>(mask.data()[i]);
                 // Need to deal with multiple scales at same pixel
                 if (val > 0) {
                     for (uInt scale = 0; scale < nBases; scale++) {
