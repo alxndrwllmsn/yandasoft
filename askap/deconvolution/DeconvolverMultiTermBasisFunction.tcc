@@ -217,7 +217,7 @@ namespace askap {
                 itsSolutionType = "MAXCHISQ";
                 ASKAPLOG_DEBUG_STR(decmtbflogger, "Component search to find maximum in chi-squared");
             }
-            itsScaleMaskName = parset.getString("readscalemask","");
+            itsScaleMaskName = parset.getString("scalemask","");
             if (itsScaleMaskName != "") {
                 ASKAPLOG_INFO_STR(decmtbflogger, "Read scale mask from image: "<<itsScaleMaskName);
                 setScaleMask(SynthesisParamsHelper::imageHandler().read(itsScaleMaskName).nonDegenerate());

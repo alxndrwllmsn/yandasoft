@@ -840,7 +840,7 @@ namespace askap
       itsDeconvolverParset = parset;
 
       // Find out if we are writing the scalemask, but don't write a mask we are reading in
-      itsWriteScaleMask = (parset.getString("readscalemask","")== "") && parset.getBool("writescalemask",false);
+      itsWriteScaleMask = (parset.getString("scalemask","")== "") && parset.getBool("writescalemask",false);
       if (itsWriteScaleMask) {
           ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
       }
