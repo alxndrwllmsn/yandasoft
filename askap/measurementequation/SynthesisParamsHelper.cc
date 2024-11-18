@@ -829,7 +829,7 @@ namespace askap
         freq.toWorld(startFreq, 0.0);
         freq.toWorld(endFreq, double(nChan-1));
       } else {
-        freq.toWorld(startFreq, channel);
+        freq.toWorld(startFreq, double(channel));
         freq.toWorld(endFreq, double(channel));
       }
       axes.add("FREQUENCY", startFreq, endFreq);
