@@ -769,18 +769,18 @@ namespace askap
       ASKAPTRACE("SynthesisParamsHelper::loadImageParameter");
       casacore::Array<float> imagePixels = imageHandler().read(imagename);
       casacore::CoordinateSystem imageCoords = imageHandler().coordSys(imagename);
-      loadImageParameter(ip, name, imagename, imagePixels, imageCoords, extraOversampleFactor);
+      loadImageParameter(ip, name, imagePixels, imageCoords, extraOversampleFactor);
     }
 
     void SynthesisParamsHelper::loadImageParameter(askap::scimath::Params& ip, const string& name,
-		const string& imagename, casacore::Array<float>& imagePixels, const casacore::CoordinateSystem& imageCoords,
+		casacore::Array<float>& imagePixels, const casacore::CoordinateSystem& imageCoords,
         const boost::optional<float> extraOversampleFactor, int channel)
     {
       /// Fill in the axes information
       Axes axes;
       /// First do the direction
       int whichDir=imageCoords.findCoordinate(Coordinate::DIRECTION);
-      ASKAPCHECK(whichDir>-1, "No direction coordinate present in the image "<<imagename);
+      ASKAPCHECK(whichDir>-1, "No direction coordinate present in the supplied image coordinates");
       casacore::DirectionCoordinate radec(imageCoords.directionCoordinate(whichDir));
       casacore::Vector<casacore::Int> axesDir = imageCoords.pixelAxes(whichDir);
       ASKAPCHECK(axesDir.nelements() == 2, "Direction axis "<<whichDir<<
@@ -829,7 +829,7 @@ namespace askap
         freq.toWorld(startFreq, 0.0);
         freq.toWorld(endFreq, double(nChan-1));
       } else {
-        freq.toWorld(startFreq, channel);
+        freq.toWorld(startFreq, double(channel));
         freq.toWorld(endFreq, double(channel));
       }
       axes.add("FREQUENCY", startFreq, endFreq);
