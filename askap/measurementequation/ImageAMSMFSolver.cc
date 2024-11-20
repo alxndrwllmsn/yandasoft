@@ -38,7 +38,9 @@ ASKAP_LOGGER(logger, ".measurementequation.imageamsmfsolver");
 
 #include <askap/measurementequation/ImageAMSMFSolver.h>
 
-using namespace casa;
+#include <casacore/casa/Arrays/ArrayPartMath.h>
+
+using namespace casacore;
 using namespace askap;
 using namespace askap::scimath;
 
@@ -62,31 +64,12 @@ namespace askap
   {
 
 
-    ImageAMSMFSolver::ImageAMSMFSolver() : itsScales(3,0.),itsNumberTaylor(0),
-        itsSolutionType("MINCHISQ"), itsOrthogonal(False)
-    {
-      ASKAPDEBUGASSERT(itsScales.size() == 3);
-      itsScales(1)=10;
-      itsScales(2)=30;
-      // Now set up controller
-      itsControl.reset(new DeconvolverControl<Float>());
-      // Now set up monitor
-      itsMonitor.reset(new DeconvolverMonitor<Float>());
-      const BasisFunction<Float>::ShPtr bfPtr(new MultiScaleBasisFunction<Float>(itsScales,
-                                              itsOrthogonal));
-      itsBasisFunction = bfPtr;
-    }
-
-    ImageAMSMFSolver::ImageAMSMFSolver(const casacore::Vector<float>& scales) :
-      itsScales(scales), itsNumberTaylor(0), itsSolutionType("MINCHISQ"), itsOrthogonal(False)
+    ImageAMSMFSolver::ImageAMSMFSolver() : itsNumberTaylor(0)
     {
       // Now set up controller
-      itsControl.reset(new DeconvolverControl<Float>());
+      itsControl.reset(new DeconvolverControl<float>());
       // Now set up monitor
-      itsMonitor.reset(new DeconvolverMonitor<Float>());
-
-      const BasisFunction<Float>::ShPtr bfPtr(new MultiScaleBasisFunction<Float>(scales, itsOrthogonal));
-      itsBasisFunction = bfPtr;
+      itsMonitor.reset(new DeconvolverMonitor<float>());
     }
 
     Solver::ShPtr ImageAMSMFSolver::clone() const
@@ -118,7 +101,7 @@ namespace askap
       }
       // this should work for faceting as well, taylorMap would contain one element
       // per facet in this case
-      std::map<std::string, int> taylorMap;
+      map<string, int> taylorMap;
       SynthesisParamsHelper::listTaylor(names, taylorMap);
 
       // Work out overlap of offset fields with main field and create mask
@@ -126,14 +109,14 @@ namespace askap
       Matrix<imtype> extraMask = (itsUseOverlapMask ?
           utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
 
-      std::string firstImage;
+      string firstImage;
       double peakRes1 = 0;
       double originalTarget = 0;
       double originalTarget2 = 0;
 
-      uint nParameters=0;
+      uInt nParameters=0;
       ASKAPCHECK(taylorMap.size() != 0, "Solver doesn't have any images to solve for");
-      for (std::map<std::string, int>::const_iterator tmIt = taylorMap.begin(); tmIt!=taylorMap.end(); ++tmIt) {
+      for (map<string, int>::const_iterator tmIt = taylorMap.begin(); tmIt!=taylorMap.end(); ++tmIt) {
 
         // The MSMF Solver expects 2xNTaylor-1 image parameter for each Stokes parameter.
         //
@@ -187,7 +170,7 @@ namespace askap
             ASKAPLOG_INFO_STR(logger, "No Taylor terms will be solved");
         }
         const casacore::IPosition imageShape = ip.shape(iph.paramName());
-        const uint nPol = imageShape.nelements()>=3 ? uint(imageShape(2)) : 1;
+        const uInt nPol = imageShape.nelements()>=3 ? uInt(imageShape(2)) : 1;
         ASKAPLOG_INFO_STR(logger, "There are " << nPol << " polarisation planes to solve" );
         nParameters += imageShape.product(); // add up the number of pixels for zero order
         // check consistency
@@ -195,7 +178,7 @@ namespace askap
             // make the helper a Taylor term of the given order
             iph.makeTaylorTerm(order);
             const casacore::IPosition thisShape = ip.shape(iph.paramName());
-            const uint thisNPol = thisShape.nelements()>=3 ? uint(thisShape(2)) : 1;
+            const uInt thisNPol = thisShape.nelements()>=3 ? uInt(thisShape(2)) : 1;
             ASKAPCHECK(thisNPol == nPol,
                 "Number of polarisations are supposed to be consistent for all Taylor terms, order="<<
                 order<<" has "<<thisNPol<<" polarisation planes");
@@ -215,7 +198,7 @@ namespace askap
         // Check if a separate full-resolution clean model has been saved
         // It will be in a param with the starting "image" swapped to "fullres"):
         bool importModelFromNE = true;
-       if (itsExtraOversamplingFactor) {
+        if (itsExtraOversamplingFactor) {
             ASKAPDEBUGASSERT(*itsExtraOversamplingFactor > 1.);
             // if the 0-order param exists, assume they all do. If not, assume they all need to be initialised
             if (this->itsNumberTaylor>1) {
@@ -266,14 +249,14 @@ namespace askap
         // as polarisations are not necessarily represented by a different parameter
         // we have to build a set of parameters which are going to be fixed inside the loop
         // (or alternatively fix them multiple times, which is also a reasonable solution)
-        std::set<std::string> parametersToBeFixed;
+        std::set<string> parametersToBeFixed;
 
         bool firstcycle;
 
         // Iterate through Polarisations
         for (imagemath::MultiDimArrayPlaneIter planeIter(imageShape); planeIter.hasMore(); planeIter.next()) {
-            const uint plane = planeIter.sequenceNumber();
-            std::string tagLogString(planeIter.tag());
+            const uInt plane = planeIter.sequenceNumber();
+            string tagLogString(planeIter.tag());
             if (tagLogString.size()) {
                 tagLogString = "tagged as " + tagLogString;
             } else {
@@ -290,7 +273,7 @@ namespace askap
             else {
                 ASKAPLOG_INFO_STR(logger, "No Taylor terms will be solved");
             }
-            const std::string zeroOrderParam = iph.paramName();
+            const string zeroOrderParam = iph.paramName();
 
             // Setup the normalization vector
             ASKAPLOG_INFO_STR(logger, "Reading the normalization vector from : " << zeroOrderParam);
@@ -308,18 +291,18 @@ namespace askap
             ASKAPLOG_INFO_STR(logger, "Maximum of weights = " << maxDiag );
 
             // a unique string for every Taylor decomposition (unique for every facet for faceting)
-            const std::string imageTag = tmIt->first + planeIter.tag();
+            const string imageTag = tmIt->first + planeIter.tag();
             firstcycle = !SynthesisParamsHelper::hasValue(itsCleaners,imageTag);
 
             if (firstImage.size()==0) {
                 firstImage = imageTag;
             }
 
-            Vector<Array<Float> > cleanVec(itsNumberTaylor);
-            Vector<Array<Float> > dirtyVec(itsNumberTaylor);
-            Vector<Array<Float> > dirtyLongVec(2*itsNumberTaylor-1);
-            Vector<Array<Float> > psfVec(itsNumberTaylor);
-            Vector<Array<Float> > psfLongVec(2*itsNumberTaylor-1);
+            Vector<Array<float>> cleanVec(itsNumberTaylor);
+            Vector<Array<float>> dirtyVec(itsNumberTaylor);
+            Vector<Array<float>> dirtyLongVec(2*itsNumberTaylor-1);
+            Vector<Array<float>> psfVec(itsNumberTaylor);
+            Vector<Array<float>> psfLongVec(2*itsNumberTaylor-1);
 
             // Setup the PSFs - all ( 2 x ntaylor - 1 ) of them for the first time. We keep a copy of
             // the first since we will need it for preconditioning the others
@@ -351,7 +334,7 @@ namespace askap
                 else {
                     ASKAPLOG_INFO_STR(logger, "No Taylor terms will be solved");
                 }
-                const std::string thisOrderParam = iph.paramName();
+                const string thisOrderParam = iph.paramName();
                 ASKAPLOG_INFO_STR(logger, "AMSMFS solver: processing order "<<order<<
                                   " ("<<itsNumberTaylor<<" Taylor terms + " << itsNumberTaylor-1 <<
                                   " cross-terms), parameter name: " << thisOrderParam);
@@ -453,11 +436,11 @@ namespace askap
                     if(order==0) {
                         itsPSFZeroCentre = doNormalization(planeIter.getPlaneVector(normdiag), tol(),
                             psfLongVec(0), dirtyLongVec(0),
-                            boost::shared_ptr<casacore::Array<float> >(&maskArray, utility::NullDeleter()));
+                            boost::shared_ptr<casacore::Array<float>>(&maskArray, utility::NullDeleter()));
                     }  else {
                         doNormalization(planeIter.getPlaneVector(normdiag), tol(),
                             psfLongVec(order), itsPSFZeroCentre, dirtyLongVec(order),
-                            boost::shared_ptr<casacore::Array<float> >(&maskArray, utility::NullDeleter()));
+                            boost::shared_ptr<casacore::Array<float>>(&maskArray, utility::NullDeleter()));
                     }
                         for (uInt t1=0; t1 < itsNumberTaylor; ++t1) {
                             for (uInt t2=0; t2 < itsNumberTaylor; ++t2) {
@@ -489,7 +472,7 @@ namespace askap
                     psfWorkArray = itsPSFZeroArray;
                     doNormalization(planeIter.getPlaneVector(normdiag), tol(),
                         psfWorkArray, itsPSFZeroCentre, dirtyLongVec(order),
-                        boost::shared_ptr<casacore::Array<float> >(&maskArray, utility::NullDeleter()));
+                        boost::shared_ptr<casacore::Array<float>>(&maskArray, utility::NullDeleter()));
                     if(order<itsNumberTaylor) {
                         dirtyVec(order)=dirtyLongVec(order);
                     }
@@ -530,10 +513,22 @@ namespace askap
 
             // get noise for thresholds if needed
             float sigma = 0.;
+            Matrix<imtype> madMap;
             if (noiseThreshold()>0) {
                 // get mad estimate for sigma
                 // may need to take mask into account?
-                sigma = 1.48f * casacore::madfm(dirtyVec(0));
+                imtype mad = casacore::madfm(dirtyVec(0));
+                sigma = 1.48f * mad;
+                if (noiseBoxSize()>0) {
+                    // get mad map for position dependent threshold
+                    madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
+                        IPosition(2,noiseBoxSize()),MadfmFunc<imtype>());
+                    //normalise madMap to overall mad and send it to cleaner
+                    if (mad > 0) {
+                        madMap /= mad;
+                        // do we want to enforce madMap >= 1 ?
+                    }
+                }
             }
 
             // Now that we have all the required images, we can initialise the deconvolver
@@ -542,7 +537,7 @@ namespace askap
 
                 ASKAPLOG_INFO_STR(logger, "Creating solver for plane " << plane <<" tag "<<imageTag);
                 itsCleaners[imageTag].reset(
-                    new DeconvolverMultiTermBasisFunction<Float, Complex>(dirtyVec, psfVec, psfLongVec));
+                    new DeconvolverMultiTermBasisFunction<float, Complex>(dirtyVec, psfVec, psfLongVec));
                 ASKAPDEBUGASSERT(itsCleaners[imageTag]);
 
                 itsCleaners[imageTag]->setMonitor(itsMonitor);
@@ -550,6 +545,9 @@ namespace askap
                     // set thresholds based on robust noise estimate
                     itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
                     itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                    if (madMap.size()>0) {
+                        itsCleaners[imageTag]->setNoiseMap(madMap,noiseBoxSize());
+                    }
                 } else {
                     itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
                     itsControl->setTargetObjectiveFunction2(deepThreshold());
@@ -558,22 +556,10 @@ namespace askap
                     originalTarget = itsControl->targetObjectiveFunction();
                     originalTarget2 = itsControl->targetObjectiveFunction2();
                 }
+
                 itsControl->setFractionalThreshold(fractionalThreshold());
-
                 itsCleaners[imageTag]->setControl(itsControl);
-
-                ASKAPCHECK(itsBasisFunction, "Basis function not initialised");
-
-                ASKAPDEBUGASSERT(dirtyVec.nelements() > 0);
-                itsBasisFunction->initialise(dirtyVec(0).shape());
-                itsCleaners[imageTag]->setBasisFunction(itsBasisFunction);
-                itsCleaners[imageTag]->setSolutionType(itsSolutionType);
-                itsCleaners[imageTag]->setDecoupled(itsDecoupled);
-                itsCleaners[imageTag]->setUseScaleBitMask(itsUseScaleMask);
-                itsCleaners[imageTag]->setUseScalePixels(itsUseScalePixels);
-                itsCleaners[imageTag]->setUsePixelLists(itsUsePixelLists);
-                itsCleaners[imageTag]->setPixelListTolerance(itsPixelListTolerance);
-                itsCleaners[imageTag]->setPixelListNSigma(itsPixelListNSigma);
+                itsCleaners[imageTag]->configure(itsDeconvolverParset);
 
                 if (maskArray.nelements()) {
                     if (imageTag == firstImage &&
@@ -583,17 +569,13 @@ namespace askap
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
                 }
-                if (itsReadScaleMask) {
-                    ASKAPLOG_INFO_STR(logger, "Read scale mask from image: "<<itsScaleMaskName);
-                    itsCleaners[imageTag]->setScaleMask(SynthesisParamsHelper::imageHandler().read(itsScaleMaskName).nonDegenerate());
-                }
             } else {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._updatedeconvolver");
                 ASKAPCHECK(itsCleaners[imageTag], "Deconvolver not yet defined");
                 // Update the dirty images
                 ASKAPLOG_INFO_STR(logger, "Multi-Term Basis Function deconvolver already exists - update dirty images");
                 itsCleaners[imageTag]->updateDirty(dirtyVec);
-                ASKAPLOG_INFO_STR(logger, "Successfully updated dirty images");
+                ASKAPLOG_DEBUG_STR(logger, "Successfully updated dirty images");
                 // update thresholds based on robust noise estimate
                 if (sigma > 0) {
                     itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
@@ -603,6 +585,9 @@ namespace askap
                         originalTarget2 = itsControl->targetObjectiveFunction2();
                     }
                     itsCleaners[imageTag]->setControl(itsControl);
+                    if (madMap.size()>0) {
+                        itsCleaners[imageTag]->setNoiseMap(madMap,noiseBoxSize());
+                    }
                 }
             }
 
@@ -622,13 +607,22 @@ namespace askap
                     // need to use final peak residual of first image as limit for cleaning of next images
                     // to avoid overcleaning offset fields with little flux
                     if (peakRes1 > originalTarget) {
-                        // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
-                        itsControl->setTargetObjectiveFunction(peakRes1);
+                        // leave target alone if it is higher (high noise in offset field)
+                        if (itsControl->targetObjectiveFunction() < peakRes1) {
+                            // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
+                            itsControl->setTargetObjectiveFunction(peakRes1);
+                        }
+                        // offset fields don't get to switch on deep clean
                         itsControl->setTargetObjectiveFunction2(0);
                     } else {
                         // if peakRes1 < firstTarget: set 1st target to original value, set 2nd Target to peakRes1
-                        itsControl->setTargetObjectiveFunction(originalTarget);
-                        itsControl->setTargetObjectiveFunction2(peakRes1);
+                        // but leave alone if sigma target is higher
+                        if (itsControl->targetObjectiveFunction() < originalTarget) {
+                            itsControl->setTargetObjectiveFunction(originalTarget);
+                        }
+                        if (itsControl->targetObjectiveFunction2() < peakRes1) {
+                            itsControl->setTargetObjectiveFunction2(peakRes1);
+                        }
                     }
                 }
                 itsCleaners[imageTag]->setControl(itsControl);
@@ -642,13 +636,13 @@ namespace askap
                 else {
                     ASKAPLOG_INFO_STR(logger, "No Taylor terms will be solved");
                 }
-                const std::string thisOrderParam = iph.paramName();
+                const string thisOrderParam = iph.paramName();
 
                 if(saveIntermediate()) {
                     // Save create/update parameters after preconditioning.
                     // Will need downsampling if params are stored with lower resolution
                     if (itsExtraOversamplingFactor) {
-                        Array<Float> tmpImg = dirtyVec(order);
+                        Array<float> tmpImg = dirtyVec(order);
                         SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor,true);
                         ASKAPLOG_DEBUG_STR(logger, "Dirty(" << order << ") shape = " << dirtyVec(order).shape());
                         saveArrayIntoParameter(ip, thisOrderParam, planeIter.shape(), "residual",
@@ -660,7 +654,7 @@ namespace askap
                     if(firstcycle) {
                         if (itsExtraOversamplingFactor) {
                             ASKAPLOG_DEBUG_STR(logger, "PSF(" << order << ") shape = " << psfVec(order).shape());
-                            Array<Float> tmpImg = psfVec(order);
+                            Array<float> tmpImg = psfVec(order);
                             SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor,true);
                             saveArrayIntoParameter(ip, thisOrderParam, planeIter.shape(), "psf.image",
                                 unpadImage(tmpImg), planeIter.position());
@@ -670,7 +664,7 @@ namespace askap
                         }
                         if(order==0&&maskArray.nelements()) {
                             if (itsExtraOversamplingFactor) {
-                                Array<Float> tmpImg = maskArray;
+                                Array<float> tmpImg = maskArray;
                                 SynthesisParamsHelper::downsample(tmpImg,*itsExtraOversamplingFactor,true);
                                 saveArrayIntoParameter(ip, thisOrderParam, planeIter.shape(), "mask",
                                     unpadImage(tmpImg), planeIter.position());
@@ -686,7 +680,7 @@ namespace askap
                 itsCleaners[imageTag]->setModel(cleanVec(order), order);
             } // end of 'order' loop
 
-            Bool stop = false;
+            bool stop = false;
             {
                 ASKAPTRACE("ImageAMSMFSolver::solveNormalEquations._calldeconvolver");
                 ASKAPLOG_INFO_STR(logger, "Starting Minor Cycles ("<<imageTag<<").");
@@ -695,7 +689,7 @@ namespace askap
             }
 
             // Now update the stored peak residual
-            const std::string peakResParam = std::string("peak_residual.") + imageTag;
+            const string peakResParam = string("peak_residual.") + imageTag;
             double peakRes = itsCleaners[imageTag]->state()->peakResidual();
             if (imageTag == firstImage) {
                 peakRes1 = peakRes;
@@ -726,7 +720,7 @@ namespace askap
                     ASKAPTHROW(AskapError,"Logic error in ImageAMSMFSolver::solveNormalEquations");
                 }
             }
-            const std::string noiseParam = std::string("noise_threshold_reached.") + imageTag;
+            const string noiseParam = string("noise_threshold_reached.") + imageTag;
             if (ip.has(noiseParam)) {
                 ip.update(noiseParam, below ? 1.0 : -1.0);
             } else {
@@ -744,7 +738,7 @@ namespace askap
                 else {
                   ASKAPLOG_INFO_STR(logger, "No Taylor terms were solved");
                 }
-                const std::string thisOrderParam = iph.paramName();
+                const string thisOrderParam = iph.paramName();
                 if (order == 0 && itsWriteScaleMask) {
                     string fullResName = thisOrderParam;
                     if (itsExtraOversamplingFactor) {
@@ -764,7 +758,7 @@ namespace askap
                 // if we cleaned at higher resolution, need to update the high-res params then downsample back
                 if (itsExtraOversamplingFactor) {
                     // copy the new model back to the working vector of arrays
-                    Array<Float> tmpImg = itsCleaners[imageTag]->model(order);
+                    Array<float> tmpImg = itsCleaners[imageTag]->model(order);
                     // store full-res model in a slice of the new fullres parameter
                     ASKAPCHECK(planeIter.position()(0)==0 && planeIter.position()(1)==0,
                         "Image offsets not supported with variable image resolution");
@@ -790,7 +784,7 @@ namespace askap
                 if(this->itsNumberTaylor>1) {
                     iph.makeTaylorTerm(order);
                 }
-                const std::string thisOrderParam = iph.paramName();
+                const string thisOrderParam = iph.paramName();
                 parametersToBeFixed.insert(thisOrderParam);
             }
 
@@ -804,7 +798,7 @@ namespace askap
 
         // Fix the params corresponding to extra Taylor terms.
         // (MV) probably this part needs another careful look
-        for (std::set<std::string>::const_iterator ci = parametersToBeFixed.begin();
+        for (std::set<string>::const_iterator ci = parametersToBeFixed.begin();
              ci != parametersToBeFixed.end(); ++ci) {
             if (ip.isFree(*ci)) {
                 ip.fix(*ci);
@@ -832,24 +826,8 @@ namespace askap
       saveWeights(ip);
       savePSF(ip);
 
-      // if not using taylor terms we can save memory by throwing away the cleaners here
-      // the extra work of recreating them is minimal in that case
-      // Disabled for now - this messes up deep cleaning because scale masks are lost
-      //if (itsNumberTaylor==1) {
-      //    ASKAPLOG_INFO_STR(logger,"Clearing out the cleaners");
-      //    itsCleaners.clear();
-      //}
-
       return true;
     };
-
-    void ImageAMSMFSolver::setBasisFunction(BasisFunction<Float>::ShPtr bf) {
-      itsBasisFunction=bf;
-    }
-
-    BasisFunction<Float>::ShPtr ImageAMSMFSolver::basisFunction() {
-      return itsBasisFunction;
-    }
 
     void ImageAMSMFSolver::configure(const LOFAR::ParameterSet &parset) {
       ImageSolver::configure(parset);
@@ -859,58 +837,15 @@ namespace askap
       ASKAPASSERT(this->itsControl);
       this->itsControl->configure(parset);
 
-      ASKAPASSERT(this->itsControl);
-      this->itsControl->configure(parset);
-      String solutionType=parset.getString("solutiontype", "MAXBASE");
-      if(solutionType=="MAXCHISQ") {
-      }
-      else if(solutionType=="MAXTERM0") {
-      }
-      else {
-        solutionType="MAXBASE";
-      }
-      ASKAPLOG_INFO_STR(logger, "Solution type = " << solutionType);
-      this->itsSolutionType=solutionType;
+      itsDeconvolverParset = parset;
 
-      this->itsOrthogonal=parset.getBool("orthogonal", false);
-      if (this->itsOrthogonal) {
-          ASKAPLOG_DEBUG_STR(logger, "Multiscale basis functions will be orthogonalised");
-          // need to reset the basisFunctions
-          const BasisFunction<Float>::ShPtr bfPtr(new MultiScaleBasisFunction<Float>(itsScales, itsOrthogonal));
-          itsBasisFunction = bfPtr;
-      }
-      this->itsDecoupled = parset.getBool("decoupled", true);
-      if (this->itsDecoupled) {
-          ASKAPLOG_DEBUG_STR(logger, "Using decoupled residuals");
-      }
-      // Find out if we are reading or writing the scalemask, or just using it
-      itsScaleMaskName = parset.getString("readscalemask","");
-      itsReadScaleMask = (itsScaleMaskName != "");
-      itsWriteScaleMask = !itsReadScaleMask && parset.getBool("writescalemask",false);
-      itsUseScaleMask = parset.getBool("usescalemask",true) || itsReadScaleMask || itsWriteScaleMask;
-      itsUseScalePixels = parset.getBool("usescalepixels",itsUseScaleMask);
-      itsUsePixelLists = parset.getBool("usepixellists", false);
-      if (itsUseScaleMask) {
-          if (itsUseScalePixels) {
-              ASKAPLOG_INFO_STR(logger, "Using pixel lists for scale masks");
-          } else {
-              ASKAPLOG_INFO_STR(logger, "Using bitmask image for scale masks");
-          }
-          if (itsReadScaleMask) {
-              ASKAPLOG_INFO_STR(logger, "Will read scale mask image "<<itsScaleMaskName);
-          }
-          if (itsWriteScaleMask) {
-              ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
-          }
-      } else {
-          ASKAPLOG_INFO_STR(logger, "Not using bitmask for scale masks");
-      }
-      if (itsUsePixelLists) {
-          ASKAPLOG_INFO_STR(logger, "Using pixel lists with active (high) pixels");
+      // Find out if we are writing the scalemask, but don't write a mask we are reading in
+      itsWriteScaleMask = (parset.getString("readscalemask","")== "") && parset.getBool("writescalemask",false);
+      if (itsWriteScaleMask) {
+          ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
       }
       itsUseOverlapMask = parset.getBool("useoverlapmask", true);
-      itsPixelListTolerance = parset.getFloat("usepixellists.tolerance",0.1);
-      itsPixelListNSigma = parset.getFloat("usepixellists.nsigma",4.0);
-    }
+
+     }
   }
 }

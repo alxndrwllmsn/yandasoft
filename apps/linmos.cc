@@ -438,6 +438,8 @@ static void merge(const LOFAR::ParameterSet &parset) {
         float itsCutoff = 0.01;
 
         if (parset.isDefined("cutoff")) itsCutoff = parset.getFloat("cutoff");
+        if (parset.isDefined("finalcutoff")) itsCutoff = parset.getFloat("finalcutoff");
+
 
         /// This logic is in addition to the mask in the accumulator
         /// which works on an individual beam weight

@@ -237,7 +237,11 @@ void ContinuumWorker::run(void)
     wrequest.sendRequest(itsMaster, itsComms);
 
   } // while (1) // break when "DONE"
-  ASKAPCHECK(itsWorkUnits.size() > 0, "No work at to do - something has broken in the setup");
+
+  // MV: see AXA-3083, we still find some corner cases. For now disable this check but it can cause issues somewhere else
+  // (probably need refactoring / rewrite of the logic of the part generating work units and doing the write - it was untouched
+  // during major ContinuumWorker refactoring)
+  //ASKAPCHECK(itsWorkUnits.size() > 0, "No work at to do - something has broken in the setup");
 
   ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " received data from master - waiting at barrier");
   itsComms.barrier(itsComms.theWorkers());
@@ -336,7 +340,7 @@ void ContinuumWorker::configureChannelAllocation()
    } else {
        const bool combineChannels = itsParset.getBool("combinechannels", false);
        if (combineChannels) {
-           ASKAPLOG_INFO_STR(logger, "Not in localsolver (spectral line) mode - and combine channels is set so compressing channel allocations)");
+           ASKAPLOG_INFO_STR(logger, "Not in localsolver (spectral line) mode - and combine channels is set so compressing channel allocations");
            compressWorkUnits();
        }
        initialiseBeamLog(nchanTotal);
@@ -1097,12 +1101,17 @@ void ContinuumWorker::processChannels()
        // cleanup
        performOutstandingWriteJobs();
    }
+   /*
+   // Allowing ranks with no workunits (See AXA-3083) caused problems with this barrier, so removing it for now as
+   // I don't think it is necessary anyway - see my notes below from the time of refactoring
+   //
    // MV: I don't think the barrier is necesary here. If it is needed to ensure all channel write operations are
    // performed before going further, then we have to move it into performOutstandingWriteJobs.
    // Anyway, leave it as it was prior to refactoring for now
-   ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+   ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at processChannels barrier");
    itsComms.barrier(itsComms.theWorkers());
-   ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+   ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed processChannels barrier");
+   */
 
    // write out the beam log
    ASKAPLOG_DEBUG_STR(logger, "About to log the full set of restoring beams");
@@ -1131,9 +1140,9 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        rootImagerPtr->sendNE();
 
        // MV: for now leave the original barrier in place although it is not required
-       ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at barrier");
+       ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " at runMinorCycleSolver barrier");
        itsComms.barrier(itsComms.theWorkers());
-       ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
+       ASKAPLOG_DEBUG_STR(logger, "Rank " << itsComms.rank() << " passed runMinorCycleSolver barrier");
 
        // now we have to wait for the model (solution) to come back.
        // MV: except on the very last major cycle
