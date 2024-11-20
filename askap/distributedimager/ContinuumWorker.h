@@ -241,8 +241,12 @@ class ContinuumWorker : public boost::noncopyable
         /// @params[in] channel, the (global) channel number for the image plane to fill with the model
         void loadImageFromMFSModel(const askap::scimath::Params::ShPtr& params, double freq, int channel) const;
 
-        void buildSpectralCube();
-
+        /// @brief Load a starting model if required, or setup empty model
+        /// @details Initialise the starting model image from a model cube, MFS model, or empty image
+        /// @params[in] channel, the (global) channel number for the image plane to fill with the model
+        /// @params[in] frequency, the frequency to evaluate the MFS model at, if supplied
+        /// @return bool, true if a starting model was loaded, false if zero model was set up
+        bool loadStartingModel(const askap::scimath::Params::ShPtr& params, uInt channel, double frequency) const;
 
         // Root Parameter set good for information common to all workUnits
         LOFAR::ParameterSet& itsParset;

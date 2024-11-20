@@ -65,6 +65,10 @@ delaysolver: test delaysolver app on real ATCA data"
     [Tags]          testdelaysolver
     [Template]      Run PythonTest ${thetest}
     testdelaysolver
+mfsmodel: start imager in spectral mode with mfs model
+    [Tags]          spectralline   newimager
+    [Template]      Run PythonTest ${thetest}
+    testmfsmodel
 restart: restart imager in spectral mode
     [Tags]          spectralline   newimager
     [Template]      Run PythonTest ${thetest}
