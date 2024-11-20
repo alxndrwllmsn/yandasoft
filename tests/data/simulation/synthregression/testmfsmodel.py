@@ -62,6 +62,7 @@ spr.addToParset("Cimager.Images.Names = [image.cube-res]")
 spr.addToParset("Cimager.sources.names = [xyz]")
 spr.addToParset("Cimager.sources.xyz.model = image.cont")
 spr.addToParset("Cimager.sources.xyz.nterms = 2")
+spr.addToParset("Cimager.Images.shape = [192, 192]")
 
 if "CI" in os.environ:
     spr2.runNewImagerParallel(2)
