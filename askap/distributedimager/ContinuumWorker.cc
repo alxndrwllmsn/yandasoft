@@ -2370,10 +2370,22 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   const casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
   const string name("image.slice");
   const boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
-  ASKAPCHECK(imagePixels.shape().getFirst(2) == itsImageCube->imageHandler()->shape(imageName).getFirst(2),
-    "Unequal shape for model and cube not implemented yet: "
-    <<imagePixels.shape().getFirst(2) <<" vs "<< itsImageCube->imageHandler()->shape(imageName).getFirst(2));
-  SynthesisParamsHelper::loadImageParameter(*params, name, imagePixels, imageCoords,
+  const IPosition inShape = imagePixels.shape().getFirst(2); 
+  const IPosition outShape = itsImageCube->imageHandler()->shape(imageName).getFirst(2);
+  // Option to subset the input to the size of the output
+  ASKAPCHECK(inShape(0) >= outShape(0) && inShape(1) >= outShape(1), 
+    "Model MFS image should be the same size or larger than output image");
+  Array<float> pixels;
+  if (inShape == outShape) {
+      pixels.reference(imagePixels);
+  } else {
+      ASKAPLOG_DEBUG_STR(logger,"Shape mismatch of MFS model image and output cube, using central part");
+      IPosition blc(4,inShape(0)/2 - outShape(0)/2, inShape(1)/2 - outShape(1)/2, 0, 0);
+      IPosition trc(4,inShape(0)/2 + outShape(0)/2 - 1, inShape(1)/2 + outShape(1)/2 -1, 0, 0);
+      pixels = imagePixels(blc, trc);
+  }
+
+  SynthesisParamsHelper::loadImageParameter(*params, name, pixels, imageCoords,
     extraOversampleFactor, channel);
 }
 
