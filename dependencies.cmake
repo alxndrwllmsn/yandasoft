@@ -17,6 +17,6 @@ set ( BASE_ASKAP_TAG               ffd9370a6e5ebc5e3f07e2383bca2df431dd8269    C
 set ( BASE_IMAGEMATH_TAG           9ce81c9021c013eb1dbdce83fe6e94a6228d68b9    CACHE  STRING    "base-imagemath version"           FORCE )
 set ( BASE_ASKAPPARALLEL_TAG       1ccc9663cf58a71007db5dc48e4ad3beb0a4d419    CACHE  STRING    "base-askapparallel version"       FORCE )
 set ( BASE_SCIMATH_TAG             feb949247c760972ae3c7a0936bb7869ee3ebc35    CACHE  STRING    "base-scimath version"             FORCE )
-set ( BASE_ACCESSORS_TAG           f4fd6bb7ac565f82d97caf715c7f97b34854bbf5    CACHE  STRING    "base-accessors version"           FORCE )
-set ( BASE_COMPONENTS_TAG          ffcdab6a4de43812b9beb0dc90cdd5e2f7502bab    CACHE  STRING    "base-components version"          FORCE )
+set ( BASE_ACCESSORS_TAG           9adc8a1382bd6c1a0df2d34e2f0949f901fe0aec    CACHE  STRING    "base-accessors version"           FORCE )
+set ( BASE_COMPONENTS_TAG          b15b15c8e21790e48baffdbeedaf030143fd465d    CACHE  STRING    "base-components version"          FORCE )
 # TOS related repos are not versioned yet, so pinned this build with commit hash values.
