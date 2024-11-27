@@ -43,6 +43,7 @@
 #include <askap/profile/AskapProfiler.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
+#include <askap/measurementequation/ImageParamsHelper.h>
 #include <askap/scimath/utils/PolConverter.h>
 #include <Common/Exceptions.h>
 #include <casacore/casa/OS/Timer.h>
@@ -71,6 +72,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsDoingPreconditioning(doingPreconditioning(parset)),
     // setup whether we solve locally (spectral line mode) or on the master (continuum mode)
     itsLocalSolver(parset.getBool("solverpercore", false)),
+    // read an initial model cube (standard naming), spectral line case
+    itsReadStartingModelCube(parset.getBool("Images.reuse",false)),
     // setup whether we restore and write restored image
     itsRestore(parset.getBool("restore", false)),
     // setup whether to write the residual image + support of an alternative parameter name
@@ -84,7 +87,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     // write weights log file
     itsWriteWtLog(parset.getBool("write.weightslog", false)),
     // clean model (itsRestore is already initialised by this point and can be used for default value)
-    itsWriteModelImage(parset.getBool("write.modelimage", !itsRestore)),
+    // if we're reading in the model cube, we also write it out again
+    itsWriteModelImage(parset.getBool("write.modelimage", !itsRestore)||itsReadStartingModelCube),
     // write (dump) the gridded data, psf and pcf + support of an alternative parameter name
     itsWriteGrids(parset.getBool("write.grids", parset.getBool("dumpgrids", false))),
     // grid image type
@@ -97,6 +101,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsNumWriters(configureNumberOfWriters()),
     // joint gridding of multiple beams/directions
     itsUpdateDir(parset.getBool("updatedirection",false)),
+    // use MFS starting model (for spectral mode)
+    itsMFSStartingModel(parset.getBool("mfsstartingmodel",false)),
     // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether 
     // the shared pointer is not empty. But this is cheap. We can clear this up later)
     // uv-weight calculator object; at the moment, it is an empty pointer if no traditional weighting is done
@@ -146,6 +152,13 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
 
     if (isSampleDensityGridNeeded() && itsParset.getBool("sphfuncforpsf", false) && !itsUpdateDir) {
         ASKAPLOG_WARN_STR(logger, "Using together sphfuncforpsf = true and the traditional weighting mode may lead to unexpected results. Consider using updatedirection=true. See AXA-2792 for details.");
+    }
+
+    // check if we can load in the model cube
+    if (itsLocalSolver && itsReadStartingModelCube) {
+      const int nWriters = itsParset.getInt32("nwriters",1);
+      const string imageType = itsParset.getString("imagetype","casa");
+      ASKAPCHECK(imageType=="fits" && nWriters == nWorkers,"The Images.reuse option in spectral mode requires imagetype=fits and nwriters==nworkers");
     }
 }
 
@@ -460,7 +473,9 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
                 itsParset.replace("header.TIMESYS","["+timesys+",Time System]");
             }
 
-            if (itsWriteModelImage) {
+            if (itsReadStartingModelCube) {
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));             
+            } else if (itsWriteModelImage) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
             }
             if (itsWritePsfRaw) {
@@ -509,7 +524,6 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 
        } else {
             // this is a cube writer rather than creator
-
             if (itsWriteModelImage) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
             }
@@ -583,7 +597,7 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
    ASKAPASSERT(itsDSM);
    const int localChannel = wu.get_localChannel();
    const double globalFrequency = wu.get_channelFrequency();
-   const int globalChannel = wu.get_globalChannel();
+   const uInt globalChannel = wu.get_globalChannel();
    TableDataSource& ds = itsDSM->dataSource(wu.get_dataset());
 
    if (itsUpdateDir) {
@@ -664,6 +678,10 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
               rootImagerPtr->calcNE(); // dummy pass (but unlike the code prior to refactoring it is not used for anything else
               rootImagerPtr->configureNormalEquationsForMosaicing();
               rootImagerPtr->zero(); // then we delete all our work ....
+              // load a starting model if required
+              if (loadStartingModel(rootImagerPtr->params(), globalChannel, globalFrequency)) {
+                  copyModel(rootImagerPtr->params(),workingImager.params());
+              };
            }
            catch (const askap::AskapError& e) {
                   ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - dummy run for rootImager in updatedirection mode");
@@ -687,8 +705,8 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
            workingImager.replaceModelByReference(rootImagerPtr->params());
        } else {
            if (itsLocalSolver) {
-               // setup full sized image
-               setupImage(workingImager.params(), globalFrequency, false);
+              // load starting model or setup empty model image
+              loadStartingModel(workingImager.params(), globalChannel, globalFrequency);
            } else {
                // need to receve the model from master
                // we may need an option to force this behaviour, although alternatively if rootImagerPtr is defined, we
@@ -700,6 +718,25 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
        }
    }
    return workingImagerPtr;
+}
+
+bool ContinuumWorker::loadStartingModel(const askap::scimath::Params::ShPtr& params, uInt channel, double frequency) const {
+    if (itsReadStartingModelCube) {
+        // load plane from model cube as starting model
+        loadImage(params, channel);
+    } else if (itsMFSStartingModel) {
+        // Calculate the spectral plane model and set that as the first model
+        // subsequent cleaning would be cumulative in this model and it would be restored - problem if
+        // models are not on the same grid
+        loadImageFromMFSModel(params, frequency, channel);
+    } else {
+          if (!itsUpdateDir) {
+              // set up a zero valued model image
+              setupImage(params, frequency, false);
+          }
+        return false;
+    }
+    return true;
 }
 
 /// @brief helper method to accumulate uv-weights for a single work unit
@@ -2270,7 +2307,86 @@ void ContinuumWorker::logWeightsInfo() const
         }
     }
   }
+}
 
+void ContinuumWorker::loadImage(const askap::scimath::Params::ShPtr& params, int channel) const
+{
+  casacore::Array<float> imagePixels = itsImageCube->readRigidSlice(channel);
+  const std::string imageName = itsImageCube->filename();
+  const casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
+  const string name("image.slice");
+  boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
+  SynthesisParamsHelper::loadImageParameter(*params, name, imagePixels, imageCoords,
+    extraOversampleFactor, channel);
+}
+
+void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr& params, double freq, int channel) const
+{
+  const std::vector<std::string> sources = itsParset.getStringVector("sources.names");
+  ASKAPCHECK(sources.size()==1,"Only a single source model image is allowed when preloading an MFS model");
+  const std::string modelPar = std::string("sources.")+sources[0]+".model";
+  ASKAPCHECK(itsParset.isDefined(modelPar),"No MFS model image specified for "<< modelPar);
+  const std::vector<std::string> modelNames = itsParset.getStringVector(modelPar);
+  const int nTaylorTerms = itsParset.getInt32(std::string("sources.")+sources[0]+".nterms",1);
+  ASKAPCHECK(nTaylorTerms>0, "Number of Taylor terms is supposed to be a positive number, you gave "<<
+                      nTaylorTerms);
+  ASKAPCHECK(modelNames.size()==1 || modelNames.size()==nTaylorTerms,
+    "Model images should be specified as single base name or all taylor terms");
+  // convert taylor model to channel model
+  casacore::Array<float> imagePixels;
+  ImageParamsHelper iph("image."+sources[0]);
+  for (int order = nTaylorTerms-1; order >=0; --order) {
+      if (nTaylorTerms > 1) {
+          // this is an MFS case, setup Taylor terms
+          iph.makeTaylorTerm(order);
+          ASKAPLOG_DEBUG_STR(logger,"Processing Taylor term "<<order);
+      }
+      std::string model;
+      if (modelNames.size()==1) {
+        // only base name is given, need to add taylor suffix
+        model = modelNames[0] + iph.suffix();
+      } else {
+        model = modelNames[order];
+      }
+      const std::string name = iph.paramName();
+
+      ASKAPLOG_DEBUG_STR(logger, "Adding image " << model << " as model for "<< sources[0]
+                          << ", parameter name: "<< name);
+      SynthesisParamsHelper::loadImageParameter(*params, name, model);
+      const Axes axes = params->axes(name);
+      ASKAPDEBUGASSERT(axes.has("FREQUENCY") && axes.start("FREQUENCY")>0);
+      const double f0 = axes.start("FREQUENCY");
+      const float w = (freq - f0)/f0;
+      if (imagePixels.size()==0) {
+        imagePixels = params->valueF(name);
+      } else {
+        imagePixels *= w;
+        imagePixels += params->valueF(name);
+      }
+      // clean up
+      params->remove(name);
+  }
+  const std::string imageName = itsImageCube->filename();
+  const casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
+  const string name("image.slice");
+  const boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
+  const IPosition inShape = imagePixels.shape().getFirst(2); 
+  const IPosition outShape = itsImageCube->imageHandler()->shape(imageName).getFirst(2);
+  // Option to subset the input to the size of the output
+  ASKAPCHECK(inShape(0) >= outShape(0) && inShape(1) >= outShape(1), 
+    "Model MFS image should be the same size or larger than output image");
+  Array<float> pixels;
+  if (inShape == outShape) {
+      pixels.reference(imagePixels);
+  } else {
+      ASKAPLOG_DEBUG_STR(logger,"Shape mismatch of MFS model image and output cube, using central part");
+      IPosition blc(4,inShape(0)/2 - outShape(0)/2, inShape(1)/2 - outShape(1)/2, 0, 0);
+      IPosition trc(4,inShape(0)/2 + outShape(0)/2 - 1, inShape(1)/2 + outShape(1)/2 -1, 0, 0);
+      pixels = imagePixels(blc, trc);
+  }
+
+  SynthesisParamsHelper::loadImageParameter(*params, name, pixels, imageCoords,
+    extraOversampleFactor, channel);
 }
 
 

@@ -228,7 +228,25 @@ class ContinuumWorker : public boost::noncopyable
         void setupImage(const askap::scimath::Params::ShPtr& params,
                     double channelFrequency, bool shapeOveride = false) const;
 
-        void buildSpectralCube();
+        /// @brief Load an image plane into a parameter
+        /// @details Load the specified channel from the image specified in parset and add it to the Params instance.
+        /// @params[in] params shared pointer to params object with image parameters
+        /// @params[in] channel, the (global) channel number for the image plane to load
+        void loadImage(const askap::scimath::Params::ShPtr& params, int channel) const;
+
+        /// @brief Load an image model into a parameter
+        /// @details Evaluate the MFS model at the specified frequency and add it to the Params instance.
+        /// @params[in] params shared pointer to params object with image parameters
+        /// @params[in] freq, the frequency to evaluate the model at
+        /// @params[in] channel, the (global) channel number for the image plane to fill with the model
+        void loadImageFromMFSModel(const askap::scimath::Params::ShPtr& params, double freq, int channel) const;
+
+        /// @brief Load a starting model if required, or setup empty model
+        /// @details Initialise the starting model image from a model cube, MFS model, or empty image
+        /// @params[in] channel, the (global) channel number for the image plane to fill with the model
+        /// @params[in] frequency, the frequency to evaluate the MFS model at, if supplied
+        /// @return bool, true if a starting model was loaded, false if zero model was set up
+        bool loadStartingModel(const askap::scimath::Params::ShPtr& params, uInt channel, double frequency) const;
 
         // Root Parameter set good for information common to all workUnits
         LOFAR::ParameterSet& itsParset;
@@ -299,6 +317,9 @@ class ContinuumWorker : public boost::noncopyable
         std::map<unsigned int, float> itsWeightsList;
         void logWeightsInfo() const;
 
+        /// @brief read starting model cube
+        const bool itsReadStartingModelCube;
+
         /// @brief Do we want a restored image?
         const bool itsRestore;
 
@@ -337,6 +358,9 @@ class ContinuumWorker : public boost::noncopyable
 
         /// @brief updatedirection option (switching on joint gridding)
         const bool itsUpdateDir;
+
+        /// @brief do we have an MFS starting model for spectral imaging
+        const bool itsMFSStartingModel;
 
         /// @brief shared pointer to the uv-weight calculator object
         /// @details it can also be used as a flag that the sample density grid is needed (and that traditional weighting is done)

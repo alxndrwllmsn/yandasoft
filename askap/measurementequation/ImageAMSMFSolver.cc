@@ -38,6 +38,8 @@ ASKAP_LOGGER(logger, ".measurementequation.imageamsmfsolver");
 
 #include <askap/measurementequation/ImageAMSMFSolver.h>
 
+#include <casacore/casa/Arrays/ArrayPartMath.h>
+
 using namespace casacore;
 using namespace askap;
 using namespace askap::scimath;
@@ -511,10 +513,22 @@ namespace askap
 
             // get noise for thresholds if needed
             float sigma = 0.;
+            Matrix<imtype> madMap;
             if (noiseThreshold()>0) {
                 // get mad estimate for sigma
                 // may need to take mask into account?
-                sigma = 1.48f * casacore::madfm(dirtyVec(0));
+                imtype mad = casacore::madfm(dirtyVec(0));
+                sigma = 1.48f * mad;
+                if (noiseBoxSize()>0) {
+                    // get mad map for position dependent threshold
+                    madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
+                        IPosition(2,noiseBoxSize()),MadfmFunc<imtype>());
+                    //normalise madMap to overall mad and send it to cleaner
+                    if (mad > 0) {
+                        madMap /= mad;
+                        // do we want to enforce madMap >= 1 ?
+                    }
+                }
             }
 
             // Now that we have all the required images, we can initialise the deconvolver
@@ -531,6 +545,9 @@ namespace askap
                     // set thresholds based on robust noise estimate
                     itsControl->setTargetObjectiveFunction(sigma * noiseThreshold());
                     itsControl->setTargetObjectiveFunction2(sigma * deepNoiseThreshold());
+                    if (madMap.size()>0) {
+                        itsCleaners[imageTag]->setNoiseMap(madMap,noiseBoxSize());
+                    }
                 } else {
                     itsControl->setTargetObjectiveFunction(threshold().getValue("Jy"));
                     itsControl->setTargetObjectiveFunction2(deepThreshold());
@@ -568,6 +585,9 @@ namespace askap
                         originalTarget2 = itsControl->targetObjectiveFunction2();
                     }
                     itsCleaners[imageTag]->setControl(itsControl);
+                    if (madMap.size()>0) {
+                        itsCleaners[imageTag]->setNoiseMap(madMap,noiseBoxSize());
+                    }
                 }
             }
 
@@ -587,13 +607,22 @@ namespace askap
                     // need to use final peak residual of first image as limit for cleaning of next images
                     // to avoid overcleaning offset fields with little flux
                     if (peakRes1 > originalTarget) {
-                        // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
-                        itsControl->setTargetObjectiveFunction(peakRes1);
+                        // leave target alone if it is higher (high noise in offset field)
+                        if (itsControl->targetObjectiveFunction() < peakRes1) {
+                            // if peakRes1 > firstTarget: set firstTarget to peakRes1, second to 0
+                            itsControl->setTargetObjectiveFunction(peakRes1);
+                        }
+                        // offset fields don't get to switch on deep clean
                         itsControl->setTargetObjectiveFunction2(0);
                     } else {
                         // if peakRes1 < firstTarget: set 1st target to original value, set 2nd Target to peakRes1
-                        itsControl->setTargetObjectiveFunction(originalTarget);
-                        itsControl->setTargetObjectiveFunction2(peakRes1);
+                        // but leave alone if sigma target is higher
+                        if (itsControl->targetObjectiveFunction() < originalTarget) {
+                            itsControl->setTargetObjectiveFunction(originalTarget);
+                        }
+                        if (itsControl->targetObjectiveFunction2() < peakRes1) {
+                            itsControl->setTargetObjectiveFunction2(peakRes1);
+                        }
                     }
                 }
                 itsCleaners[imageTag]->setControl(itsControl);
@@ -811,7 +840,7 @@ namespace askap
       itsDeconvolverParset = parset;
 
       // Find out if we are writing the scalemask, but don't write a mask we are reading in
-      itsWriteScaleMask = (parset.getString("readscalemask","")== "") && parset.getBool("writescalemask",false);
+      itsWriteScaleMask = (parset.getString("scalemask","")== "") && parset.getBool("writescalemask",false);
       if (itsWriteScaleMask) {
           ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
       }

@@ -90,6 +90,9 @@ namespace askap
           // check for noise thresholds
           const string sigma("sigma");
           const size_t pos = t.rfind(sigma);
+          // do we want spatially variant sigma thresholds?
+           const uInt boxSize = parset.getUint("solver.Clean.noiseboxsize",0);
+
           if (pos != std::string::npos && pos == t.size() - sigma.size()) {
               ASKAPCHECK(!noiseThreshold2Defined, "Parameter "<<parName<<
                          " defines noise threshold thrice ("<<t<<")");
@@ -116,6 +119,11 @@ namespace askap
                     ics->setNoiseThreshold(cThreshold.getValue());
                     ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the noise threshold of "<<
                                       cThreshold.getValue("")<<" sigma");
+                    if (boxSize > 0) {
+                      ics->setNoiseBoxSize(boxSize);
+                      ASKAPLOG_INFO_STR(logger, "Will use a spatially variant noise threshold with box size of "<<
+                                      boxSize<<" pixels");
+                    }
                   } else {
                     ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
                                       "a noise threshold, ignoring "<<t<<" in "<<parName);

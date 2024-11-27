@@ -102,21 +102,21 @@ namespace askap
         static void zeroAllModelImages(const askap::scimath::Params::ShPtr& params);
 
         /// @brief set up images according to the parset file
-		/// @param[in] params Images to be created here
-		/// @param[in] parset a parset object to read the parameters from
-		/// @note (MV)This method is probably a duplication of the one of
-		/// add methods - needs to be cleared
-		/// (MV, dec 2008) not any more. With faceting it is handy to have a separate method
-		static void setUpImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
+        /// @param[in] params Images to be created here
+        /// @param[in] parset a parset object to read the parameters from
+        /// @note (MV)This method is probably a duplication of the one of
+        /// add methods - needs to be cleared
+        /// (MV, dec 2008) not any more. With faceting it is handy to have a separate method
+        static void setUpImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
 
-		/// @brief load images according to the parset file
-		/// @details This method is somewhat analogous to setUpImages, but it loads the images
-		/// from the disk instead of setting them up from the scratch. Encapsulation of all loading
-		/// of multiple images in a single method is required to provide a seamless handling of
-		/// the faceted image.
-		/// @param[in] params Images to be created here
-		/// @param[in] parset a parset object to read the parameters from
-		static void loadImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
+        /// @brief load images according to the parset file
+        /// @details This method is somewhat analogous to setUpImages, but it loads the images
+        /// from the disk instead of setting them up from the scratch. Encapsulation of all loading
+        /// of multiple images in a single method is required to provide a seamless handling of
+        /// the faceted image.
+        /// @param[in] params Images to be created here
+        /// @param[in] parset a parset object to read the parameters from
+        static void loadImages(const askap::scimath::Params::ShPtr& params, const LOFAR::ParameterSet &parset);
 
         /// @brief load component-related parameters from a parset file
         /// @details Parameter layout is different in scimath::Params and
@@ -298,12 +298,26 @@ namespace askap
           const std::string& baseKey);
 
         /// @brief Get a parameter from an image
+        /// @details This version reads the image from the imagename given using the image accessor
         /// @param ip Parameters
         /// @param name Name of parameter
         /// @param imagename Name of image file
         /// @param extraOversampleFactor factor to downsample image after loading
         static void loadImageParameter(askap::scimath::Params& ip, const string& name,
           const string& imagename, const boost::optional<float> extraOversampleFactor = boost::none);
+
+        /// @brief Get a parameter from an image, more general version
+        /// @brief In this version the imagepixels and coordinates are supplied, meaning it can be used to load
+        /// e.g., a plane from an image cube
+        /// @param ip Parameters
+        /// @param name Name of parameter
+        /// @param imagePixels Array with image pixels
+        /// @param imageCoords casacore imageCoordinateSystem
+        /// @param extraOversampleFactor factor to downsample image after loading
+        /// @param channel Specify -1 (default) to set coordinates for all channels, or select a specific channel
+        static void loadImageParameter(askap::scimath::Params& ip, const string& name,
+          casacore::Array<float>& imagePixels, const casacore::CoordinateSystem& imageCoords,
+          const boost::optional<float> extraOversampleFactor = boost::none, int channel = -1);
 
         /// @brief Get parameters corresponding to all facets from a CASA image
         /// @param[in] ip Parameters

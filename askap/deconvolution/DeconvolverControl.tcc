@@ -203,6 +203,7 @@ namespace askap {
             setTargetIter(parset.getInt32("niter", 100));
             setTargetFlux(parset.getFloat("targetflux", 0));
             setTargetObjectiveFunction(parset.getFloat("targetobjective", 0.0));
+            setTargetObjectiveFunction2(parset.getFloat("targetobjective2", 0.0));
             setFractionalThreshold(parset.getFloat("fractionalthreshold", 0.0));
             setAbsoluteThreshold(parset.getFloat("absolutethreshold", 0.0));
             setLambda(parset.getFloat("lambda", 0.0001));
