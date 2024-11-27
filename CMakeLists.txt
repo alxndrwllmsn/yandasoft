@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(VERSION "1.16.5")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
@@ -166,7 +169,7 @@ configure_file(askap_synthesis.cc.in askap/askap_synthesis.cc)
 #
 set(REQUIRED_VERSION "${VERSION_MAJOR}.${VERSION_MINOR}")
 
-option (CXX11 "Compile as C++11 if possible" YES)
+option (CXX11 "Compile as C++11 if possible" NO)
 # Detect if the compiler supports C++11 if we want to use it.
 if (CXX11)
     check_cxx_compiler_flag(-std=c++11 HAS_CXX11)
@@ -250,7 +253,7 @@ if (ENABLE_OPENMP)
     endif (OPENMP_FOUND)
 endif()
 
-if (CASACORE3 OR CXX11)
+if (CXX11)
 	set(CMAKE_CXX_STANDARD 11)
 	set(CMAKE_CXX_STANDARD_REQUIRED ON)
 endif()
