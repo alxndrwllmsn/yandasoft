@@ -500,23 +500,29 @@ void CubeBuilder<T>::writeRigidSlice(const casacore::Array<T>& arr, const casaco
 }
 
 template < class T >
-const casacore::Array<float> CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
+const casacore::Array<float> CubeBuilder<T>::createFlexibleSlice(const casacore::Array<float>& arr)
 {
-
     if (itsExtraOversamplingFactor) {
         // Image param is stored at a lower resolution, so increase to desired resolution before writing
         casacore::Array<float> fullresarr(scimath::PaddingUtils::paddedShape(arr.shape(),*itsExtraOversamplingFactor));
         scimath::PaddingUtils::fftPad(arr,fullresarr);
-        casacore::IPosition where(4, 0, 0, 0, chan);
-        itsCube->write(itsFilename, fullresarr, where);
         return fullresarr;
     }
     else {
-        writeRigidSlice(arr, chan);
         return arr;
     }
-
 }
+
+
+template < class T >
+const casacore::Array<float> CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
+{
+    const Array<float> farr = createFlexibleSlice(arr);
+    casacore::IPosition where(4, 0, 0, 0, chan);
+    itsCube->write(itsFilename, farr, where);
+    return farr;
+}
+
 template < class T >
 const casacore::Array<float> CubeBuilder<T>::readRigidSlice(const casacore::uInt chan)
 {
