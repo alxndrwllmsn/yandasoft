@@ -373,6 +373,9 @@ class ContinuumWorker : public boost::noncopyable
         /// @brief masking level (as fraction of peak weight) for mosaic output
         const float itsMaskLevel;
 
+        /// @brief do we mask mosaic output using the weight image?
+        const bool itsMaskOutput;
+
         /// @brief shared pointer to the uv-weight calculator object
         /// @details it can also be used as a flag that the sample density grid is needed (and that traditional weighting is done)
         /// If defined, the sample density grid needs to be constructed and traditional weighting

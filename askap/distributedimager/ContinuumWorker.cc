@@ -101,6 +101,8 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsNumWriters(configureNumberOfWriters()),
     // joint gridding of multiple beams/directions
     itsUpdateDir(parset.getBool("updatedirection",false)),
+    // flag to mask mosaic output with weights image & tolerance
+    itsMaskOutput(parset.getBool("maskmosaic",true) && itsUpdateDir),
     // masking threshold for mosaic output
     itsMaskLevel(parset.getFloat("solver.Clean.tolerance",0.1)),
     // use MFS starting model (for spectral mode)
@@ -2135,7 +2137,7 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
       // use fullres if available, otherwise oversample if needed
       casacore::Array<float> arr = (params->has("fullres.slice") ? params->valueF("fullres.slice") :
         itsRestoredCube->createFlexibleSlice(params->valueF("image.slice")));
-      if (itsUpdateDir) {
+      if (itsMaskOutput) {
         // mask mosaic output before writing it out
         maskOutput(arr, wts);
       }
