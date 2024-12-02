@@ -101,6 +101,11 @@ class CubeBuilder {
         /// @param[in] chan - uInt channel in the cube to write to
         void writeRigidSlice(const casacore::Array<T>& arr, const casacore::uInt chan);
 
+        /// @brief Oversample the array if needed
+        /// @details This will oversample the input array if needed and return it, 
+        /// @params[in] arr - Array channel image data
+        const casacore::Array<float> createFlexibleSlice(const casacore::Array<float>& arr);
+
         /// @brief Write a channel to the cube, oversampled if needed
         /// @details This writes a single channel (slice) to the cube, oversampling the
         /// array given if needed (i.e., Nyquist gridding was used to reduce the array size).

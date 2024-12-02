@@ -248,6 +248,14 @@ class ContinuumWorker : public boost::noncopyable
         /// @return bool, true if a starting model was loaded, false if zero model was set up
         bool loadStartingModel(const askap::scimath::Params::ShPtr& params, uInt channel, double frequency) const;
 
+        /// @brief Mask image with NaNs when corresponding weight is below cutoff
+        /// @details When using jont deconvolution we want to mask the output mosaic below
+        /// a weights image cutoff level. The cutoff is specified as a fraction of the maximum weight
+        /// using the solver.Clean.tolerance parameter to match how the Clean solvers handle this.
+        /// @params[inout] arr, the image plane to be masked
+        /// @params[in] wts, the weights plane
+        void maskOutput(casacore::Array<float>& arr, const casacore::Array<float>& wts);
+
         // Root Parameter set good for information common to all workUnits
         LOFAR::ParameterSet& itsParset;
 
@@ -361,6 +369,12 @@ class ContinuumWorker : public boost::noncopyable
 
         /// @brief do we have an MFS starting model for spectral imaging
         const bool itsMFSStartingModel;
+
+        /// @brief masking level (as fraction of peak weight) for mosaic output
+        const float itsMaskLevel;
+
+        /// @brief do we mask mosaic output using the weight image?
+        const bool itsMaskOutput;
 
         /// @brief shared pointer to the uv-weight calculator object
         /// @details it can also be used as a flag that the sample density grid is needed (and that traditional weighting is done)

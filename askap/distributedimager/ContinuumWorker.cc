@@ -101,6 +101,10 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsNumWriters(configureNumberOfWriters()),
     // joint gridding of multiple beams/directions
     itsUpdateDir(parset.getBool("updatedirection",false)),
+    // flag to mask mosaic output with weights image & tolerance
+    itsMaskOutput(parset.getBool("maskmosaic",true) && itsUpdateDir),
+    // masking threshold for mosaic output
+    itsMaskLevel(parset.getFloat("solver.Clean.tolerance",0.1)),
     // use MFS starting model (for spectral mode)
     itsMFSStartingModel(parset.getBool("mfsstartingmodel",false)),
     // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether 
@@ -2012,14 +2016,16 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
   }
 
   // Write weights
+  // Keep weights around in case we need them for masking restored image
+  casacore::Array<float> wts;
   if (!params->has("weights.slice")) {
       ASKAPLOG_WARN_STR(logger, "Params are missing weights parameter");
   } else {
       if (itsWeightsCube) {
           ASKAPLOG_INFO_STR(logger, "Writing Weights");
-          itsWeightsCube->writeFlexibleSlice(params->valueF("weights.slice"), chan);
+          wts = itsWeightsCube->writeFlexibleSlice(params->valueF("weights.slice"), chan);
       } else {
-          Array<float> wts = params->valueF("weights.slice");
+          wts = params->valueF("weights.slice");
           float wt = wts.data()[0];
           if (allEQ(wts,wt)) {
             recordWeight(wt, chan);
@@ -2126,26 +2132,41 @@ void ContinuumWorker::handleImageParams(askap::scimath::Params::ShPtr params, un
 
     // Write Restored image
     if (itsRestoredCube) {
-        ASKAPLOG_INFO_STR(logger, "Writing Restored Image");
-        if (params->has("fullres.slice")) {
-          // Restored image has been generated at full resolution, so avoid further oversampling
-          ASKAPLOG_INFO_STR(logger, "Writing fullres.slice");
-          itsRestoredCube->writeRigidSlice(params->valueF("fullres.slice"), chan);
-          ASKAPLOG_INFO_STR(logger, "Calculating restored stats");
-          itsRestoredStatsAndMask->calculate(chan,params->valueF("fullres.slice"));
-        }
-        else {
-          ASKAPCHECK(params->has("image.slice"), "Params are missing image parameter");
-          ASKAPLOG_INFO_STR(logger, "Writing image.slice");
-          const casacore::Array<float> arr = itsRestoredCube->writeFlexibleSlice(params->valueF("image.slice"), chan);
-          ASKAPLOG_INFO_STR(logger, "Calculating restored stats");
-          itsRestoredStatsAndMask->calculate(chan,arr);
+      ASKAPLOG_INFO_STR(logger, "Writing Restored Image");
+      ASKAPCHECK(params->has("fullres.slice")||params->has("image.slice"), "Params are missing image parameter");
+      // use fullres if available, otherwise oversample if needed
+      casacore::Array<float> arr = (params->has("fullres.slice") ? params->valueF("fullres.slice") :
+        itsRestoredCube->createFlexibleSlice(params->valueF("image.slice")));
+      if (itsMaskOutput) {
+        // mask mosaic output before writing it out
+        maskOutput(arr, wts);
+      }
+      itsRestoredCube->writeRigidSlice(arr, chan);
+      itsRestoredStatsAndMask->calculate(chan,arr);
+    }
+  }
+}
+
+void ContinuumWorker::maskOutput(casacore::Array<float>& arr, const casacore::Array<float>& wts)
+{
+    const double maxWt(casacore::max(wts));
+
+    ASKAPCHECK(maxWt>0., "Maximum wts element is supposed to be positive, check that at least some data were gridded, maxWt="
+        <<maxWt);
+    const double cutoff=itsMaskLevel*maxWt;
+
+    ASKAPLOG_DEBUG_STR(logger, "Maximum weight " <<maxWt<<
+        ", cutoff weight is "<<itsMaskLevel*100<<"\% of the largest diagonal element");
+    ASKAPDEBUGASSERT(arr.contiguousStorage() && wts.contiguousStorage());
+    float *pArr = arr.data();
+    const float * pWts = wts.data();
+    for (size_t elem=0; elem<wts.nelements(); ++elem) {
+        if (pWts[elem]<=cutoff) {
+            casacore::setNaN(pArr[elem]);
         }
     }
-
-  }
-
 }
+
 
 /// @brief add current image as a model
 /// @details This method adds fullres (if present) or ordinary image as model.slice in the given params object.
