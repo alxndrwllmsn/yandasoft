@@ -143,6 +143,18 @@ namespace askap {
                 }
             }
 
+            // Check for mild divergence - just go to next major cycle
+            if (itsDetectMildDivergence) {
+                // next component > 1.1x smallest component this cycle & have done >25% of iterations
+                if ( state.objectiveFunction() > 1.1 * state.smallestObjectiveFunction() &&
+                     state.currentIter() > 0.25 * targetIter())
+                {
+                    ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge - skip to next major cycle");
+                    itsTerminationCause = DIVERGING;
+                    return True;
+                }
+            }
+
             // Check for external signal
             if (itsSignalCounter.getCount() > 0) {
                 itsTerminationCause = SIGNALED;
@@ -173,6 +185,9 @@ namespace askap {
             switch (itsTerminationCause) {
                 case CONVERGED:
                     return String("Converged");
+                    break;
+                case DIVERGING:
+                    return String("Starting to diverge");
                     break;
                 case DIVERGED:
                     return String("Diverged");
@@ -209,6 +224,7 @@ namespace askap {
             setLambda(parset.getFloat("lambda", 0.0001));
             setPSFWidth(parset.getInt32("psfwidth", 0));
             setDetectDivergence(parset.getBool("detectdivergence",true));
+            setDetectMildDivergence(parset.getBool("detectmilddivergence",false));
         }
 
     } // namespace synthesis

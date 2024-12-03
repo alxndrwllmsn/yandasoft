@@ -61,6 +61,7 @@ namespace askap {
                 /// @brief Enumerate the possible termination causes
                 enum TerminationCause {
                     CONVERGED,
+                    DIVERGING,
                     DIVERGED,
                     EXCEEDEDITERATIONS,
                     SIGNALED,
@@ -243,12 +244,19 @@ namespace askap {
                 /// @brief Get the desired PSF width in pixels
                 casacore::Int psfWidth() const {return itsPSFWidth;};
 
-                /// @brief Detect if the (clean) algorithm is diverging
+                /// @brief Detect if the (clean) algorithm has diverged
                 /// @param[in] Set to True to detect divergence
                 void setDetectDivergence(casa::Bool detect) { itsDetectDivergence = detect;}
 
                 /// @brief Returns True if divergence detection is active
                 casa::Bool detectDivergence() { return itsDetectDivergence; }
+
+                /// @brief Detect if the (clean) algorithm is just starting to diverge
+                /// @param[in] Set to True to detect mild divergence
+                void setDetectMildDivergence(casa::Bool detect) { itsDetectMildDivergence = detect;}
+
+                /// @brief Returns True if mild divergence detection is active
+                casa::Bool detectMilsDivergence() { return itsDetectMildDivergence; }
 
                 /// @brief Set deep clean mode
                 void setDeepCleanMode() {itsDeepCleanMode = True;}
@@ -275,6 +283,7 @@ namespace askap {
                 casa::Float itsTolerance;
                 casa::Int itsPSFWidth;
                 casa::Bool itsDetectDivergence;
+                casa::Bool itsDetectMildDivergence;
                 casa::Bool itsDeepCleanMode;
                 casa::Bool itsMaskNeedsResetting;
                 T itsLambda;
