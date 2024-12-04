@@ -216,7 +216,7 @@ namespace askap {
                     itsFractionalThreshold = fractionalThreshold;
                 }
 
-                casacore::Float fractionalThreshold() {
+                casacore::Float fractionalThreshold() const {
                     return itsFractionalThreshold;
                 }
 
@@ -229,7 +229,7 @@ namespace askap {
                     itsAbsoluteThreshold = absoluteThreshold;
                 }
 
-                casacore::Float absoluteThreshold() {
+                casacore::Float absoluteThreshold() const {
                     return itsAbsoluteThreshold;
                 }
 
@@ -242,33 +242,27 @@ namespace askap {
                 void setPSFWidth(const casacore::Int psfWidth) {itsPSFWidth = psfWidth;}
 
                 /// @brief Get the desired PSF width in pixels
-                casacore::Int psfWidth() const {return itsPSFWidth;};
+                casacore::Int psfWidth() const {return itsPSFWidth;}
 
                 /// @brief Detect if the (clean) algorithm has diverged
                 /// @param[in] Set to True to detect divergence
                 void setDetectDivergence(casa::Bool detect) { itsDetectDivergence = detect;}
 
                 /// @brief Returns True if divergence detection is active
-                casa::Bool detectDivergence() { return itsDetectDivergence; }
+                casa::Bool detectDivergence() const { return itsDetectDivergence; }
 
                 /// @brief Detect if the (clean) algorithm is just starting to diverge
                 /// @param[in] Set to True to detect mild divergence
                 void setDetectMildDivergence(casa::Bool detect) { itsDetectMildDivergence = detect;}
 
                 /// @brief Returns True if mild divergence detection is active
-                casa::Bool detectMilsDivergence() { return itsDetectMildDivergence; }
+                casa::Bool detectMildDivergence() const { return itsDetectMildDivergence; }
 
                 /// @brief Set deep clean mode
                 void setDeepCleanMode() {itsDeepCleanMode = True;}
 
                 /// @brief Returns True if divergence detection is active
-                casa::Bool deepCleanMode() { return itsDeepCleanMode; }
-
-                /// @brief Returns True if there is a flag to reset the mask
-                casa::Bool maskNeedsResetting() { return itsMaskNeedsResetting; }
-
-                /// @brief Update the flag to reset the mask
-                void maskNeedsResetting(casa::Bool flag) { itsMaskNeedsResetting = flag; }
+                casa::Bool deepCleanMode() const { return itsDeepCleanMode; }
 
             private:
                 casacore::String itsAlgorithm;
@@ -285,7 +279,6 @@ namespace askap {
                 casa::Bool itsDetectDivergence;
                 casa::Bool itsDetectMildDivergence;
                 casa::Bool itsDeepCleanMode;
-                casa::Bool itsMaskNeedsResetting;
                 T itsLambda;
                 askap::SignalCounter itsSignalCounter;
                 askap::ISignalHandler* itsOldHandler;
