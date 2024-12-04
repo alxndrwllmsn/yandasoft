@@ -52,7 +52,8 @@ namespace askap {
                 itsTargetObjectiveFunction(T(0)),itsTargetObjectiveFunction2(T(0)),
                 itsTargetFlux(T(0.0)),itsGain(1.0), itsTolerance(1e-4),
                 itsFractionalThreshold(T(0.0)),itsAbsoluteThreshold(0.0),
-                itsPSFWidth(0), itsDetectDivergence(False), itsDeepCleanMode(False), itsLambda(T(100.0))
+                itsPSFWidth(0), itsDetectDivergence(False), itsDetectMildDivergence(False),
+                itsDeepCleanMode(False), itsLambda(T(100.0))
         {
             // Install a signal handler to count signals so receipt of a signal
             // can be used to terminate the minor-cycle loop
@@ -70,41 +71,38 @@ namespace askap {
         Bool DeconvolverControl<T>::terminate(const DeconvolverState<T>& state)
         {
             // Check for convergence
-            if (abs(state.objectiveFunction()) < itsTargetObjectiveFunction) {
+            if (abs(state.objectiveFunction()) < targetObjectiveFunction()) {
                 // Now check if we want to enter deep cleaning mode
-                if (itsTargetObjectiveFunction2>0) {
-                    if (!itsDeepCleanMode) {
+                if (targetObjectiveFunction2()>0) {
+                    if (!deepCleanMode()) {
                         ASKAPLOG_INFO_STR(decctllogger, "Starting deep cleaning phase");
-                        itsDeepCleanMode = True;
-                        itsMaskNeedsResetting = True;
-                        //itsTerminationCause = CONVERGED;
-                        //return True;
+                        setDeepCleanMode();
                     }
-                    if (abs(state.objectiveFunction()) < itsTargetObjectiveFunction2) {
+                    if (abs(state.objectiveFunction()) < targetObjectiveFunction2()) {
                         ASKAPLOG_INFO_STR(decctllogger, "Objective function " << state.objectiveFunction()
-                                            << " less than 2nd target " << itsTargetObjectiveFunction2);
-                        itsTerminationCause = CONVERGED;
+                                            << " less than 2nd target " << targetObjectiveFunction2());
+                        setTerminationCause(CONVERGED);
                         return True;
                     }
                 } else {
                     ASKAPLOG_INFO_STR(decctllogger, "Objective function " << state.objectiveFunction()
-                                          << " less than target " << itsTargetObjectiveFunction);
-                    itsTerminationCause = CONVERGED;
+                                          << " less than target " << targetObjectiveFunction());
+                    setTerminationCause(CONVERGED);
                     return True;
                 }
             }
             //
-            if (abs(state.objectiveFunction()) < itsFractionalThreshold*state.initialObjectiveFunction()) {
+            if (abs(state.objectiveFunction()) < fractionalThreshold()*state.initialObjectiveFunction()) {
                 ASKAPLOG_INFO_STR(decctllogger, "Objective function " << state.objectiveFunction()
-                                      << " less than fractional threshold " << itsFractionalThreshold
+                                      << " less than fractional threshold " << fractionalThreshold()
                                       << " * initialObjectiveFunction : " << state.initialObjectiveFunction());
-                itsTerminationCause = CONVERGED;
+                setTerminationCause(CONVERGED);
                 return True;
             }
-            if (abs(state.objectiveFunction()) < itsAbsoluteThreshold) {
+            if (abs(state.objectiveFunction()) < absoluteThreshold()) {
                 ASKAPLOG_INFO_STR(decctllogger, "Objective function " << state.objectiveFunction()
-                                      << " less than absolute threshold " << itsAbsoluteThreshold);
-                itsTerminationCause = CONVERGED;
+                                      << " less than absolute threshold " << absoluteThreshold());
+                setTerminationCause(CONVERGED);
                 return True;
             }
 
@@ -113,12 +111,12 @@ namespace askap {
 
             // Check for too many iterations
             if ((state.currentIter() > -1) && (targetIter() > 0) && (state.currentIter() >= targetIter())) {
-                itsTerminationCause = EXCEEDEDITERATIONS;
+                setTerminationCause(EXCEEDEDITERATIONS);
                 return True;
             }
 
             // Check if we have started to diverge
-            if (itsDetectDivergence) {
+            if (detectDivergence()) {
                 // Simplest check: next component > 2* initial residual
                 if ( state.initialObjectiveFunction() > 0 &&
                      state.objectiveFunction() > 2 * state.initialObjectiveFunction() )
@@ -126,7 +124,7 @@ namespace askap {
                   ASKAPLOG_INFO_STR(decctllogger, "Clean diverging - Objective function " <<
                   state.objectiveFunction() << " > 2 * initialObjectiveFunction = " <<
                   2*state.initialObjectiveFunction());
-                  itsTerminationCause = DIVERGED;
+                  setTerminationCause(DIVERGED);
                   return True;
                 }
 
@@ -138,14 +136,26 @@ namespace askap {
                   ASKAPLOG_INFO_STR(decctllogger, "Clean diverging - Initial Objective function " <<
                   state.initialObjectiveFunction() << " > 1.1 * previous Initial ObjectiveFunction = " <<
                   1.1*state.previousInitialObjectiveFunction());
-                  itsTerminationCause = DIVERGED;
+                  setTerminationCause(DIVERGED);
                   return True;
+                }
+            }
+
+            // Check for mild divergence - just go to next major cycle
+            if (detectMildDivergence()) {
+                // next component > 1.1x smallest component this cycle & have done >25% of iterations
+                if ( state.objectiveFunction() > 1.1 * state.smallestObjectiveFunction() &&
+                     state.currentIter() > 0.25 * targetIter())
+                {
+                    ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge - skip to next major cycle");
+                    setTerminationCause(DIVERGING);
+                    return True;
                 }
             }
 
             // Check for external signal
             if (itsSignalCounter.getCount() > 0) {
-                itsTerminationCause = SIGNALED;
+                setTerminationCause(SIGNALED);
                 itsSignalCounter.resetCount(); // This signal has been actioned, so reset
                 return True;
             }
@@ -155,11 +165,11 @@ namespace askap {
         template<class T>
         T DeconvolverControl<T>::level(const DeconvolverState<T>& ds, T safetyMargin) const
         {
-            T level = itsTargetObjectiveFunction;
-            if (itsDeepCleanMode) {
-                level = itsTargetObjectiveFunction2;
+            T level = targetObjectiveFunction();
+            if (deepCleanMode()) {
+                level = targetObjectiveFunction2();
             }
-            T level2 = itsFractionalThreshold * ds.initialObjectiveFunction();
+            T level2 = fractionalThreshold() * ds.initialObjectiveFunction();
             if (level2 > level) {
                 level = level2;
             }
@@ -170,9 +180,12 @@ namespace askap {
         template<class T>
         String DeconvolverControl<T>::terminationString() const
         {
-            switch (itsTerminationCause) {
+            switch (terminationCause()) {
                 case CONVERGED:
                     return String("Converged");
+                    break;
+                case DIVERGING:
+                    return String("Starting to diverge");
                     break;
                 case DIVERGED:
                     return String("Diverged");
@@ -209,6 +222,7 @@ namespace askap {
             setLambda(parset.getFloat("lambda", 0.0001));
             setPSFWidth(parset.getInt32("psfwidth", 0));
             setDetectDivergence(parset.getBool("detectdivergence",true));
+            setDetectMildDivergence(parset.getBool("detectmilddivergence",false));
         }
 
     } // namespace synthesis
