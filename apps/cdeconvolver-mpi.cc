@@ -451,8 +451,11 @@ class CdeconvolverApp : public askap::Application
                 // assumes pol, chan are axis 2 and 3
                 inblc[3] = channel;
                 intrc[3] = channel;
-                ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
 
+                ASKAPLOG_INFO_STR(logger,"inblc " << inblc);
+                ASKAPLOG_INFO_STR(logger,"intrc " << intrc);
+
+                ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
                 if (combineRealImag) {
                     psfGrid = casacore::makeComplex(iaccF->read(psfGridCubeNames[0]+".real",inblc,intrc),
                         iaccF->read(psfGridCubeNames[0]+".imag",inblc,intrc));
@@ -470,23 +473,83 @@ class CdeconvolverApp : public askap::Application
                     visGrid = iaccC->read(visGridCubeNames[0], inblc, intrc);
                 }
 
+                casacore::IPosition inshape = shape;
+                casacore::IPosition outblc = inblc;
+                casacore::IPosition outtrc = intrc;
+                casacore::IPosition increm(inshape.nelements(), 1);
+                ASKAPLOG_INFO_STR(logger,"increm " << increm);
+
                 // accumulate multiple inputs (if nCubes>1)
                 for (uint i = 1; i < nCubes; i++) {
                     if (combineRealImag) {
-                        psfGrid += casacore::makeComplex(iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
+                        casacore::Array<std::complex<float> > tmpgrid;
+                        inshape = iaccF->shape(visGridCubeNames[i]+".real");
+                        outblc[0] = (shape[0] - inshape[0])/2;
+                        outblc[1] = (shape[1] - inshape[1])/2;
+                        outblc[3] = 0;
+                        outtrc[0] = outblc[0] + inshape[0]-1;
+                        outtrc[1] = outblc[1] + inshape[1]-1;
+                        outtrc[3] = 0;
+                        intrc[0] = inshape[0]-1;
+                        intrc[1] = inshape[1]-1;
+                        ASKAPLOG_INFO_STR(logger,"inshape " << inshape);
+                        ASKAPLOG_INFO_STR(logger,"outblc " << outblc);
+                        ASKAPLOG_INFO_STR(logger,"outtrc " << outtrc);
+                        ASKAPLOG_INFO_STR(logger,"inblc " << inblc);
+                        ASKAPLOG_INFO_STR(logger,"intrc " << intrc);
+                        tmpgrid = psfGrid(outblc,outtrc);
+                        psfGrid(outblc, outtrc) = tmpgrid + casacore::makeComplex(iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
                             iaccF->read(psfGridCubeNames[i]+".imag",inblc,intrc));
-                        pcfGrid += casacore::makeComplex(iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
+                        tmpgrid = pcfGrid(outblc, outtrc);
+                        pcfGrid(outblc, outtrc) = tmpgrid + casacore::makeComplex(iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
                             iaccF->read(pcfGridCubeNames[i]+".imag",inblc,intrc));
-                        visGrid += casacore::makeComplex(iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
+                        tmpgrid = visGrid(outblc, outtrc);
+                        visGrid(outblc, outtrc) = tmpgrid + casacore::makeComplex(iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
                             iaccF->read(visGridCubeNames[i]+".imag",inblc, intrc));
                     } else if (imagePlaneInput) {
-                        psfImage += iaccF->read(psfGridCubeNames[i], inblc, intrc);
-                        pcfImage += iaccF->read(pcfGridCubeNames[i], inblc, intrc);
-                        dirtyImage += iaccF->read(visGridCubeNames[i], inblc, intrc);
+                        casacore::Array<float > tmpgrid;
+                        inshape = iaccF->shape(visGridCubeNames[i]);
+                        outblc[0] = (shape[0] - inshape[0])/2;
+                        outblc[1] = (shape[1] - inshape[1])/2;
+                        outblc[3] = 0;
+                        outtrc[0] = outblc[0] + inshape[0]-1;
+                        outtrc[1] = outblc[1] + inshape[1]-1;
+                        outtrc[3] = 0;
+                        intrc[0] = inshape[0]-1;
+                        intrc[1] = inshape[1]-1;
+                        ASKAPLOG_INFO_STR(logger,"inshape " << inshape);
+                        ASKAPLOG_INFO_STR(logger,"outblc " << outblc);
+                        ASKAPLOG_INFO_STR(logger,"outtrc " << outtrc);
+                        ASKAPLOG_INFO_STR(logger,"inblc " << inblc);
+                        ASKAPLOG_INFO_STR(logger,"intrc " << intrc);
+                        tmpgrid = psfImage(outblc, outtrc);
+                        psfImage(outblc, outtrc) = tmpgrid + iaccF->read(psfGridCubeNames[i], inblc, intrc);
+                        tmpgrid = pcfImage(outblc, outtrc);
+                        pcfImage(outblc, outtrc) = tmpgrid + iaccF->read(pcfGridCubeNames[i], inblc, intrc);
+                        tmpgrid = dirtyImage(outblc, outtrc);
+                        pcfImage(outblc, outtrc) = tmpgrid + iaccF->read(visGridCubeNames[i], inblc, intrc);
                     } else {
-                        psfGrid += iaccC->read(psfGridCubeNames[i], inblc, intrc);
-                        pcfGrid += iaccC->read(pcfGridCubeNames[i], inblc, intrc);
-                        visGrid += iaccC->read(visGridCubeNames[i], inblc, intrc);
+                        casacore::Array<std::complex<float> > tmpgrid;
+                        inshape = iaccC->shape(visGridCubeNames[i]);
+                        outblc[0] = (shape[0] - inshape[0])/2;
+                        outblc[1] = (shape[1] - inshape[1])/2;
+                        outblc[3] = 0;
+                        outtrc[0] = outblc[0] + inshape[0]-1;
+                        outtrc[1] = outblc[1] + inshape[1]-1;
+                        outtrc[3] = 0;
+                        intrc[0] = inshape[0]-1;
+                        intrc[1] = inshape[1]-1;
+                        ASKAPLOG_INFO_STR(logger,"inshape " << inshape);
+                        ASKAPLOG_INFO_STR(logger,"outblc " << outblc);
+                        ASKAPLOG_INFO_STR(logger,"outtrc " << outtrc);
+                        ASKAPLOG_INFO_STR(logger,"inblc " << inblc);
+                        ASKAPLOG_INFO_STR(logger,"intrc " << intrc);
+                        tmpgrid = psfGrid(outblc, outtrc);
+                        psfGrid(outblc, outtrc) = tmpgrid + iaccC->read(psfGridCubeNames[i], inblc, intrc);
+                        tmpgrid = pcfGrid(outblc, outtrc);
+                        pcfGrid(outblc, outtrc) = tmpgrid + iaccC->read(pcfGridCubeNames[i], inblc, intrc);
+                        tmpgrid = visGrid(outblc, outtrc);
+                        visGrid(outblc, outtrc) = tmpgrid + iaccC->read(visGridCubeNames[i], inblc, intrc);
                     }
                 }
 
