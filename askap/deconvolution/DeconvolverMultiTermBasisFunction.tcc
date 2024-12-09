@@ -845,7 +845,7 @@ namespace askap {
                     const std::vector<uInt>& pixels (deepClean ? 
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         ( useHighPixels ? highPixels[base] : std::vector<uInt>()));
-                    const uInt increment = itsUseIncrements ? 1 << base : 1;
+                    const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                     if (!(deepClean||useHighPixels) || pixels.size()>0) {
                         absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize,increment);
                     }
@@ -944,7 +944,7 @@ namespace askap {
             const uInt lowerLimit = itsPixelListNPixRange[0] * this->control()->targetIter();
             #pragma omp for schedule(static)
             for (uInt base = 0; base < nBases; base++) {
-                const uInt increment = itsUseIncrements ? 1 << base : 1;
+                const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                 const Matrix<T>& res = itsResidualBasis(base)(0);
                 // get a quick estimate of the rms using 1% of pixels
                 ASKAPDEBUGASSERT(res.nrow()>10 && res.ncolumn()>10);
