@@ -53,7 +53,7 @@ namespace askap {
                 itsTargetFlux(T(0.0)),itsGain(1.0), itsTolerance(1e-4),
                 itsFractionalThreshold(T(0.0)),itsAbsoluteThreshold(0.0),
                 itsPSFWidth(0), itsDetectDivergence(False), itsDetectMildDivergence(False),
-                itsDeepCleanMode(False), itsLambda(T(100.0))
+                itsDivergenceLevels({1.1f,2.0f,1.1f}), itsDeepCleanMode(False), itsLambda(T(100.0))
         {
             // Install a signal handler to count signals so receipt of a signal
             // can be used to terminate the minor-cycle loop
@@ -119,11 +119,11 @@ namespace askap {
             if (detectDivergence()) {
                 // Simplest check: next component > 2* initial residual
                 if ( state.initialObjectiveFunction() > 0 &&
-                     state.objectiveFunction() > 2 * state.initialObjectiveFunction() )
+                     state.objectiveFunction() > itsDivergenceLevels[1] * state.initialObjectiveFunction() )
                 {
                   ASKAPLOG_INFO_STR(decctllogger, "Clean diverging - Objective function " <<
-                  state.objectiveFunction() << " > 2 * initialObjectiveFunction = " <<
-                  2*state.initialObjectiveFunction());
+                  state.objectiveFunction() << " > "<<itsDivergenceLevels[1]<<" * initialObjectiveFunction = " <<
+                    itsDivergenceLevels[1] * state.initialObjectiveFunction());
                   setTerminationCause(DIVERGED);
                   return True;
                 }
@@ -131,11 +131,11 @@ namespace askap {
                 // Check for major cycle divergence
                 // (only need to check this once per major cycle but it fits here)
                 if ( state.previousInitialObjectiveFunction() > 0 &&
-                     state.initialObjectiveFunction() > 1.1 * state.previousInitialObjectiveFunction() )
+                     state.initialObjectiveFunction() > itsDivergenceLevels[2] * state.previousInitialObjectiveFunction() )
                 {
                   ASKAPLOG_INFO_STR(decctllogger, "Clean diverging - Initial Objective function " <<
-                  state.initialObjectiveFunction() << " > 1.1 * previous Initial ObjectiveFunction = " <<
-                  1.1*state.previousInitialObjectiveFunction());
+                  state.initialObjectiveFunction() << " > "<<itsDivergenceLevels[2]<<" * previous Initial ObjectiveFunction = " <<
+                    itsDivergenceLevels[2] * state.previousInitialObjectiveFunction());
                   setTerminationCause(DIVERGED);
                   return True;
                 }
@@ -144,7 +144,7 @@ namespace askap {
             // Check for mild divergence - just go to next major cycle
             if (detectMildDivergence()) {
                 // next component > 1.1x smallest component this cycle & have done >25% of iterations
-                if ( state.objectiveFunction() > 1.1 * state.smallestObjectiveFunction() &&
+                if ( state.objectiveFunction() > itsDivergenceLevels[0] * state.smallestObjectiveFunction() &&
                      state.currentIter() > 0.25 * targetIter())
                 {
                     ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge - skip to next major cycle");
@@ -223,6 +223,10 @@ namespace askap {
             setPSFWidth(parset.getInt32("psfwidth", 0));
             setDetectDivergence(parset.getBool("detectdivergence",true));
             setDetectMildDivergence(parset.getBool("detectmilddivergence",false));
+            const std::vector<casa::Float> levels = parset.getFloatVector("divergencelevels",{1.1f,2.0f,1.1f});
+            ASKAPCHECK(levels.size()==3 && levels[0]>1 && levels[1]>1 && levels[2]>1,
+                "divergencelevels parameter should have 3 entries, each > 1.0");
+            setDivergenceLevels(levels);
         }
 
     } // namespace synthesis

@@ -255,6 +255,12 @@ namespace askap {
                 /// @param[in] Set to True to detect mild divergence
                 void setDetectMildDivergence(casa::Bool detect) { itsDetectMildDivergence = detect;}
 
+                /// @brief Set divergence detection levels
+                /// @details Set the 3 divergence detection levels: 1 - mild minor cycle divergence,
+                /// 2 - fatal minor cycle divergence, 3 - fatal major cycle divergence
+                /// @param[in] divergence levels, vector of 3 values
+                void setDivergenceLevels(const std::vector<casa::Float>& levels) { itsDivergenceLevels = levels;}
+
                 /// @brief Returns True if mild divergence detection is active
                 casa::Bool detectMildDivergence() const { return itsDetectMildDivergence; }
 
@@ -279,6 +285,7 @@ namespace askap {
                 casa::Bool itsDetectDivergence;
                 casa::Bool itsDetectMildDivergence;
                 casa::Bool itsDeepCleanMode;
+                std::vector<casa::Float> itsDivergenceLevels;
                 T itsLambda;
                 askap::SignalCounter itsSignalCounter;
                 askap::ISignalHandler* itsOldHandler;
