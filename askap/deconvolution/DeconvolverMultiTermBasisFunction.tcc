@@ -58,7 +58,7 @@ namespace askap {
 
         template<class T> 
         void absMaxPos(T& maxVal, T& maxValScaled, IPosition& maxPos, const Matrix<T>& im,
-            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize) 
+            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize, uInt increment) 
         {
             // Set Shared Values
             maxVal = T(0.0);
@@ -80,18 +80,22 @@ namespace askap {
             #pragma omp for schedule(static)
             for (uInt j = 0; j < n; j++ ) {
                 const uInt pixel = (usePixels ? pixels[j] : j);
-                T val = abs(pIm[pixel]);
-                if (useMask) val *= pMask[pixel];
-                T testVal = val;
-                if (useNoise) {
-                    const uInt row = (pixel % nrow) / boxSize;
-                    const uInt col = (pixel / nrow) / boxSize;
-                    testVal /= noise(row, col);
-                } 
-                if (testVal > maxValScaled_private) {
-                    maxValScaled_private = testVal;
-                    maxVal_private = val;
-                    maxIndex_private = pixel;
+                // skip pixels (for larger scales)
+                if (increment == 1|| ((pixel % nrow)%increment == 0 &&
+                         (pixel / nrow)%increment == 0)) {
+                    T val = abs(pIm[pixel]);
+                    if (useMask) val *= pMask[pixel];
+                    T testVal = val;
+                    if (useNoise) {
+                        const uInt row = (pixel % nrow) / boxSize;
+                        const uInt col = (pixel / nrow) / boxSize;
+                        testVal /= noise(row, col);
+                    } 
+                    if (testVal > maxValScaled_private) {
+                        maxValScaled_private = testVal;
+                        maxVal_private = val;
+                        maxIndex_private = pixel;
+                    }
                 }
             }
             #pragma omp critical
@@ -237,6 +241,10 @@ namespace askap {
             ASKAPCHECK(itsPixelListNPixRange.size()==2,"npixrange needs to have 2 values");
             ASKAPCHECK(itsPixelListNPixRange[0]<itsPixelListNPixRange[1],"first value of npixrange needs to be smaller than second");
 
+            itsUseIncrements = parset.getBool("useincrements",itsUsePixelLists);
+            if (itsUseIncrements) {
+                ASKAPLOG_INFO_STR(decmtbflogger, "Using larger pixel increments for larger scales");
+            }
         }
 
         template<class T, class FT>
@@ -837,8 +845,9 @@ namespace askap {
                     const std::vector<uInt>& pixels (deepClean ? 
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         ( useHighPixels ? highPixels[base] : std::vector<uInt>()));
+                    const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                     if (!(deepClean||useHighPixels) || pixels.size()>0) {
-                        absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
+                        absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize,increment);
                     }
                     // In performing the search for the peak across bases, we want to take into account
                     // the SNR so we normalise out the coupling matrix for term=0 to term=0.
@@ -900,7 +909,7 @@ namespace askap {
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         std::vector<uInt>());
 
-                    absMaxPos(maxVal,maxValScaled,maxPos,negchisq,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
+                    absMaxPos(maxVal,maxValScaled,maxPos,negchisq,weights,pixels,itsNoiseMap,itsNoiseBoxSize,1);
 
                     // End of section 3
                     sectionTimer.stop(3);
@@ -935,6 +944,7 @@ namespace askap {
             const uInt lowerLimit = itsPixelListNPixRange[0] * this->control()->targetIter();
             #pragma omp for schedule(static)
             for (uInt base = 0; base < nBases; base++) {
+                const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                 const Matrix<T>& res = itsResidualBasis(base)(0);
                 // get a quick estimate of the rms using 1% of pixels
                 ASKAPDEBUGASSERT(res.nrow()>10 && res.ncolumn()>10);
@@ -944,6 +954,7 @@ namespace askap {
                 const T* pRes = res.data();
                 const T* pMask = weights.data();
                 const uInt n = res.size();
+                const uInt nRow = res.nrow();
                 // check we don't overflow uInt
                 ASKAPDEBUGASSERT(n==res.size());
                 std::vector<uInt>& pixels = highPixels[base];
@@ -963,7 +974,10 @@ namespace askap {
                         // add pixels to the list if they are above the cutoff or cleaned before
                         // uses the fact that itsScalePixels[base] is a sorted set
                         for (uInt j = 0; j < n; j++ ) {
-                            const T val = haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j]);
+                            // skip pixels: use the increment in x and y
+                            const bool skip = increment!=1  && (((j % nRow) % increment) != 0 ||
+                                ((j / nRow) % increment) != 0);
+                            const T val = (skip ? 0 : (haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j])));
                             const bool doInc = (it != itsScalePixels[base].end()) && (*it == j);
                             if (val > trialCutoff || doInc) {
                                 pixels.push_back(j);
@@ -975,7 +989,10 @@ namespace askap {
                     } else {
                         // add pixels above the cutoff to the list
                         for (uInt j = 0; j < n; j++ ) {
-                            const T val = haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j]);
+                            // skip pixels: use the increment in x and y
+                            const bool skip = increment!=1  && (((j % nRow) % increment) != 0 ||
+                                ((j / nRow) % increment) != 0);
+                            const T val = (skip ? 0 : (haveMask ? abs(pRes[j] * pMask[j]) : abs(pRes[j])));
                             if (val > trialCutoff) {
                                 pixels.push_back(j);
                             }

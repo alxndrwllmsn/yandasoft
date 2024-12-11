@@ -351,6 +351,12 @@ namespace askap {
                 /// is a common requirememt
                 uInt itsNoiseBoxSize;
 
+                /// @brief Use a pixel increment for larger scales
+                /// @details If true, only consider every n'th pixel when doing peak searching for
+                /// larger scales, where n = 1 for the first two scales, then doubles for each
+                /// subsequent scale. When using pixellists, this avoids putting lots of closely
+                /// spaced, correlated pixels in the list for large scales.
+                bool itsUseIncrements;
         };
 
     } // namespace synthesis
