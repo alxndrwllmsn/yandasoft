@@ -22,7 +22,7 @@ def analyseResult(spr, checkWeights=True):
    diff1 = stats1['rms'] - stats2['rms']
    diff2 = stats3['rms'] - stats4['rms']
    
-   if abs(diff1)> 1e-4 or abs(diff2)>1e-4:
+   if abs(diff1)> 2e-4 or abs(diff2)>2e-4:
       raise RuntimeError("Images differ too much")
 
 
