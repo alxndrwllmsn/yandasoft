@@ -147,7 +147,7 @@ namespace askap
        if (itsReuseGrids) {
            ASKAPLOG_INFO_STR(logger, "Will reuse the PSF/PCF grids each major cycle");
        }
-       itsSphFuncOffsetFields = parset.getBool("sphfuncforoffset", true);
+       itsSphFuncOffsetFields = parset.getBool("sphfuncforoffset", false);
     }
 
     /// @brief define whether to use an alternative gridder for the PSF
