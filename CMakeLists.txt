@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(VERSION "1.16.5")
+set(VERSION "1.17.0")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
 
