@@ -357,6 +357,19 @@ namespace askap
         /// @param[in/out] parset to read and modify (setting extraoversampling and changing cellsize and shape/subshape)
         static void setNyquistSampling(const VisMetaDataStats& advice, LOFAR::ParameterSet& parset);
 
+        /// @brief change the cellsize of the input to match the output
+        /// @details Downsample the pixels array to make the input cellsize match the output cellsize if possible.
+        /// The input cellsize should be (equal or) smaller than the output. The array will be padded or cropped to
+        /// give a shape ratio that can be FFT'd and matches the cell size ratio. An exception will be through if this
+        /// is not possible
+        /// @param[in/out] pixels image to resample
+        /// @param[in] inputInc input cellsize (pixels have to be square)
+        /// @param[in] outputInc output cellsize
+        /// @param[in] inputSize input image size (has to be square)
+        /// @param[in] outputSize output image size
+        static void adjustCellsize(casacore::Array<float> & pixels, double inputInc, double outputInc, 
+          casacore::uInt inSize, casacore::uInt outSize);
+
         /// @brief Copy a parameter to a CASA TempImage
         /// Note that this will be a reference if possible
         /// @param ip Parameters

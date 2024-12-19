@@ -2355,7 +2355,9 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
     "Model images should be specified as single base name or all taylor terms");
   // convert taylor model to channel model
   casacore::Array<float> imagePixels;
+  casacore::DirectionCoordinate inputCoords;
   ImageParamsHelper iph("image."+sources[0]);
+
   for (int order = nTaylorTerms-1; order >=0; --order) {
       if (nTaylorTerms > 1) {
           // this is an MFS case, setup Taylor terms
@@ -2380,6 +2382,7 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
       const float w = (freq - f0)/f0;
       if (imagePixels.size()==0) {
         imagePixels = params->valueF(name);
+        inputCoords = axes.directionAxis();
       } else {
         imagePixels *= w;
         imagePixels += params->valueF(name);
@@ -2391,13 +2394,21 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   const casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
   const string name("image.slice");
   const boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
-  const IPosition inShape = imagePixels.shape().getFirst(2); 
+  IPosition inShape = imagePixels.shape().getFirst(2); 
   const IPosition outShape = itsImageCube->imageHandler()->shape(imageName).getFirst(2);
+  ASKAPCHECK(inputCoords.hasSquarePixels()&&imageCoords.directionCoordinate().hasSquarePixels(),"Can't deal with non square pixels yet");
+  const double inputInc = abs(inputCoords.increment()(0));
+  const double outputInc = abs(imageCoords.directionCoordinate().increment()(0));
+  ASKAPCHECK(inputInc>0 && outputInc>0 && inputInc/outputInc<1.00001,"starting model should have the same or smaller cellsize: input="<<inputInc<<", output="<<outputInc);
+  ASKAPCHECK(inShape(0)==inShape(1) && outShape(0)==outShape(1),"Can only deal with square images for now");
+  // adjust the cellsize of the input to match the output
+  SynthesisParamsHelper::adjustCellsize(imagePixels,inputInc, outputInc, inShape(0), outShape(0));
+  // get input size again, as it may have changed
+  inShape = imagePixels.shape().getFirst(2); 
   // Option to subset the input to the size of the output
-  ASKAPCHECK(inShape(0) >= outShape(0) && inShape(1) >= outShape(1), 
-    "Model MFS image should be the same size or larger than output image");
+  ASKAPCHECK(inShape(0) >= outShape(0), "Model MFS image should be the same size or larger than output image");
   Array<float> pixels;
-  if (inShape == outShape) {
+  if (inShape(0) == outShape(0)) {
       pixels.reference(imagePixels);
   } else {
       ASKAPLOG_DEBUG_STR(logger,"Shape mismatch of MFS model image and output cube, using central part");
@@ -2409,6 +2420,7 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   SynthesisParamsHelper::loadImageParameter(*params, name, pixels, imageCoords,
     extraOversampleFactor, channel);
 }
+
 
 
 void ContinuumWorker::setupImage(const askap::scimath::Params::ShPtr& params,
