@@ -8,7 +8,6 @@ Cimager.solverpercore                           = false
 Cimager.Channels                                = [5,0]
 Cimager.Images.Names                            = [image.cont]
 Cimager.Images.reuse                            = false
-#Cimager.Images.shape                            = [160,160]
 Cimager.Images.shape                            = [256,256]
 Cimager.Images.cellsize                         = [2.5arcsec, 2.5arcsec]
 Cimager.visweights                              = MFS
