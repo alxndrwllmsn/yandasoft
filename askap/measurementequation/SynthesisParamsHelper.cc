@@ -1157,6 +1157,7 @@ namespace askap
         uInt inSize, uInt outSize)
     {
         const double tol = 1e-5;
+        ASKAPDEBUGASSERT(inputInc != 0);
         const double fac = outputInc / inputInc;
         ASKAPCHECK(fac > 1-tol,"Input cellsize should be smaller than or equal to output cellsize");
         if (abs(fac-1) > tol) {
@@ -1165,7 +1166,7 @@ namespace askap
             // We try padding or cropping the input image
             bool found = false;
             uInt n1 = inSize;
-            for (int k = 0; k < inSize/2 ; k++) {
+            for (int k = 0; k < inSize/2 && !found ; k++) {
                 // first try padding
                 n1 = scimath::goodFFTSize(inSize + 2 * k);
                 const uInt n2 = scimath::goodFFTSize(static_cast<int>(lround(n1/fac)));
@@ -1180,7 +1181,6 @@ namespace askap
                         ASKAPLOG_DEBUG_STR(logger,"tried n1="<<n1<<", n2="<<n2<<", fac="<<fac<<", n1/n2="<<double(n1)/n2<<", match="<<found);
                     } 
                 }
-                if (found) break;   
             }
             ASKAPCHECK(found,"No valid pixel ratio found for given cell sizes "<<inputInc<<" and "<<outputInc);
             // pad or crop the pixels array

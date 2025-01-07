@@ -360,9 +360,9 @@ namespace askap
         /// @brief change the cellsize of the input to match the output
         /// @details Downsample the pixels array to make the input cellsize match the output cellsize if possible.
         /// The input cellsize should be (equal or) smaller than the output. The array will be padded or cropped to
-        /// give a shape ratio that can be FFT'd and matches the cell size ratio. An exception will be through if this
+        /// give a shape ratio that can be FFT'd and matches the cell size ratio. An exception will be thrown if this
         /// is not possible
-        /// @param[in/out] pixels image to resample
+        /// @param[inout] pixels image to resample
         /// @param[in] inputInc input cellsize (pixels have to be square)
         /// @param[in] outputInc output cellsize
         /// @param[in] inputSize input image size (has to be square)
