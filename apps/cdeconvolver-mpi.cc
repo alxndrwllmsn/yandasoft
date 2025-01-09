@@ -1,4 +1,4 @@
-/// @file cdeconvolver.cc
+/// @file cdeconvolver-mpi.cc
 ///
 /// @brief Image deconvolution program
 ///
@@ -203,7 +203,7 @@ class CdeconvolverApp : public askap::Application
                     ASKAPLOG_INFO_STR(logger,"Assuming (dirty, psf) image FITS input");
                 }
             } else {
-                ASKAPLOG_INFO_STR(logger,"Trying to work out casa image data type");
+                ASKAPLOG_INFO_STR(logger,"Trying to work out casa image data type for "<<visGridCubeNames[0]);
                 shared_ptr<casacore::LatticeBase> lattp(casacore::ImageOpener::openImage(visGridCubeNames[0]));
                 imagePlaneInput = (lattp->dataType() == casacore::DataType::TpFloat);
                 if (imagePlaneInput) {
@@ -237,25 +237,46 @@ class CdeconvolverApp : public askap::Application
             // Lets load in a cube
 
             // First get the shape and coordinates
+            // The input grids may vary in size - for uv grids we can deal with this by finding the largest
+            // one. Image grids will have to match.
             casacore::IPosition shape;
+            casacore::Vector<casacore::IPosition> shapes(nCubes);
             casacore::CoordinateSystem coordSys;
             // gaussian taper wants to know field of view
             casacore::Vector<casacore::Double> fov(2,0.0);
+            uInt iMax = 0;
+            for (uInt i = 0; i < nCubes; i++) {
+                if (combineRealImag) {
+                    // in this case we only support image plane coordinate system
+                    shapes(i) = iaccF->shape(visGridCubeNames[i]+".real");
+                } else if (imagePlaneInput) {
+                    shapes(i) = iaccF->shape(visGridCubeNames[i]);
+                } else{
+                    // probably UV coordinate system - use parset
+                    shapes(i) = iaccC->shape(visGridCubeNames[i]);
+                }
+                if (shape.nelements()==0) {
+                    shape = shapes(i);
+                    iMax = i;
+                } else if (imagePlaneInput) {
+                    ASKAPCHECK(shape == shapes(i),"All input images should have the same shape");
+                } else if (shape[0] < shapes(i)[0]) {
+                    shape = shapes(i);
+                    iMax = i;
+                }
+            }
             if (combineRealImag) {
-                // in this case we only support image plane coordinate system
-                shape = iaccF->shape(visGridCubeNames[0]+".real");
-                coordSys = iaccF->coordSys(visGridCubeNames[0]+".real");
+                coordSys = iaccF->coordSys(visGridCubeNames[iMax]+".real");
                 fov(0) = shape[0] * abs(coordSys.increment()(0));
                 fov(1) = shape[1] * abs(coordSys.increment()(1));
             } else if (imagePlaneInput) {
-                shape = iaccF->shape(visGridCubeNames[0]);
-                coordSys = iaccF->coordSys(visGridCubeNames[0]);
+                coordSys = iaccF->coordSys(visGridCubeNames[iMax]);
                 fov(0) = shape[0] * abs(coordSys.increment()(0));
                 fov(1) = shape[1] * abs(coordSys.increment()(1));
-            } else{
-                // probably UV coordinate system - use parset
-                shape = iaccC->shape(visGridCubeNames[0]);
-                coordSys = iaccC->coordSys(visGridCubeNames[0]);
+            } else {
+                coordSys = iaccC->coordSys(visGridCubeNames[iMax]);
+                ASKAPLOG_INFO_STR(logger,"Setting Images.shape="+shape.toString());
+                subset.replace("Images.shape",shape.toString());
             }
 
             if (fov(0)>0) {
@@ -393,55 +414,60 @@ class CdeconvolverApp : public askap::Application
                                      " and is " << numChannelsLocal << " in size");
             bool firstPassForMaster = true;
 
+            casacore::IPosition outShape(4,shape[0],shape[1],1,1);
+            casacore::IPosition outBlc(4,0);
+            casacore::IPosition outTrc(4,0);
+            ASKAPLOG_INFO_STR(logger,"Output image shape " << shape);
+
             for (int channel = firstChannel; channel < firstChannel + numChannelsLocal; channel++) {
 
                 //FIXME: this is just looping over each channel of the allocation
 
-                ASKAPLOG_INFO_STR(logger,"Input image shape " << shape);
                 ASKAPLOG_INFO_STR(logger,"Processing Channel " << channel);
 
-                casacore::IPosition inblc(shape.nelements(),0); // input bottom left corner of this allocation
-                casacore::IPosition intrc(shape-1); // get the top right
-
-                // assumes pol, chan are axis 2 and 3
-                inblc[3] = channel;
-                intrc[3] = channel;
-                ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
-
-                if (combineRealImag) {
-                    psfGrid = casacore::makeComplex(iaccF->read(psfGridCubeNames[0]+".real",inblc,intrc),
-                        iaccF->read(psfGridCubeNames[0]+".imag",inblc,intrc));
-                    pcfGrid = casacore::makeComplex(iaccF->read(pcfGridCubeNames[0]+".real",inblc,intrc),
-                        iaccF->read(pcfGridCubeNames[0]+".imag",inblc,intrc));
-                    visGrid = casacore::makeComplex(iaccF->read(visGridCubeNames[0]+".real",inblc,intrc),
-                        iaccF->read(visGridCubeNames[0]+".imag",inblc,intrc));
-                } else if (imagePlaneInput) {
-                    psfImage = iaccF->read(psfGridCubeNames[0], inblc, intrc);
-                    pcfImage = iaccF->read(pcfGridCubeNames[0], inblc, intrc);
-                    dirtyImage = iaccF->read(visGridCubeNames[0], inblc, intrc);
+                if (imagePlaneInput) {
+                    psfImage = casacore::Array<casacore::Float>(outShape,0);
+                    pcfImage = casacore::Array<casacore::Float>(outShape,0);
+                    dirtyImage = casacore::Array<casacore::Float>(outShape,0);
                 } else {
-                    psfGrid = iaccC->read(psfGridCubeNames[0], inblc, intrc);
-                    pcfGrid = iaccC->read(pcfGridCubeNames[0], inblc, intrc);
-                    visGrid = iaccC->read(visGridCubeNames[0], inblc, intrc);
+                    psfGrid = casacore::Array<casacore::Complex>(outShape,0);
+                    pcfGrid = casacore::Array<casacore::Complex>(outShape,0);
+                    visGrid = casacore::Array<casacore::Complex>(outShape,0);
                 }
 
                 // accumulate multiple inputs (if nCubes>1)
-                for (uint i = 1; i < nCubes; i++) {
-                    if (combineRealImag) {
-                        psfGrid += casacore::makeComplex(iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
-                            iaccF->read(psfGridCubeNames[i]+".imag",inblc,intrc));
-                        pcfGrid += casacore::makeComplex(iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
-                            iaccF->read(pcfGridCubeNames[i]+".imag",inblc,intrc));
-                        visGrid += casacore::makeComplex(iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
-                            iaccF->read(visGridCubeNames[i]+".imag",inblc, intrc));
-                    } else if (imagePlaneInput) {
+                for (uint i = 0; i < nCubes; i++) {
+                    casacore::IPosition inblc(shapes(i).nelements(),0); // input bottom left corner of this allocation
+                    casacore::IPosition intrc(shapes(i)-1); // get the top right
+
+                    // assumes pol, chan are axis 2 and 3
+                    inblc[3] = channel;
+                    intrc[3] = channel;
+                    ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
+                    outBlc[0] = shape[0]/2 - shapes(i)[0]/2; 
+                    outTrc[0] = shape[0]/2 + shapes(i)[0]/2 - 1; 
+                    outBlc[1] = shape[1]/2 - shapes(i)[1]/2; 
+                    outTrc[1] = shape[1]/2 + shapes(i)[1]/2 - 1; 
+                    if (imagePlaneInput) {
                         psfImage += iaccF->read(psfGridCubeNames[i], inblc, intrc);
                         pcfImage += iaccF->read(pcfGridCubeNames[i], inblc, intrc);
                         dirtyImage += iaccF->read(visGridCubeNames[i], inblc, intrc);
                     } else {
-                        psfGrid += iaccC->read(psfGridCubeNames[i], inblc, intrc);
-                        pcfGrid += iaccC->read(pcfGridCubeNames[i], inblc, intrc);
-                        visGrid += iaccC->read(visGridCubeNames[i], inblc, intrc);
+                        casacore::Array<casacore::Complex> psfGridRef = psfGrid(outBlc,outTrc);
+                        casacore::Array<casacore::Complex> pcfGridRef = pcfGrid(outBlc,outTrc);
+                        casacore::Array<casacore::Complex> visGridRef = visGrid(outBlc,outTrc);
+                        if (combineRealImag) {
+                            psfGridRef += casacore::makeComplex(iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
+                                iaccF->read(psfGridCubeNames[i]+".imag",inblc,intrc));
+                            pcfGridRef += casacore::makeComplex(iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
+                                iaccF->read(pcfGridCubeNames[i]+".imag",inblc,intrc));
+                            visGridRef += casacore::makeComplex(iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
+                                iaccF->read(visGridCubeNames[i]+".imag",inblc, intrc));
+                        } else {
+                            psfGridRef += iaccC->read(psfGridCubeNames[i], inblc, intrc);
+                            pcfGridRef += iaccC->read(pcfGridCubeNames[i], inblc, intrc);
+                            visGridRef += iaccC->read(visGridCubeNames[i], inblc, intrc);
+                        }
                     }
                 }
 
