@@ -132,7 +132,7 @@ private:
 
     /// @brief delays for all antennas, beams and polarisations
     /// @note the shape is [nPol x nBeam x nAnt]
-    casacore::Cube<casacore::Complex> itsDelay;
+    casacore::Cube<float> itsDelay;
 
     /// @brief validity flags (true means good)
     /// @note The same  shape as itsDelays

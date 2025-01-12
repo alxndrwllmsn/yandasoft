@@ -34,6 +34,10 @@
 // own
 #include <askap/utils/BandpassDelayHelper.h>
 #include <askap/scimath/utils/DelayEstimator.h>
+#include <askap/askap/AskapLogging.h>
+#include <askap/askap/AskapError.h>
+
+ASKAP_LOGGER(logger, ".BandpassDelayHelper");
 
 namespace askap {
 
@@ -69,6 +73,29 @@ void BandpassDelayHelper::calcDelays()
 /// @param[in] other other instance of the class with calculated delays (which are added to the delays stored in this class)
 void BandpassDelayHelper::addDelays(const BandpassDelayHelper &other)
 {
+   const casacore::IPosition shape = itsDelay.shape();
+   const casacore::IPosition otherShape = other.itsDelay.shape();
+   ASKAPDEBUGASSERT(shape.nelements() == 3u);
+   ASKAPDEBUGASSERT(otherShape.nelements() == 3u);
+   ASKAPDEBUGASSERT(shape[0] == otherShape[0]);
+   ASKAPDEBUGASSERT(shape[0] == 2);
+   if (otherShape > shape) {
+       ASKAPLOG_INFO_STR(logger, "adding delays computed for a bandpass table with larger number of antennas or beams - some data are going to be ignored");
+   }
+   if (otherShape < shape) {
+       ASKAPLOG_INFO_STR(logger, "adding delays computed for a bandpass table with less antennas or beams - some good data may be flagged as invalid");
+   }
+   for (int ant = 0; ant < shape[2]; ++ant) {
+        for (int beam = 0; beam < shape[1]; ++beam) {
+             const bool otherIsOutOfBounds = (ant >= otherShape[2]) || (beam >= otherShape[1]);
+             for (int pol = 0; pol < shape[0]; ++pol) {
+                  itsDelayValid(pol, beam, ant) &= !otherIsOutOfBounds && other.itsDelayValid(pol, beam, ant);
+                  if (itsDelayValid(pol, beam, ant)) {
+                      itsDelay(pol, beam, ant) += other.itsDelay(pol, beam, ant);
+                  }
+             }
+        }
+   }
 }
 
 /// @brief flip the sign of stored delays
@@ -85,6 +112,36 @@ void BandpassDelayHelper::negateDelays()
 /// calcDelays and negateDelays calls, this can be used to remove the best fit delay from the loaded bandpass.
 void BandpassDelayHelper::applyDelays()
 {
+   const casacore::IPosition shape = itsDelay.shape();
+   ASKAPDEBUGASSERT(itsBandpass.shape().nelements() == shape.nelements() + 1);
+   // keep the type signed because IPosition class has signed coordinates
+   const int nChan = itsBandpass.shape()[0];
+   ASKAPDEBUGASSERT(shape == itsBandpass.shape().getLast(shape.nelements()));
+
+   for (int ant = 0; ant < shape[2]; ++ant) {
+        for (int beam = 0; beam < shape[1]; ++beam) {
+             for (int pol = 0; pol < shape[0]; ++pol) {
+                  const bool delayValid = itsDelay(pol, beam, ant);
+                  // taking the slice to get bandpass for the given pol, beam, ant and benefit from reference semantics
+                  // (note, due to the order of axes the resulting vector should be contiguous in memory and hence, it should be efficient)
+                  const casacore::IPosition start(4, 0, pol, beam, ant);
+                  const casacore::IPosition length(4, nChan, 1, 1, 1);
+                  casacore::Vector<casacore::Complex> bpVec = itsBandpass(casacore::Slicer(start, length));
+                  casacore::Vector<bool> bpValidVec = itsBandpassValid(casacore::Slicer(start, length));
+                  if (delayValid) {
+                      // apply the slope, keep the original bandpass validity flags
+                      // note - check the sign
+                      const float phaseStepPerChannel = 2.*casacore::C::pi * itsResolution * itsDelay(pol, beam, ant);
+                      for (int chan = 0; chan < nChan; ++chan) {
+                           bpVec[chan] *= casacore::polar(1.f, phaseStepPerChannel * chan);
+                      }
+                  } else {
+                      // invalidate all bandpass points as the corresponding delay term is invalid
+                      bpValidVec.set(false);
+                  }
+             }
+        }
+   }  
 }
     
 /// @brief load bandpass via calibration accessor
