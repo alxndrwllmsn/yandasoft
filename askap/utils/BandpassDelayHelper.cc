@@ -121,7 +121,7 @@ void BandpassDelayHelper::applyDelays()
    for (int ant = 0; ant < shape[2]; ++ant) {
         for (int beam = 0; beam < shape[1]; ++beam) {
              for (int pol = 0; pol < shape[0]; ++pol) {
-                  const bool delayValid = itsDelay(pol, beam, ant);
+                  const bool delayValid = itsDelayValid(pol, beam, ant);
                   // taking the slice to get bandpass for the given pol, beam, ant and benefit from reference semantics
                   // (note, due to the order of axes the resulting vector should be contiguous in memory and hence, it should be efficient)
                   const casacore::IPosition start(4, 0, pol, beam, ant);
@@ -155,6 +155,47 @@ void BandpassDelayHelper::applyDelays()
 void BandpassDelayHelper::loadBandpass(const accessors::ICalSolutionConstAccessor &acc, double resolution)
 {
    itsResolution = resolution;
+   const casacore::IPosition shape = itsBandpass.shape();
+   ASKAPDEBUGASSERT(shape.nelements() == 4);
+   // note, implicitly cast to unsigned types as they're accepted by the interface
+   const casacore::uInt nChan = shape[0];
+   const casacore::uInt nBeam = shape[1];
+   const casacore::uInt nAnt = shape[2];
+   ASKAPDEBUGASSERT(shape[1] == 2);
+   for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
+        for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
+             // taking the slice of bandpass and the corresponding array of validity flags for the given antenna and beam
+             // due to the selected order of axes, the resulting 2D array should be contiguous
+             const casacore::IPosition start(4, 0, 0, beam, ant);
+             const casacore::IPosition length(4, nChan, 2, 1, 1);
+             casacore::Matrix<casacore::Complex> bpMtr = itsBandpass(casacore::Slicer(start, length));
+             casacore::Matrix<bool> bpValidMtr = itsBandpassValid(casacore::Slicer(start, length));
+             ASKAPDEBUGASSERT(bpMtr.shape() == bpValidMtr.shape());
+             ASKAPDEBUGASSERT(bpMtr.nrow() == nChan);
+             ASKAPDEBUGASSERT(bpMtr.ncolumn() == 2u);
+
+             const askap::scimath::JonesIndex index(ant, beam);
+             for (casacore::uInt chan = 0; chan < nChan; ++chan) {
+                  // MV: I don't think it is a great design choice by throwing an exception if the requested element
+                  // is out of range of the stored table, especially because this behaviour is not really documented.
+                  // Moreover, it looks like this is a side-effect of reusing the memory buffer class for the calibration accessor
+                  // (where doing checks with ASKAPCHECK seems appropriate). Perhaps, we need to add a logic to the table-based
+                  // calibration accessor to return invalid gain, etc if antenna or beam indices are wrong. Having said that, I am not
+                  // sure it is hugely important from the practical side of things as we don't normally work with different number
+                  // of channels, beams or antennas to cause the problem.
+                  try {
+                     const askap::accessors::JonesJTerm jTerm = acc.bandpass(index, chan); 
+                     bpMtr(chan,0) = jTerm.g1();
+                     bpValidMtr(chan,0) = jTerm.g1IsValid();
+                     bpMtr(chan,1) = jTerm.g2();
+                     bpValidMtr(chan,1) = jTerm.g2IsValid();
+                  }
+                  catch (const CheckError&) {
+                     bpValidMtr.row(chan).set(false);
+                  }
+             }
+        }
+   }
 }
 
 /// @brief store bandpass into a calibration accessor
@@ -166,6 +207,37 @@ void BandpassDelayHelper::loadBandpass(const accessors::ICalSolutionConstAccesso
 /// @param[in] acc calibration accessor to store the bandpass into
 void BandpassDelayHelper::storeBandpass(accessors::ICalSolutionAccessor &acc) const
 {
+   const casacore::IPosition shape = itsBandpass.shape();
+   ASKAPDEBUGASSERT(shape.nelements() == 4);
+   // note, implicitly cast to unsigned types as they're accepted by the interface
+   const casacore::uInt nChan = shape[0];
+   const casacore::uInt nBeam = shape[1];
+   const casacore::uInt nAnt = shape[2];
+   ASKAPDEBUGASSERT(shape[1] == 2);
+   for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
+        for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
+             // taking the slice of bandpass and the corresponding array of validity flags for the given antenna and beam
+             // due to the selected order of axes, the resulting 2D array should be contiguous
+             const casacore::IPosition start(4, 0, 0, beam, ant);
+             const casacore::IPosition length(4, nChan, 2, 1, 1);
+             const casacore::Matrix<casacore::Complex> bpMtr = itsBandpass(casacore::Slicer(start, length));
+             const casacore::Matrix<bool> bpValidMtr = itsBandpassValid(casacore::Slicer(start, length));
+             ASKAPDEBUGASSERT(bpMtr.shape() == bpValidMtr.shape());
+             ASKAPDEBUGASSERT(bpMtr.nrow() == nChan);
+             ASKAPDEBUGASSERT(bpMtr.ncolumn() == 2u);
+
+             const askap::scimath::JonesIndex index(ant, beam);
+             for (casacore::uInt chan = 0; chan < nChan; ++chan) {
+                  const bool g1IsValid = bpValidMtr(chan,0);
+                  const bool g2IsValid = bpValidMtr(chan,1);
+                  // ignore points without valid data in at least one of the polarisations
+                  if (g1IsValid || g2IsValid) {
+                     const askap::accessors::JonesJTerm jTerm(bpMtr(chan,0), g1IsValid, bpMtr(chan,1), g2IsValid);
+                     acc.setBandpass(index, jTerm, chan); 
+                  }
+             }
+        }
+   }
 }
 
 /// @brief initialise the class with ideal bandpass
