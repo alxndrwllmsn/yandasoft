@@ -188,6 +188,10 @@ class CdeconvolverApp : public askap::Application
             // file to store the statistics (optional)
             const std::string outputStats = subset.getString("outputStats","");
 
+            // are we applying custom weights per grid?
+            const std::vector<float> weights(subset.getFloatVector("weights",std::vector<float>(nCubes,1.0f)));
+            ASKAPCHECK(weights.size() == nCubes,"Number of weights values must match number of input grids");
+
             // Check if we're loading real/imag fits cubes
             bool combineRealImag = false;
             bool imagePlaneInput = false;
@@ -449,24 +453,24 @@ class CdeconvolverApp : public askap::Application
                     outBlc[1] = shape[1]/2 - shapes(i)[1]/2; 
                     outTrc[1] = shape[1]/2 + shapes(i)[1]/2 - 1; 
                     if (imagePlaneInput) {
-                        psfImage += iaccF->read(psfGridCubeNames[i], inblc, intrc);
-                        pcfImage += iaccF->read(pcfGridCubeNames[i], inblc, intrc);
-                        dirtyImage += iaccF->read(visGridCubeNames[i], inblc, intrc);
+                        psfImage += weights[i] * iaccF->read(psfGridCubeNames[i], inblc, intrc);
+                        pcfImage += weights[i] * iaccF->read(pcfGridCubeNames[i], inblc, intrc);
+                        dirtyImage += weights[i] * iaccF->read(visGridCubeNames[i], inblc, intrc);
                     } else {
                         casacore::Array<casacore::Complex> psfGridRef = psfGrid(outBlc,outTrc);
                         casacore::Array<casacore::Complex> pcfGridRef = pcfGrid(outBlc,outTrc);
                         casacore::Array<casacore::Complex> visGridRef = visGrid(outBlc,outTrc);
                         if (combineRealImag) {
-                            psfGridRef += casacore::makeComplex(iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
-                                iaccF->read(psfGridCubeNames[i]+".imag",inblc,intrc));
-                            pcfGridRef += casacore::makeComplex(iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
-                                iaccF->read(pcfGridCubeNames[i]+".imag",inblc,intrc));
-                            visGridRef += casacore::makeComplex(iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
-                                iaccF->read(visGridCubeNames[i]+".imag",inblc, intrc));
+                            psfGridRef += casacore::makeComplex(weights[i] * iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
+                                weights[i] * iaccF->read(psfGridCubeNames[i]+".imag",inblc,intrc));
+                            pcfGridRef += casacore::makeComplex(weights[i] * iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
+                                weights[i] * iaccF->read(pcfGridCubeNames[i]+".imag",inblc,intrc));
+                            visGridRef += casacore::makeComplex(weights[i] * iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
+                                weights[i] * iaccF->read(visGridCubeNames[i]+".imag",inblc, intrc));
                         } else {
-                            psfGridRef += iaccC->read(psfGridCubeNames[i], inblc, intrc);
-                            pcfGridRef += iaccC->read(pcfGridCubeNames[i], inblc, intrc);
-                            visGridRef += iaccC->read(visGridCubeNames[i], inblc, intrc);
+                            psfGridRef += casacore::Complex(weights[i]) * iaccC->read(psfGridCubeNames[i], inblc, intrc);
+                            pcfGridRef += casacore::Complex(weights[i]) * iaccC->read(pcfGridCubeNames[i], inblc, intrc);
+                            visGridRef += casacore::Complex(weights[i]) * iaccC->read(visGridCubeNames[i], inblc, intrc);
                         }
                     }
                 }
