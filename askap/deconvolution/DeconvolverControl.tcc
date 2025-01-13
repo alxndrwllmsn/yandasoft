@@ -145,7 +145,7 @@ namespace askap {
             if (detectMildDivergence()) {
                 // next component > 1.1x smallest component this cycle & have done >5% of iterations
                 if ( state.objectiveFunction() > itsDivergenceLevels[0] * state.smallestObjectiveFunction() &&
-                     state.currentIter() > itsDivergenceLevels[4] * targetIter())
+                     state.currentIter() > itsDivergenceLevels[3] * targetIter())
                 {
                     ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge - skip to next major cycle");
                     setTerminationCause(DIVERGING);
