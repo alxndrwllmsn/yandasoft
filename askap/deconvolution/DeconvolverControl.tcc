@@ -147,7 +147,8 @@ namespace askap {
                 if ( state.objectiveFunction() > itsDivergenceLevels[0] * state.smallestObjectiveFunction() &&
                      state.currentIter() > itsDivergenceLevels[3] * targetIter())
                 {
-                    ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge - skip to next major cycle");
+                    ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge at "<<state.objectiveFunction()<<" > "
+                    << itsDivergenceLevels[0] << "*" << state.smallestObjectiveFunction() << " - stopping minor cycles");
                     setTerminationCause(DIVERGING);
                     return True;
                 }
