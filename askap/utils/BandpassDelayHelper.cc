@@ -64,6 +64,48 @@ BandpassDelayHelper::BandpassDelayHelper(casacore::uInt nAnt, casacore::uInt nBe
 void BandpassDelayHelper::calcDelays() 
 {
    scimath::DelayEstimator de(itsResolution);
+   const casacore::IPosition shape = itsBandpass.shape();
+   ASKAPDEBUGASSERT(shape.nelements() == 4);
+   // note, implicitly cast to unsigned types as they're accepted by the interface
+   const casacore::uInt nChan = shape[0];
+   const casacore::uInt nBeam = shape[2];
+   const casacore::uInt nAnt = shape[3];
+   ASKAPDEBUGASSERT(shape[1] == 2);
+   for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
+        for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
+             for (casacore::uInt pol = 0; pol < 2u; ++pol) {
+                  // taking the slice of bandpass and the corresponding array of validity flags for the given antenna and beam
+                  // due to the selected order of axes, the resulting 2D array should be contiguous
+                  const casacore::IPosition start(4, 0, pol, beam, ant);
+                  const casacore::IPosition length(4, nChan, 1, 1, 1);
+                  const casacore::Vector<casacore::Complex> bpVec = itsBandpass(casacore::Slicer(start, length));
+                  const casacore::Vector<bool> bpValidVec = itsBandpassValid(casacore::Slicer(start, length));
+                  ASKAPDEBUGASSERT(bpVec.nelements() == bpValidVec.nelements());
+                  ASKAPDEBUGASSERT(bpVec.nelements() == nChan);
+                  // take a copy into the working buffer to be able to modify flagged channels (there is no good way to deal with flags here,
+                  // although some improvements could be done like interpolation across flagged channels or better delay fitting algorithms)
+                  casacore::Vector<casacore::Complex> buf(bpVec.copy());
+                  casacore::uInt numValidChan = 0u;
+                  for (casacore::uInt chan = 0; chan < nChan; ++chan) {
+                       if (bpValidVec[chan]) {
+                           buf[chan] = bpVec[chan];
+                           ++numValidChan;
+                       } else {
+                           // some more clever interpolation can be done here, but leave it up to bandpass solver / preprocessor
+                           // essentially the same approach delay solver is using (and we can add two stage solution and averaging later on)
+                           buf[chan] = chan == 0u ? 0.f : buf[chan - 1];
+                       }
+                  }
+                  if (numValidChan > 0u) {
+                      itsDelayValid(pol, beam, ant) = true;
+                      // can use more advanced methods (e.g. two-stage approach) here
+                      itsDelay(pol, beam, ant) = de.getDelay(buf);
+                  } else {
+                      itsDelayValid(pol, beam, ant) = false;
+                  }
+             }
+        }
+   }
 }
     
 /// @brief add delays from another object
@@ -159,8 +201,8 @@ void BandpassDelayHelper::loadBandpass(const accessors::ICalSolutionConstAccesso
    ASKAPDEBUGASSERT(shape.nelements() == 4);
    // note, implicitly cast to unsigned types as they're accepted by the interface
    const casacore::uInt nChan = shape[0];
-   const casacore::uInt nBeam = shape[1];
-   const casacore::uInt nAnt = shape[2];
+   const casacore::uInt nBeam = shape[2];
+   const casacore::uInt nAnt = shape[3];
    ASKAPDEBUGASSERT(shape[1] == 2);
    for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
         for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
@@ -211,8 +253,8 @@ void BandpassDelayHelper::storeBandpass(accessors::ICalSolutionAccessor &acc) co
    ASKAPDEBUGASSERT(shape.nelements() == 4);
    // note, implicitly cast to unsigned types as they're accepted by the interface
    const casacore::uInt nChan = shape[0];
-   const casacore::uInt nBeam = shape[1];
-   const casacore::uInt nAnt = shape[2];
+   const casacore::uInt nBeam = shape[2];
+   const casacore::uInt nAnt = shape[3];
    ASKAPDEBUGASSERT(shape[1] == 2);
    for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
         for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
