@@ -241,7 +241,7 @@ namespace askap {
             ASKAPCHECK(itsPixelListNPixRange.size()==2,"npixrange needs to have 2 values");
             ASKAPCHECK(itsPixelListNPixRange[0]<itsPixelListNPixRange[1],"first value of npixrange needs to be smaller than second");
 
-            itsUseIncrements = parset.getBool("useincrements",itsUsePixelLists);
+            itsUseIncrements = parset.getBool("useincrements",false);
             if (itsUseIncrements) {
                 ASKAPLOG_INFO_STR(decmtbflogger, "Using larger pixel increments for larger scales");
             }
