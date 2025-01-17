@@ -217,8 +217,8 @@ namespace askap
 
       private:
 
-      /// Pointer to prototype gridder
-        IVisGridder::ShPtr itsGridder;
+      /// Pointer to prototype gridders
+        IVisGridder::ShPtr itsGridder, itsAltGridder;
 
         /// Map of gridders for the model
         mutable std::map<string, IVisGridder::ShPtr> itsModelGridders;
