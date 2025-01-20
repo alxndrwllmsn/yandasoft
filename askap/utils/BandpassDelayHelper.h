@@ -49,6 +49,9 @@ namespace askap {
 
 namespace utils {
 
+// forward declaration for unit-testing
+class BandpassDelayHelperTest;
+
 /// @brief class for delay manipulation in bandpass solution
 /// @details This class implements operations on bandpass tables including solving for delays. At this stage it is a proof of concept implementation,
 /// we may need to refactor it into several classes later on (read/write operations, actual app, buffer management)
@@ -137,6 +140,9 @@ private:
     /// @brief validity flags (true means good)
     /// @note The same  shape as itsDelays
     casacore::Cube<bool> itsDelayValid;
+
+    // for unit-testing
+    friend BandpassDelayHelperTest;
 };
 
 } // namespace utils

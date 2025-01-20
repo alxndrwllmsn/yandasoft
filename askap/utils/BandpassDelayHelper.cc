@@ -78,8 +78,8 @@ void BandpassDelayHelper::calcDelays()
                   // due to the selected order of axes, the resulting 2D array should be contiguous
                   const casacore::IPosition start(4, 0, pol, beam, ant);
                   const casacore::IPosition length(4, nChan, 1, 1, 1);
-                  const casacore::Vector<casacore::Complex> bpVec = itsBandpass(casacore::Slicer(start, length));
-                  const casacore::Vector<bool> bpValidVec = itsBandpassValid(casacore::Slicer(start, length));
+                  const casacore::Vector<casacore::Complex> bpVec = itsBandpass(casacore::Slicer(start, length)).nonDegenerate(1u);
+                  const casacore::Vector<bool> bpValidVec = itsBandpassValid(casacore::Slicer(start, length)).nonDegenerate(1u);
                   ASKAPDEBUGASSERT(bpVec.nelements() == bpValidVec.nelements());
                   ASKAPDEBUGASSERT(bpVec.nelements() == nChan);
                   // take a copy into the working buffer to be able to modify flagged channels (there is no good way to deal with flags here,
@@ -168,8 +168,8 @@ void BandpassDelayHelper::applyDelays()
                   // (note, due to the order of axes the resulting vector should be contiguous in memory and hence, it should be efficient)
                   const casacore::IPosition start(4, 0, pol, beam, ant);
                   const casacore::IPosition length(4, nChan, 1, 1, 1);
-                  casacore::Vector<casacore::Complex> bpVec = itsBandpass(casacore::Slicer(start, length));
-                  casacore::Vector<bool> bpValidVec = itsBandpassValid(casacore::Slicer(start, length));
+                  casacore::Vector<casacore::Complex> bpVec = itsBandpass(casacore::Slicer(start, length)).nonDegenerate(1u);
+                  casacore::Vector<bool> bpValidVec = itsBandpassValid(casacore::Slicer(start, length)).nonDegenerate(1u);
                   if (delayValid) {
                       // apply the slope, keep the original bandpass validity flags
                       // note - check the sign
@@ -210,8 +210,8 @@ void BandpassDelayHelper::loadBandpass(const accessors::ICalSolutionConstAccesso
              // due to the selected order of axes, the resulting 2D array should be contiguous
              const casacore::IPosition start(4, 0, 0, beam, ant);
              const casacore::IPosition length(4, nChan, 2, 1, 1);
-             casacore::Matrix<casacore::Complex> bpMtr = itsBandpass(casacore::Slicer(start, length));
-             casacore::Matrix<bool> bpValidMtr = itsBandpassValid(casacore::Slicer(start, length));
+             casacore::Matrix<casacore::Complex> bpMtr = itsBandpass(casacore::Slicer(start, length)).nonDegenerate(2u);
+             casacore::Matrix<bool> bpValidMtr = itsBandpassValid(casacore::Slicer(start, length)).nonDegenerate(2u);
              ASKAPDEBUGASSERT(bpMtr.shape() == bpValidMtr.shape());
              ASKAPDEBUGASSERT(bpMtr.nrow() == nChan);
              ASKAPDEBUGASSERT(bpMtr.ncolumn() == 2u);
@@ -262,8 +262,8 @@ void BandpassDelayHelper::storeBandpass(accessors::ICalSolutionAccessor &acc) co
              // due to the selected order of axes, the resulting 2D array should be contiguous
              const casacore::IPosition start(4, 0, 0, beam, ant);
              const casacore::IPosition length(4, nChan, 2, 1, 1);
-             const casacore::Matrix<casacore::Complex> bpMtr = itsBandpass(casacore::Slicer(start, length));
-             const casacore::Matrix<bool> bpValidMtr = itsBandpassValid(casacore::Slicer(start, length));
+             const casacore::Matrix<casacore::Complex> bpMtr = itsBandpass(casacore::Slicer(start, length)).nonDegenerate(2u);
+             const casacore::Matrix<bool> bpValidMtr = itsBandpassValid(casacore::Slicer(start, length)).nonDegenerate(2u);
              ASKAPDEBUGASSERT(bpMtr.shape() == bpValidMtr.shape());
              ASKAPDEBUGASSERT(bpMtr.nrow() == nChan);
              ASKAPDEBUGASSERT(bpMtr.ncolumn() == 2u);

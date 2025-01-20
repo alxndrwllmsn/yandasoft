@@ -29,11 +29,13 @@
 
 // Test includes
 #include "CleanUtilsTest.h"
+#include "BandpassDelayHelperTest.h"
 
 int main(int argc, char *argv[])
 {
     askapdev::testutils::AskapTestRunner runner(argv[0]);
     runner.addTest(askap::utils::CleanUtilsTest::suite());
+    runner.addTest(askap::utils::BandpassDelayHelperTest::suite());
     bool wasSucessful = runner.run();
 
     return wasSucessful ? 0 : 1;
