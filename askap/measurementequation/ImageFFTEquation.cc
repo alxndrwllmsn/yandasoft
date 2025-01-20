@@ -108,7 +108,7 @@ namespace askap
     }
 
 
-    ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params& ip,
+    ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params::ShPtr& ip,
         IDataSharedIter& idi, IVisGridder::ShPtr gridder,
         const LOFAR::ParameterSet& parset) : scimath::Equation(ip),
       askap::scimath::ImagingEquation(ip), itsGridder(gridder), itsIdi(idi),
