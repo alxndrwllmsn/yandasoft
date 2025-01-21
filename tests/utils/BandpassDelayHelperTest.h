@@ -46,6 +46,8 @@ class BandpassDelayHelperTest : public CppUnit::TestFixture
    CPPUNIT_TEST(testStore);
    CPPUNIT_TEST(testIdeal);
    CPPUNIT_TEST(testDelayCalcAndApply);
+   CPPUNIT_TEST(testDelayCalc);
+   CPPUNIT_TEST(testAddDelay);
    CPPUNIT_TEST_SUITE_END();
 public:
 
@@ -207,6 +209,130 @@ public:
            }
       } 
       
+   }
+
+   void testDelayCalc() {
+      // this test ensures correctness of the actual delay calculation
+      // only have 1 antenna in the bandpass table for simplicity, although this is impossible in practice
+      // Moreover, leave the second polarisation undefined, so it can be tested too that this flag propagates to delays
+      const casacore::uInt nChan = 100u;
+      BandpassDelayHelper bdh(1u, 1u, nChan);
+      // 1 Hz spectral resolution and 100 channels, one wrap across the band is equivalent to 10ms delay
+      // (note, in practice delays will be in nanoseconds - microseconds range, but for a test it is ok)
+      bdh.setIdealBandpass(1.);
+      CPPUNIT_ASSERT_DOUBLES_EQUAL(1., bdh.itsResolution, 1e-6);
+      // generate phase slope from first principles 
+      casacore::Vector<casacore::Complex> bp = casacore::Matrix<casacore::Complex>(bdh.itsBandpass.reform(casacore::IPosition(2,nChan, 2))).column(0);
+      casacore::Matrix<bool> bpValidMatr = bdh.itsBandpassValid.reform(casacore::IPosition(2,nChan, 2));
+      for (casacore::uInt chan = 0; chan < nChan; ++chan) {
+           // after setIdealBandpass all points are valid
+           CPPUNIT_ASSERT(bpValidMatr(chan,0));
+           CPPUNIT_ASSERT(bpValidMatr(chan,1));
+           // only make the second polarisation invalid
+           bpValidMatr(chan,1) = false;
+           // have the amplitude ramping up too, it should be irrelevant for the delay
+           bp[chan] = casacore::polar(static_cast<float>(1+chan), static_cast<float>(casacore::C::_2pi * 0.01 * chan));
+           // few flagged channels across the band shouldn't cause a problem (but we need a moderate tolerance when we compare the result as the
+           // match wouldn't be perfect)
+           if (chan % 10u == 1u) {
+               bpValidMatr(chan,0) = false;
+           }
+      }
+      // unflag one channel for the otherwise completely flagged polarisation to check that we require a minimum of 2 channels for a valid delay
+      // solution (although of course it will still be dodgy, but we leave it up to the user; stricter limits could be implemented if we want)
+      bpValidMatr(nChan / 2,1) = true;
+
+      // compute delays
+      bdh.calcDelays();
+      
+      // check the result
+      CPPUNIT_ASSERT(bdh.itsDelayValid.shape() == casacore::IPosition(3, 2, 1, 1));
+      CPPUNIT_ASSERT(bdh.itsDelay.shape() == casacore::IPosition(3, 2, 1, 1));
+      CPPUNIT_ASSERT(bdh.itsDelayValid(0, 0, 0));
+      CPPUNIT_ASSERT(!bdh.itsDelayValid(1, 0, 0));
+      CPPUNIT_ASSERT_DOUBLES_EQUAL(0.01f, bdh.itsDelay(0,0,0), 1e-5);
+
+      // check operations of negateDelays as well
+      bdh.negateDelays();
+
+      // check the result
+      CPPUNIT_ASSERT(bdh.itsDelayValid.shape() == casacore::IPosition(3, 2, 1, 1));
+      CPPUNIT_ASSERT(bdh.itsDelay.shape() == casacore::IPosition(3, 2, 1, 1));
+      CPPUNIT_ASSERT(bdh.itsDelayValid(0, 0, 0));
+      CPPUNIT_ASSERT(!bdh.itsDelayValid(1, 0, 0));
+      CPPUNIT_ASSERT_DOUBLES_EQUAL(-0.01f, bdh.itsDelay(0,0,0), 1e-5);
+   }
+
+   void testAddDelay() {
+      const casacore::uInt nAnt = 6u;
+      const casacore::uInt nBeam = 9u;
+      const casacore::uInt nChan = 64u;
+      BandpassDelayHelper bdh(nAnt+1u, nBeam+1u, nChan*2u);
+      CPPUNIT_ASSERT(bdh.itsDelay.shape() == casacore::IPosition(3, 2, nBeam+1u, nAnt+1u));
+      BandpassDelayHelper bdh2(nAnt, nBeam, nChan);
+      CPPUNIT_ASSERT(bdh2.itsDelay.shape() == casacore::IPosition(3, 2, nBeam, nAnt));
+
+      bdh.setIdealBandpass(5e5);
+      CPPUNIT_ASSERT_DOUBLES_EQUAL(5e5, bdh.itsResolution, 1.);
+      bdh2.setIdealBandpass(1e6);
+      CPPUNIT_ASSERT_DOUBLES_EQUAL(1e6, bdh2.itsResolution, 1.);
+
+      // fill in delays only with some validity flags
+      for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
+           for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
+                const casacore::IPosition validPoint(3, beam == ant ? 1 : 0, beam, ant);
+                const casacore::IPosition invalidPoint(3, beam == ant ? 0 : 1, beam, ant);
+                // check that invalid point is invalid by default instead of assigning it
+                CPPUNIT_ASSERT(!bdh2.itsDelayValid(invalidPoint));
+                CPPUNIT_ASSERT(!bdh.itsDelayValid(invalidPoint));
+                // flag one beam completely only in one of the instances
+                bdh2.itsDelayValid(validPoint) = (beam != nBeam / 2);
+                const float value = static_cast<float>(ant + nAnt * beam) * (beam % 2 ? 1.f: -1.f) * 1e-9;
+                bdh2.itsDelay(validPoint) = value;
+                bdh.itsDelayValid(validPoint) = true;
+                bdh.itsDelay(validPoint) = value;
+           }
+           // the first helper class has one more antenna and beam - define some of these delays
+           bdh.itsDelay(0, nBeam, ant) = 1e-9;
+           bdh.itsDelayValid(1, nBeam, ant) = true;
+      }
+      bdh.itsDelayValid(1, nBeam, nAnt) = true;
+      bdh.itsDelay(0, nBeam, nAnt) = -1e-9;
+
+      // apply delays, although strictly speaking this is irrelevant for this particular test which only verifies delay manipulation
+      bdh.applyDelays();
+      bdh2.applyDelays();
+
+      bdh2.negateDelays();
+      // the following should make all valid delays in bdh2 zero, extra beam and antenna shouldn't matter
+      bdh2.addDelays(bdh);
+      // the following should invalidate delays related to extra beam and antenna, other values should remain the same
+      bdh.addDelays(bdh2);
+
+      // now check
+      for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
+           for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
+                const casacore::IPosition validPoint(3, beam == ant ? 1 : 0, beam, ant);
+                const casacore::IPosition invalidPoint(3, beam == ant ? 0 : 1, beam, ant);
+                CPPUNIT_ASSERT(!bdh2.itsDelayValid(invalidPoint));
+                CPPUNIT_ASSERT(!bdh.itsDelayValid(invalidPoint));
+                // account for one flagged beam
+                if (beam != nBeam / 2) {
+                    CPPUNIT_ASSERT(bdh2.itsDelayValid(validPoint));
+                    CPPUNIT_ASSERT(bdh.itsDelayValid(validPoint));
+                    const float expected = static_cast<float>(ant + nAnt * beam) * (beam % 2 ? 1.f: -1.f) * 1e-9;
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, bdh2.itsDelay(validPoint), 1e-14);
+                    CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, bdh.itsDelay(validPoint), 1e-14);
+                } else {
+                    CPPUNIT_ASSERT(!bdh2.itsDelayValid(validPoint));
+                    CPPUNIT_ASSERT(!bdh.itsDelayValid(validPoint));
+                }
+           }
+           CPPUNIT_ASSERT(!bdh.itsDelayValid(0, nBeam, ant));
+           CPPUNIT_ASSERT(!bdh.itsDelayValid(1, nBeam, ant));
+      }
+      CPPUNIT_ASSERT(!bdh.itsDelayValid(0, nBeam, nAnt));
+      CPPUNIT_ASSERT(!bdh.itsDelayValid(1, nBeam, nAnt));
    }
 };
     

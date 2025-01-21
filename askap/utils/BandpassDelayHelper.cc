@@ -96,7 +96,7 @@ void BandpassDelayHelper::calcDelays()
                            buf[chan] = chan == 0u ? 0.f : buf[chan - 1];
                        }
                   }
-                  if (numValidChan > 0u) {
+                  if (numValidChan > 1u) {
                       itsDelayValid(pol, beam, ant) = true;
                       // can use more advanced methods (e.g. two-stage approach) here
                       itsDelay(pol, beam, ant) = de.getDelay(buf);
