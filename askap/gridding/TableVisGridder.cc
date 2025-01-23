@@ -1552,7 +1552,7 @@ void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
         #else
         casacore::Array<imtypeComplex> scratch2(itsGrid[0].shape());
         toComplex(scratch2, scratch);
-        fft2d.transformAllHyperPlanes(scratch2), true);
+        fft2d.transformAllHyperPlanes(scratch2, true);
         casacore::convertArray<casacore::Complex,imtypeComplex>(itsGrid[0],scratch2);
         #endif
     } else {

@@ -49,7 +49,7 @@ namespace utils {
 /// generating the output mask
 /// @return a Matrix with 1 for pixels with no overlap and 0 when there is overlap.
 /// If there is only a single image centre present, the Matrix will have shape (0,0)
-Matrix<imtype> overlapMask(const scimath::Params& ip, const std::map<std::string,int>& taylorMap,
+Matrix<casacore::Float> overlapMask(const scimath::Params& ip, const std::map<std::string,int>& taylorMap,
     boost::optional<float> extraOversamplingFactor);
 
 } // namespace utils

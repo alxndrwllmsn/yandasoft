@@ -60,7 +60,7 @@ MPI_Group MPIWProjectVisGridder::itsGridderGroup = MPI_GROUP_NULL;
 int MPIWProjectVisGridder::itsNodeSize;
 int MPIWProjectVisGridder::itsNodeRank;
 int MPIWProjectVisGridder::itsWorldRank;
-imtypeComplex* MPIWProjectVisGridder::itsMpiSharedMemory = nullptr;
+casacore::Complex* MPIWProjectVisGridder::itsMpiSharedMemory = nullptr;
 bool MPIWProjectVisGridder::itsMpiMemSetup = false;
 unsigned int MPIWProjectVisGridder::ObjCount = 0;
 std::mutex MPIWProjectVisGridder::ObjCountMutex;
@@ -241,7 +241,7 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
         size_t total = 0;
         for ( auto it = itsConvFunc.begin();
             it != itsConvFunc.end(); ++it) {
-            total += it->nelements() * sizeof(imtypeComplex);
+            total += it->nelements() * sizeof(casacore::Complex);
         }
         // now collect the total number of bytes from all the ranks to create the shared memory
         unsigned long totalFromAllRanks = 0;
@@ -474,7 +474,7 @@ void  MPIWProjectVisGridder::setupMpiMemory(size_t bufferSize /* in bytes */)
     int elen = 0;
     ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << ", bufferSize: " << memSizeInBytes);
     ASKAPCHECK(itsNodeComms != MPI_COMM_NULL,"itsNodeRank: " << itsNodeRank << " - itsNodeComms is Null");
-    int r = MPI_Win_allocate_shared(memSizeInBytes,sizeof(imtypeComplex),
+    int r = MPI_Win_allocate_shared(memSizeInBytes,sizeof(casacore::Complex),
                                 MPI_INFO_NULL, itsNodeComms, &itsMpiSharedMemory,
                                 &itsWindowTable);
     if ( r != MPI_SUCCESS ) {
@@ -555,7 +555,7 @@ void MPIWProjectVisGridder::copyToSharedMemory(std::vector<std::pair<int,int>>& 
     //MPI_Barrier(itsNodeComms);
 
     // now each rank copies its CF to the shared memory
-    imtypeComplex* shareMemPtr = itsMpiSharedMemory; // a contiguous chunk of shared memory
+    casacore::Complex* shareMemPtr = itsMpiSharedMemory; // a contiguous chunk of shared memory
     for (unsigned int iw = 0; iw < itsConvFuncMatSize.size(); iw++) {
         if (itsConvFunc[iw].nelements() != 0) {
             std::copy(itsConvFunc[iw].data(),itsConvFunc[iw].data() + itsConvFunc[iw].nelements(),shareMemPtr);
@@ -573,14 +573,14 @@ void MPIWProjectVisGridder::copyFromSharedMemory(const std::vector<std::pair<int
     ASKAPLOG_DEBUG_STR(logger, "itsNodeRank: " << itsNodeRank <<
                                 " - copy shared memory back to itsConvFunc. number of CFs = " << itsConvFuncMatSize.size());
     unsigned int numOfElems = itsConvFuncMatSize.size();
-    imtypeComplex* shareMemPtr = itsMpiSharedMemory;
+    casacore::Complex* shareMemPtr = itsMpiSharedMemory;
     for (unsigned int elem = 0; elem < numOfElems; elem++) {
         casacore::IPosition pos(2);
         pos(0) = itsConvFuncMatSize[elem].first;
         pos(1) = itsConvFuncMatSize[elem].second;
         ASKAPCHECK(itsConvFuncMatSize[elem].first != 0 || itsConvFuncMatSize[elem].second != 0, "shape of CF is zero");
 
-        casacore::Matrix<imtypeComplex> m(pos,shareMemPtr,casacore::SHARE);
+        casacore::Matrix<casacore::Complex> m(pos,shareMemPtr,casacore::SHARE);
         itsConvFunc[elem].reference(m);
         shareMemPtr += m.nelements();
     }

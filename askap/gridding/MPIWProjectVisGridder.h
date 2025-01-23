@@ -164,7 +164,7 @@ namespace askap
                 static int      itsNodeRank;
                 static int      itsWorldRank;
                 /// @brief a pointer to the MPI shared memory
-                static imtypeComplex* itsMpiSharedMemory;
+                static casacore::Complex* itsMpiSharedMemory;
 
 		        /// @details - These are used to synchronise and keep track of how many
 		        ///            gridder objects are instantiated. The ObjCount member is

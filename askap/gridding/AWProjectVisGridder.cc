@@ -55,30 +55,6 @@ ASKAP_LOGGER(logger, ".gridding.awprojectvisgridder");
 namespace askap {
 namespace synthesis {
 
-//std::vector<casa::Matrix<casa::Complex> > AWProjectVisGridder::theirCFCache;
-//std::vector<std::pair<int,int> > AWProjectVisGridder::theirConvFuncOffsets;
-
-/// @brief a helper method for a ref copy of casa arrays held in
-/// stl vector
-/// @param[in] in input array
-/// @param[out] out output array (will be resized)
-/// @return size of the cache in bytes (assuming Complex array elements)
-//template<typename T>
-//size_t deepRefCopyOfSTDVector(const std::vector<T> &in,
-//                            std::vector<T> &out)
-//{
-//   out.resize(in.size());
-//   size_t total = 0;
-//   const typename std::vector<T>::const_iterator inEnd = in.end();
-//   typename std::vector<T>::iterator outIt = out.begin();
-//   for (typename std::vector<T>::const_iterator inIt = in.begin();
-//       inIt != inEnd; ++inIt,++outIt) {
-//       outIt->reference(*inIt);
-//       total += outIt->nelements()*sizeof(casa::Complex)+sizeof(T);
-//   }
-//   return total;
-//}
-
 AWProjectVisGridder::AWProjectVisGridder(const boost::shared_ptr<IBasicIllumination const> &illum,
         const double wmax, const int nwplanes,
         const double cutoff, const int overSample,
