@@ -28,6 +28,8 @@
 #define SPHVISGRIDDER_H_
 
 #include <askap/gridding/TableVisGridder.h>
+#include <askap/scimath/fft/FFTWrapper.h>
+#include <askap/scimath/utils/PaddingUtils.h>
 #include <askap/dataaccess/IConstDataAccessor.h>
 #include <askap/scimath/utils/SpheroidalFunction.h>
 
@@ -90,7 +92,11 @@ namespace askap
 				/// @param[in] support support size in pixels (spheroidal
 				/// function with m=2*support will be generated)
 				/// @param[in] interpolate if true, interpolate the edge values
-				static void correctConvolution(casacore::Array<imtype>& image,
+				//static void correctConvolution(casacore::Array<imtype>& image,
+			    //		scimath::SpheroidalFunction& sf, int support = 3,
+			    //		bool interpolate = true);
+                template<typename T>
+				static void correctConvolution(casacore::Array<T>& grid,
 					scimath::SpheroidalFunction& sf, int support = 3,
 					bool interpolate = true);
 
@@ -105,7 +111,9 @@ namespace askap
 
 				/// Correct for gridding convolution function
 				/// @param image image to be corrected
-				virtual void correctConvolution(casacore::Array<imtype>& image);
+				//virtual void correctConvolution(casacore::Array<imtype>& image);
+				virtual void correctConvolution(casacore::Array<float>& image);
+				virtual void correctConvolution(casacore::Array<double>& image);
 
 				/// Calculate prolate spheroidal function
 				/// @param nu Argument for spheroidal function

@@ -257,7 +257,12 @@ namespace askap
                                                             const int maxsupport = 101,
                                                             const std::string &name = "");
 
-        static casacore::Vector<casacore::Quantum<double> > fitBeam(casacore::Array<imtype> &psfArray,
+        //static casacore::Vector<casacore::Quantum<double> > fitBeam(casacore::Array<imtype> &psfArray,
+        //                                                    const scimath::Axes &axes,
+        //                                                    const double cutoff = 0.5,
+        //                                                    const int maxsupport = 101);
+        template <typename T>
+        static casacore::Vector<casacore::Quantum<double> > fitBeam(casacore::Array<T> &psfArray,
                                                             const scimath::Axes &axes,
                                                             const double cutoff = 0.5,
                                                             const int maxsupport = 101);
@@ -272,7 +277,11 @@ namespace askap
         ///            defined by 50% cutoff from the peak)
         /// @param[in] maxsupport Max support size of beam above cutoff level
         /// @return beam size in pixels, beam PA in radians
-        static casacore::Vector<double> fitBeam(casacore::Array<imtype> &psfArray,
+        //static casacore::Vector<double> fitBeam(casacore::Array<imtype> &psfArray,
+        //                                        const double cutoff = 0.5,
+        //                                        const int maxsupport = 101);
+        template <typename T>
+        static casacore::Vector<double> fitBeam(casacore::Array<T> &psfArray,
                                                 const double cutoff = 0.5,
                                                 const int maxsupport = 101);
 
@@ -525,4 +534,5 @@ namespace askap
 
   }
 }
+#include <askap/measurementequation/SynthesisParamsHelper.tcc>
 #endif

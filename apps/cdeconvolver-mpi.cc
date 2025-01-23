@@ -599,16 +599,10 @@ void CdeconvolverApp::getRealFFT(casacore::Matrix<casacore::Float> &fArray,
 
     fArray.resize(cArray.shape());
     // Limit number of fft threads to 8 (more is slower for our fft sizes)
-    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
-    #ifdef ASKAP_FLOAT_IMAGE_PARAMS
+    //scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
+    scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
     fft2d(cArray,false);
     casacore::real(fArray,cArray);
-    #else
-    casacore::Matrix<casacore::DComplex> scratch(cArray.shape());
-    casacore::convertArray<casacore::DComplex,casacore::Complex>(scratch, cArray);
-    fft2d(scratch, false);
-    casacore::convertArray<casacore::Float, casacore::Double>(fArray,real(scratch));
-    #endif
     fArray *= static_cast<casacore::Float>(fArray.nelements());
 }
 
@@ -638,21 +632,8 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     const int maxsupport = subset.getInt("restore.beam.maxsupport",101);
 
 
-    #ifdef ASKAP_FLOAT_IMAGE_PARAMS
     SphFuncVisGridder::correctConvolution(dirtyIn,sf,support,true);
     SphFuncVisGridder::correctConvolution(psfIn,sf,support,true);
-    #else
-    {
-        casacore::Array<casacore::Double> dBuffer(dirtyIn.shape());
-        casacore::convertArray<casacore::Double, casacore::Float> (dBuffer,dirtyIn);
-        SphFuncVisGridder::correctConvolution(dBuffer,sf,support,true);
-        casacore::convertArray<casacore::Float, casacore::Double>(dirtyIn,dBuffer);
-
-        casacore::convertArray<casacore::Double, casacore::Float> (dBuffer,psfIn);
-        SphFuncVisGridder::correctConvolution(dBuffer,sf,support,true);
-        casacore::convertArray<casacore::Float, casacore::Double>(psfIn,dBuffer);
-    }
-    #endif
     // *** Preconditioning ***
     if (subset.isDefined("preconditioner.Names")) {
         ASKAPLOG_INFO_STR(logger,"Preparing for preconditioning");
@@ -825,7 +806,8 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     LOFAR::ParameterSet cleanset = subset.makeSubset("solver.Clean.");
 
     Float sigmaValue(0);
-    Matrix<imtype> madMap;
+    //Matrix<imtype> madMap;
+    Matrix<float> madMap;
     // could make the following a function that returns the updated parset and add to configure line
     const std::string parName = "threshold.minorcycle";
     if (subset.isDefined(parName)) {
@@ -868,8 +850,10 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
                     boost::dynamic_pointer_cast<DeconvolverMultiTermBasisFunction<Float,Complex>>(deconvolver);
                 if (dcmtbf && boxSize > 0) {
                     // get mad map for position dependent threshold
+                    //madMap = casacore::boxedArrayMath(dirtyIn.nonDegenerate(),
+                    //    IPosition(2,boxSize),MadfmFunc<imtype>());
                     madMap = casacore::boxedArrayMath(dirtyIn.nonDegenerate(),
-                        IPosition(2,boxSize),MadfmFunc<imtype>());
+                        IPosition(2,boxSize),MadfmFunc<float>());
                     //normalise madMap to overall mad and send it to cleaner
                     if (mad > 0) {
                         madMap /= mad;

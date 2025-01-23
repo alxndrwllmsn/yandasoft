@@ -55,7 +55,7 @@ using namespace synthesis;
 /// generating the output mask
 /// @return a Matrix with 1 for pixels with no overlap and 0 when there is overlap.
 /// If there is only a single image centre present, the Matrix will have shape (0,0)
-Matrix<imtype> askap::utils::overlapMask(const scimath::Params& ip, const std::map<std::string,int>& taylorMap,
+Matrix<casacore::Float> askap::utils::overlapMask(const scimath::Params& ip, const std::map<std::string,int>& taylorMap,
     boost::optional<float> extraOversamplingFactor)
 {
     // make list of unique image names (.taylor0 only), their centres and their sizes
@@ -95,7 +95,7 @@ Matrix<imtype> askap::utils::overlapMask(const scimath::Params& ip, const std::m
 
     // Nothing to do if we have no, or a single field
     if (names.size() < 2) {
-        return Matrix<imtype>();
+        return Matrix<casacore::Float>();
     }
 
     // find biggest image
@@ -119,7 +119,7 @@ Matrix<imtype> askap::utils::overlapMask(const scimath::Params& ip, const std::m
     }
     ASKAPASSERT(maxSize > 0);
     // Create default mask
-    Matrix<imtype> mask(shapes[mainImage](0),shapes[mainImage](1),static_cast<imtype>(1));
+    Matrix<casacore::Float> mask(shapes[mainImage](0),shapes[mainImage](1),static_cast<casacore::Float>(1));
 
     // Work out overlap for each image and set pixels to zero
     const DirectionCoordinate& refDC = DCs[mainImage];

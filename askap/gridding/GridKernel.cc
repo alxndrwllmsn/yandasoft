@@ -99,7 +99,7 @@ void GridKernel::grid(casacore::Matrix<casacore::Complex>& grid,
 void GridKernel::degrid(casacore::Complex& cVis,
 		const casacore::Matrix<casacore::Complex>& convFunc,
 		const casacore::Matrix<casacore::Complex>& grid,
-        const int iu, const int iv, const int support) {
+       const int iu, const int iv, const int support) {
 	/// Degridding from grid to visibility. Here we just take a weighted sum of the visibility
 	/// data using the convolution function as the weighting function.
 	cVis = 0.0;
