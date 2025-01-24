@@ -88,6 +88,11 @@ public:
    /// together with calcDelays and applyDelays, to compensate the delays present in the bandpass solution
    void negateDelays();
 
+   /// @brief zero all delays preserving validity flags
+   /// @details This method just sets delays to zero, but doesn't touch validity flags. This is handy if one wants to summarise delays 
+   /// in the log using the summary() method or add delays from another instance.
+   void zeroDelays();
+
    /// @brief apply currently stored delays to the currently stored bandpass
    /// @details This method modifies currently stored bandpass by applying the phase slope implied by the appropriate delay term. So, combined with
    /// calcDelays and negateDelays calls, this can be used to remove the best fit delay from the loaded bandpass.
@@ -119,6 +124,13 @@ public:
    /// However, the validity flags of delays will be respected if delays are applied to this ideal bandpass.
    /// @param[in] resolution spectral resolution in Hz to be used in subsequent calcDelays and applyDelays calls (as for the bandpass loaded via the accessor)
    void setIdealBandpass(double resolution);
+
+
+   /// @brief summarise delays in the log
+   /// @details This method adds a summary of the current delays in the log. If only one beam has unflagged data, the corresponding delay is printed. 
+   /// Otherwise, the range is shown. In the future we can add methods which export delays, e.g. into an ascii file. The output of this method only makes sense if
+   /// delays are calculated (e.g. with calcDelays).
+   void summary() const;
 
 private:
     /// @brief spectral resolution in Hz of the current bandpass

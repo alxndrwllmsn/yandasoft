@@ -30,12 +30,18 @@
 ///
 
 // casa
+#include <casacore/casa/Arrays/ArrayLogical.h>
 
 // own
 #include <askap/utils/BandpassDelayHelper.h>
 #include <askap/scimath/utils/DelayEstimator.h>
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
+
+// std
+#include <set>
+#include <sstream>
+#include <iomanip>
 
 ASKAP_LOGGER(logger, ".BandpassDelayHelper");
 
@@ -147,6 +153,14 @@ void BandpassDelayHelper::negateDelays()
 {
    // just flip the sign for everything, validity flags remain the same
    itsDelay *= -1.f;
+}
+
+/// @brief zero all delays preserving validity flags
+/// @details This method just sets delays to zero, but doesn't touch validity flags. This is handy if one wants to summarise delays 
+/// in the log using the summary() method or add delays from another instance.
+void BandpassDelayHelper::zeroDelays()
+{
+   itsDelay.set(0.f);
 }
 
 /// @brief apply currently stored delays to the currently stored bandpass
@@ -293,6 +307,93 @@ void BandpassDelayHelper::setIdealBandpass(double resolution)
    itsResolution = resolution;
    itsBandpass.set(casacore::Complex(1.f, 0.f));
    itsBandpassValid.set(true);
+}
+
+/// @brief summarise delays in the log
+/// @details This method adds a summary of the current delays in the log. If only one beam has unflagged data, the corresponding delay is printed. 
+/// Otherwise, the range is shown. In the future we can add methods which export delays, e.g. into an ascii file. The output of this method only makes sense if
+/// delays are calculated (e.g. with calcDelays).
+void BandpassDelayHelper::summary() const
+{
+   const casacore::uInt nBeam = itsDelay.ncolumn();
+   const casacore::uInt nAnt = itsDelay.nplane();
+   ASKAPDEBUGASSERT(itsDelay.nrow() == 2u);
+   ASKAPDEBUGASSERT(itsDelay.shape() == itsDelayValid.shape());
+   ASKAPDEBUGASSERT(itsBandpass.shape().nelements() == 4u);
+   const casacore::uInt nChan = itsBandpass.shape()[0];
+
+   ASKAPLOG_INFO_STR(logger, "Bandpass helper has been configured for "<<nAnt<<" antennas, "<<nBeam<<" beams and "<<nChan<<" channels");
+   // first assess flagging per beam to know if we have the results for single beam only (or no valid data at all)
+   std::set<casacore::uInt> beamsWithData;
+   for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
+        // this is not the best access pattern (it's a strided slice in memory), but we do it only once
+        const casacore::Matrix<bool> thisBeamDelayValid = itsDelayValid.xzPlane(beam);
+        if (casacore::anyTrue(thisBeamDelayValid)) {
+            beamsWithData.insert(beam);
+        }
+   }
+   if (beamsWithData.size() == 0) {
+       ASKAPLOG_WARN_STR(logger, "All delays appear to be flagged as invalid");
+       return;
+   }
+   const bool oneBeamCase = (beamsWithData.size() == 1);
+   // for one beam case the following variable will contain the only beam width data, otherwise the one with smallest index
+   const casacore::uInt validBeam = *beamsWithData.begin();
+   if (oneBeamCase) {
+       ASKAPLOG_INFO_STR(logger, "Delays appear to be valid for one beam only (0-based index "<<validBeam<<")");
+   }
+   ASKAPDEBUGASSERT(validBeam < nBeam);
+   // now print the delays into the log
+   for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
+        const casacore::Matrix<bool> delayValidMtr = itsDelayValid.xyPlane(ant);
+        const casacore::Matrix<float> delayMtr = itsDelay.xyPlane(ant);
+        std::ostringstream ss;
+        ss<<"antenna (1-based) "<<std::setw(2)<<(ant + 1)<<" : ";
+        for (casacore::uInt pol = 0; pol < 2u; ++pol) {
+             ss<<(pol == 0 ? "XX: " : "YY: "); 
+             const casacore::Vector<bool> delayValidVec = delayValidMtr.column(pol);
+             const casacore::Vector<float> delayVec = delayMtr.column(pol);
+             if (oneBeamCase) {
+                 if (delayValidVec[validBeam]) {
+                    ss<<std::setw(9)<<std::setprecision(2)<<delayVec[validBeam]*1e9<<" ns";
+                 } else {
+                    ss<<"     flagged";
+                 }
+             } else {
+                 // for multiple beams with valid data only print smallest and largest delay 
+                 if (casacore::anyTrue(delayValidVec)) {
+                     // use the fact that validBeam is the beam with valid data which has the smallest index
+                     // (std::set is by default sorted in the ascending order as per C++ standard)
+                     float minDelay = delayVec[validBeam];
+                     float maxDelay = delayVec[validBeam];
+                     casacore::uInt minDelayBeam = validBeam;
+                     casacore::uInt maxDelayBeam = validBeam;
+                     for (casacore::uInt beam = validBeam + 1; beam < nBeam; ++beam) {
+                          if (delayValidVec[beam]) {
+                              const float thisDelay = delayVec[beam];
+                              if (minDelay > thisDelay) {
+                                  minDelay = thisDelay;
+                                  minDelayBeam = beam;
+                              }
+                              if (maxDelay < thisDelay) {
+                                  maxDelay = thisDelay;
+                                  maxDelayBeam = beam;
+                              }
+                          }
+                     }
+                     ss<<"from "<<std::setw(9)<<std::setprecision(2)<<minDelay*1e9<<" ns (beam "<<std::setw(2)<<minDelayBeam<<") to "<<
+                                  std::setw(9)<<std::setprecision(2)<<maxDelay*1e9<<" ns (beam "<<std::setw(2)<<maxDelayBeam<<")";
+                 } else {
+                   // all beams are flagged for this antenna
+                   ss<<std::setw(48)<<std::right<<"all beams flagged";
+                 }
+             } // one beam vs many beams 
+             if (pol == 0) {
+                 ss<<", ";
+             }
+        } // loop by polarisations
+        ASKAPLOG_INFO_STR(logger, "    "<<ss.str());
+   } // loop by antennas
 }
 
 } // namespace utils
