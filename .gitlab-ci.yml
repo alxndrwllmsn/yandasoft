@@ -8,6 +8,7 @@ variables:
 
 stages:
   - build
+  - build2
   - test
   - pages
   - ci_status
@@ -26,6 +27,21 @@ build:
     paths:
       - _build
       - _install
+
+build:
+  extends: .common
+  stage: build2
+  before_script:
+    - sudo apt update && sudo apt install -y g++ git cmake
+    - sudo ln -s /usr/lib/x86_64-linux-gnu/ /usr/lib64
+  script:
+    - n_cpus=`grep '^processor' /proc/cpuinfo  | wc -l`
+    - cmake -C .gitlab-ci.cmake.in -DASKAPSDP_GIT_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/ASKAPSDP/" -DENABLE_FLOAT_IMAGE_PARAMS=NO -DENABLE_OPENMP=OFF -DCMAKE_INSTALL_PREFIX=./_install2 -DCMAKE_CXX_FLAGS="-coverage" -DCMAKE_EXE_LINKER_FLAGS="-coverage" -B _build2 -S .
+    - sudo cmake --build _build2 --target install2 -j $n_cpus
+  artifacts:
+    paths:
+      - _build2
+      - _install2
 
 test:
   extends: .common
@@ -54,6 +70,33 @@ test:
       junit: _build/ctest.xml
     when: always
 
+test_no_enable_float_params:
+  extends: .common
+  stage: test
+  dependencies:
+    - build_no_enable_float_params
+  before_script:
+    - sudo apt update && sudo apt install -y cmake xsltproc
+  variables:
+    CASARCFILES: ${CI_PROJECT_DIR}/_build2/test_gitlab_casarc.cfg
+    TEST_DATASET_PATH: ${CI_PROJECT_DIR}/_build2/testdataset.ms
+  script:
+    - cd _build2
+    - tar -xjf base-accessors/measdata.tar.bz2
+    - "echo 'measures.directory: '${PWD}'/data' > ${CASARCFILES}"
+    - cat $CASARCFILES
+    - tar -xjf base-accessors/testdataset.tar.bz2
+    - ctest -C DartConfiguration.tcl -T test --verbose --no-compress-output
+  after_script:
+    - cd _build2
+    - askap-cmake/ctest2junit > ctest.xml
+  artifacts:
+    paths:
+      - _build2
+    reports:
+      junit: _build2/ctest.xml
+    when: always
+
 robottests:
   extends: .common
   stage: test
@@ -74,6 +117,33 @@ robottests:
     paths:
       - tests/data/simulation/synthregression    
       - _build
+    when: always
+
+test_no_enable_float_params:
+  extends: .common
+  stage: test
+  dependencies:
+    - build_no_enable_float_params
+  before_script:
+    - sudo apt update && sudo apt install -y cmake xsltproc
+  variables:
+    CASARCFILES: ${CI_PROJECT_DIR}/_build2/test_gitlab_casarc.cfg
+    TEST_DATASET_PATH: ${CI_PROJECT_DIR}/_build2/testdataset.ms
+  script:
+    - cd _build2
+    - tar -xjf base-accessors/measdata.tar.bz2
+    - "echo 'measures.directory: '${PWD}'/data' > ${CASARCFILES}"
+    - cat $CASARCFILES
+    - tar -xjf base-accessors/testdataset.tar.bz2
+    - ctest -C DartConfiguration.tcl -T test --verbose --no-compress-output
+  after_script:
+    - cd _build2
+    - askap-cmake/ctest2junit > ctest.xml
+  artifacts:
+    paths:
+      - _build2
+    reports:
+      junit: _build2/ctest.xml
     when: always
 
 pages:
