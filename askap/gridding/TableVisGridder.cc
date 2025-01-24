@@ -35,7 +35,6 @@ ASKAP_LOGGER(logger, ".gridding.tablevisgridder");
 #include <casacore/casa/BasicSL/Constants.h>
 #include <casacore/casa/Arrays/ArrayMath.h>
 #include <casacore/casa/Arrays/Slicer.h>
-#include <casacore/casa/Arrays/Slice.h>
 
 #include <casacore/measures/Measures/MDirection.h>
 #include <casacore/measures/Measures/UVWMachine.h>
@@ -96,7 +95,7 @@ TableVisGridder::TableVisGridder() : itsSumWeights(),
     itsMaxPointingSeparation(-1.), itsRowsRejectedDueToMaxPointingSeparation(0),
     itsTrackWeightPerOversamplePlane(false),itsPARotation(false),itsSwapPols(false),
     its2dGrid(),itsVisPols(),itsPolConv(),itsImagePolFrameVis(),itsImagePolFrameNoise(),
-    itsPolVector(),itsImageChan(-1),itsGridIndex(-1),itsSourceIndex(0),itsClearGrid(false)
+    itsPolVector(),itsImageChan(-1),itsGridIndex(-1),itsSourceIndex(0),itsClearGrid(false),itsRotateUVW(true)
 {
 }
 
@@ -111,7 +110,7 @@ TableVisGridder::TableVisGridder(const int overSample, const int support,
     itsMaxPointingSeparation(-1.), itsRowsRejectedDueToMaxPointingSeparation(0),
     itsTrackWeightPerOversamplePlane(false),itsPARotation(false),itsSwapPols(false),
     its2dGrid(),itsVisPols(),itsPolConv(),itsImagePolFrameVis(),itsImagePolFrameNoise(),
-    itsPolVector(),itsImageChan(-1),itsGridIndex(-1),itsSourceIndex(0),itsClearGrid(false)
+    itsPolVector(),itsImageChan(-1),itsGridIndex(-1),itsSourceIndex(0),itsClearGrid(false),itsRotateUVW(true)
 {
    ASKAPCHECK(overSample>0, "Oversampling must be greater than 0");
    ASKAPCHECK(support>=0, "Maximum support must be zero or greater");
@@ -162,7 +161,7 @@ TableVisGridder::TableVisGridder(const TableVisGridder &other) :
      itsPolConv(other.itsPolConv),itsImagePolFrameVis(other.itsImagePolFrameVis.copy()),
      itsImagePolFrameNoise(other.itsImagePolFrameNoise.copy()),itsPolVector(other.itsPolVector.copy()),
      itsImageChan(other.itsImageChan),itsGridIndex(other.itsGridIndex),itsSourceIndex(other.itsSourceIndex),
-     itsClearGrid(other.itsClearGrid)
+     itsClearGrid(other.itsClearGrid),itsRotateUVW(other.itsRotateUVW)
 {
    deepCopyOfSTDVector(other.itsConvFunc,itsConvFunc);
    deepCopyOfSTDVector(other.itsGrid, itsGrid);
@@ -490,16 +489,15 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
    // its fine to work with the reference in the openmp case because all our current use cases
    // have the same tangent point for all gridders, otherwise we have to move this call
    // inside the section protected by the lock and make a copy of the returned vector
-   const casacore::Vector<casacore::RigidVector<double, 3> > &outUVW = acc.rotatedUVW(tangentPoint);
+   const casacore::Vector<casacore::RigidVector<double, 3> > &outUVW = (rotateUVW() ? acc.rotatedUVW(tangentPoint) : acc.uvw());
 
    #ifdef _OPENMP_WORKING
    boost::unique_lock<boost::mutex> lock(itsMutex);
    const casa::Vector<double> delay = acc.uvwRotationDelay(tangentPoint, imageCentre).copy();
    lock.unlock();
    #else
-   const casa::Vector<double> &delay = acc.uvwRotationDelay(tangentPoint, imageCentre);
+   const casa::Vector<double> &delay = (rotateUVW() ? acc.uvwRotationDelay(tangentPoint, imageCentre) : casa::Vector<double>(acc.nRow()));
    #endif
-
    itsTimeCoordinates += timer.real();
 
    // Now time the gridding
@@ -946,7 +944,7 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
    const casa::MVDirection imageCentre = getImageCentre();
    const casa::MVDirection tangentPoint = getTangentPoint();
 
-   const casa::Vector<casa::RigidVector<double, 3> > &outUVW = acc.rotatedUVW(tangentPoint);
+   const casa::Vector<casa::RigidVector<double, 3> > &outUVW = (rotateUVW() ? acc.rotatedUVW(tangentPoint) : acc.uvw());
 
    const uint nSamples = acc.nRow();
    const uint nChan = acc.nChannel();
@@ -987,7 +985,6 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
 
            bool allPolGood=true;
            for (uint pol=0; pol<nPol; ++pol) {
-               //if (acc.flag()(i, chan, pol))
                if (acc.flag()(pol, chan, i))
                    allPolGood=false;
            }
@@ -1007,30 +1004,21 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
                    // Lookup the portion of grid to be
                    // used for this row, polarisation and channel
                    const int gInd=gIndex(i, pol, chan);
-
-                   /// Make a slicer to extract just this plane
-                   const casa::IPosition ipStart(4, 0, 0, pol, imageChan);
-                   const casa::Slicer slicer(ipStart, onePlane4D);
-
                    const int beforeOversamplePlaneIndex = cIndex(i,pol,chan);
-                   //const int cInd=fracu+itsOverSample*(fracv+itsOverSample*beforeOversamplePlaneIndex);
-
-                   casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer));
-                   casa::Matrix<casa::Complex> grid(aGrid.nonDegenerate());
+                   casa::Array<casa::Complex>& grid = itsGrid[gInd];
 
                    // the following accounts for a possible offset of the convolution function
                    const std::pair<int,int> cfOffset = getConvFuncOffset(beforeOversamplePlaneIndex);
                    const int iuOffset = iu + cfOffset.first;
                    const int ivOffset = iv + cfOffset.second;
 
-                   ASKAPCHECK(iuOffset >= 0 && ivOffset >= 0 && iuOffset < grid.nrow() && ivOffset < grid.ncolumn(),
+                   ASKAPCHECK(iuOffset >= 0 && ivOffset >= 0 && iuOffset < grid.shape()(0) && ivOffset < grid.shape()(1),
                     "grid coordinates out of range in setWeight");
-
-                   if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
-                       //casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
-                       casa::Vector<casa::Complex> thisChanNoise = acc.noise().xyPlane(i).column(chan);
-                       const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
-                       thisChanNoise *= rootInvWgt;
+                   const float gridVal = real(grid(casacore::IPosition(4,iuOffset, ivOffset,pol,chan)));
+                   if ( gridVal > 0.0 ) {
+                       const float rootInvWgt = sqrt(gridVal);
+                       casacore::Array<casa::Complex> noise = acc.noise()(casacore::IPosition(3,0,chan,i),casacore::IPosition(3,nPol-1,chan,i));
+                       noise *= rootInvWgt;
                    }
                }
 

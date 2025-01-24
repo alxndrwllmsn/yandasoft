@@ -115,7 +115,6 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     ASKAPTRACE("ContinuumWorker::constructor");
 
     ASKAPCHECK(!(itsUpdateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
-
     itsAdvisor = boost::shared_ptr<synthesis::AdviseDI> (new synthesis::AdviseDI(itsComms, itsParset));
     itsAdvisor->prepare();
 
@@ -603,6 +602,7 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
    const double globalFrequency = wu.get_channelFrequency();
    const uInt globalChannel = wu.get_globalChannel();
    TableDataSource& ds = itsDSM->dataSource(wu.get_dataset());
+   ASKAPLOG_DEBUG_STR(logger,"createImagers");
 
    if (itsUpdateDir) {
        // note, this can update the parset which is then used to construct CalcCore objects

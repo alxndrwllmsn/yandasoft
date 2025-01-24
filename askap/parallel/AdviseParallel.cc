@@ -28,6 +28,7 @@
 ///
 
 #include <askap/parallel/AdviseParallel.h>
+#include <askap/parallel/ImagerParallel.h>
 #include <askap/askap/AskapError.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
 #include <askap/dataaccess/TableDataSource.h>
@@ -231,8 +232,11 @@ void AdviseParallel::calcOne(const std::string &ms)
    ASKAPDEBUGASSERT(sel);
    ASKAPLOG_DEBUG_STR(logger, "Initialised data selector");
 
+   sel->chooseCrossCorrelations();
    sel << parset();
-   ASKAPLOG_DEBUG_STR(logger, "Filled selector\n" << parset());
+   // use selection caching if requested
+   ImagerParallel::setSelectionCache(sel, parset().getString("selectioncacheprefix",""));
+
    accessors::IDataConverterPtr conv=ds.createConverter();
    ASKAPDEBUGASSERT(conv);
    ASKAPLOG_DEBUG_STR(logger, "Initialised converter");

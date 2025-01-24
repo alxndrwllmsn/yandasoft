@@ -142,6 +142,8 @@ accessors::IDataSharedIter CalcCore::makeDataIterator() const
 
    sel->chooseCrossCorrelations();
    sel << parset();
+   // Use caching if requested
+   ImagerParallel::setSelectionCache(sel, parset().getString("selectioncacheprefix",""));
 
    // This is the logic that switches on the combination of channels.
    // Earlier logic has updated the Channels parameter in the parset ....
@@ -260,6 +262,7 @@ void CalcCore::doCalc()
 
     ASKAPLOG_DEBUG_STR(logger, "Calculating NE .... for channel " << itsChannel);
     if (!itsEquation) {
+        ASKAPLOG_DEBUG_STR(logger, "Creating measurement equation, making iterator");
         createMeasurementEquation();
     } else {
         ASKAPLOG_INFO_STR(logger, "Reusing measurement equation and updating with latest model images" );
