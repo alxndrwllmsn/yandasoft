@@ -28,7 +28,7 @@ build:
       - _build
       - _install
 
-build:
+build2:
   extends: .common
   stage: build2
   before_script:
