@@ -27,6 +27,8 @@
 #ifndef SPHVISGRIDDER_TCC_
 #define SPHVISGRIDDER_TCC_
 
+#include <askap/scimath/utils/PaddingUtils.h>
+
 namespace askap
 {
   namespace synthesis
