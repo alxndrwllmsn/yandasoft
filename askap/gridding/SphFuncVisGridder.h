@@ -87,7 +87,7 @@ namespace askap
 				/// @brief Correct for gridding convolution function
 				/// @details Doing the Spheroidal grid correction is used in
 				/// various places, this static function makes it more widely available
-				/// @param image image to be corrected
+				/// @param grid image to be corrected. T is either float or double
 				/// @param[in] sf spheroidal function to use
 				/// @param[in] support support size in pixels (spheroidal
 				/// function with m=2*support will be generated)
@@ -111,7 +111,6 @@ namespace askap
 
 				/// Correct for gridding convolution function
 				/// @param image image to be corrected
-				//virtual void correctConvolution(casacore::Array<imtype>& image);
 				virtual void correctConvolution(casacore::Array<float>& image);
 				virtual void correctConvolution(casacore::Array<double>& image);
 
