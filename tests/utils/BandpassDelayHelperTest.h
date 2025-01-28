@@ -261,6 +261,14 @@ public:
       CPPUNIT_ASSERT(bdh.itsDelayValid(0, 0, 0));
       CPPUNIT_ASSERT(!bdh.itsDelayValid(1, 0, 0));
       CPPUNIT_ASSERT_DOUBLES_EQUAL(-0.01f, bdh.itsDelay(0,0,0), 1e-5);
+
+      // check delay zeroing preserving the flags (while we have a suitably setup helper class)
+      bdh.zeroDelays();
+      CPPUNIT_ASSERT(bdh.itsDelayValid.shape() == casacore::IPosition(3, 2, 1, 1));
+      CPPUNIT_ASSERT(bdh.itsDelay.shape() == casacore::IPosition(3, 2, 1, 1));
+      CPPUNIT_ASSERT(bdh.itsDelayValid(0, 0, 0));
+      CPPUNIT_ASSERT(!bdh.itsDelayValid(1, 0, 0));
+      CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, bdh.itsDelay(0,0,0), 1e-5);
    }
 
    void testAddDelay() {

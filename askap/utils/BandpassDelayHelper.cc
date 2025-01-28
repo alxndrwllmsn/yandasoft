@@ -321,8 +321,20 @@ void BandpassDelayHelper::summary() const
    ASKAPDEBUGASSERT(itsDelay.shape() == itsDelayValid.shape());
    ASKAPDEBUGASSERT(itsBandpass.shape().nelements() == 4u);
    const casacore::uInt nChan = itsBandpass.shape()[0];
+   // assess channel flag statistics
+   casacore::uInt chanWithData = 0u;
+   for (casacore::uInt chan = 0u; chan < nChan; ++chan) {
+        // not a very effective access pattern, but ok for now
+        const casacore::IPosition start(4, chan, 0, 0, 0);
+        const casacore::IPosition length(4, 1, 2, nBeam, nAnt);
+        if (casacore::anyTrue(itsBandpassValid(casacore::Slicer(start, length)))) {
+            ++chanWithData;
+        } 
+   }
 
-   ASKAPLOG_INFO_STR(logger, "Bandpass helper has been configured for "<<nAnt<<" antennas, "<<nBeam<<" beams and "<<nChan<<" channels");
+   ASKAPLOG_INFO_STR(logger, "Bandpass helper has been configured for "<<nAnt<<" antennas, "<<nBeam<<" beams and "<<nChan<<
+                             " channels ("<<chanWithData<<" valid ones)");
+   ASKAPLOG_INFO_STR(logger, "Assumed spectral resolution: "<<std::setprecision(5)<<itsResolution / 1e3<<" kHz");
    // first assess flagging per beam to know if we have the results for single beam only (or no valid data at all)
    std::set<casacore::uInt> beamsWithData;
    for (casacore::uInt beam = 0; beam < nBeam; ++beam) {
@@ -347,13 +359,17 @@ void BandpassDelayHelper::summary() const
    for (casacore::uInt ant = 0; ant < nAnt; ++ant) {
         const casacore::Matrix<bool> delayValidMtr = itsDelayValid.xyPlane(ant);
         const casacore::Matrix<float> delayMtr = itsDelay.xyPlane(ant);
-        std::ostringstream ss;
-        ss<<"antenna (1-based) "<<std::setw(2)<<(ant + 1)<<" : ";
         for (casacore::uInt pol = 0; pol < 2u; ++pol) {
-             ss<<(pol == 0 ? "XX: " : "YY: "); 
-             const casacore::Vector<bool> delayValidVec = delayValidMtr.column(pol);
-             const casacore::Vector<float> delayVec = delayMtr.column(pol);
+             std::ostringstream ss;
+             if (pol == 0) {
+                 ss<<"antenna (1-based) "<<std::setw(2)<<(ant + 1)<<" XX: ";
+             } else {
+                 ss<<"                     YY: ";
+             }
+             const casacore::Vector<bool> delayValidVec = delayValidMtr.row(pol);
+             const casacore::Vector<float> delayVec = delayMtr.row(pol);
              if (oneBeamCase) {
+                 ASKAPDEBUGASSERT(validBeam < delayValidVec.nelements());
                  if (delayValidVec[validBeam]) {
                     ss<<std::setw(9)<<std::setprecision(2)<<delayVec[validBeam]*1e9<<" ns";
                  } else {
@@ -364,11 +380,13 @@ void BandpassDelayHelper::summary() const
                  if (casacore::anyTrue(delayValidVec)) {
                      // use the fact that validBeam is the beam with valid data which has the smallest index
                      // (std::set is by default sorted in the ascending order as per C++ standard)
+                     ASKAPDEBUGASSERT(validBeam < delayValidVec.nelements());
                      float minDelay = delayVec[validBeam];
                      float maxDelay = delayVec[validBeam];
                      casacore::uInt minDelayBeam = validBeam;
                      casacore::uInt maxDelayBeam = validBeam;
                      for (casacore::uInt beam = validBeam + 1; beam < nBeam; ++beam) {
+                          ASKAPDEBUGASSERT(beam < delayValidVec.nelements());
                           if (delayValidVec[beam]) {
                               const float thisDelay = delayVec[beam];
                               if (minDelay > thisDelay) {
@@ -385,14 +403,11 @@ void BandpassDelayHelper::summary() const
                                   std::setw(9)<<std::setprecision(2)<<maxDelay*1e9<<" ns (beam "<<std::setw(2)<<maxDelayBeam<<")";
                  } else {
                    // all beams are flagged for this antenna
-                   ss<<std::setw(48)<<std::right<<"all beams flagged";
+                   ss<<std::setw(53)<<std::right<<"all beams flagged";
                  }
              } // one beam vs many beams 
-             if (pol == 0) {
-                 ss<<", ";
-             }
+             ASKAPLOG_INFO_STR(logger, "    "<<ss.str());
         } // loop by polarisations
-        ASKAPLOG_INFO_STR(logger, "    "<<ss.str());
    } // loop by antennas
 }
 

@@ -140,10 +140,12 @@ int BPDelayToolApp::run(int, char **) {
       ASKAPCHECK(inputType == "calibaccess" || inputType == "ideal", "Invalid bpdelaytool.input keyword, only 'calibaccess' and 'ideal' are supported");
       if (inputType == "ideal") {
           ASKAPLOG_INFO_STR(logger, "Initialising input bandpass with zero phase and unity amplitude for all channels");
-          // resolution doesn't matter in this case, although in principle we could read it from the parset
-          input->setIdealBandpass(1e6);
-          // a bit of the waste doing the calculation, we could've set delays to zero and raise the validity flag (may add such a method in the future)
-          // the zeroDelays() method deliberately leaves the delays intact
+          // ideally, it would be nice to encapsulate reading the parameter with its defaults; it is also used in the fill method
+          const double resolution = asQuantity(config().getString("bpdelaytool.input.resolution", "1MHz")).getValue("Hz");
+          input->setIdealBandpass(resolution);
+          // a bit of the waste doing the calculation, we could've set the delays to zero and raise the validity flag (may add such a method in the future)
+          // the zeroDelays() method deliberately leaves the delay flags intact. This intidy way seems to be ok as the "ideal" option is really an add-on
+          // just in case and is not expected to be used (much or at all)
           input->calcDelays();
       } else {
           ASKAPLOG_INFO_STR(logger, "Reading the input bandpass via the calibration solution accessor");
@@ -155,6 +157,7 @@ int BPDelayToolApp::run(int, char **) {
       if (config().isDefined("bpdelaytool.subtract")) {
           ASKAPCHECK(config().getString("bpdelaytool.subtract") == "input", "'bpdelaytool.subtract' keyword should be either 'input' or left undefined");
           ASKAPCHECK(!config().isDefined("bpdelaytool.subtract.calibaccess"), "'bpdelaytool.subtract.calibaccess' is incompatible with 'bpdelaytool.subtract=input'");
+          ASKAPLOG_INFO_STR(logger, "Delays found in the input bandpass table will be compensated");
           // this is a short cut case where we remove the delays found in the input bandpass table (to avoid reading it again)
           input->negateDelays();
       } else {
@@ -181,6 +184,7 @@ int BPDelayToolApp::run(int, char **) {
       if (config().isDefined("bpdelaytool.output.calibaccess")) {
           ASKAPLOG_INFO_STR(logger, "Storing the bandpass into the output calibration solution accessor, applying the following delays:");
           input->summary();
+          input->applyDelays();
           // writing part
           const boost::shared_ptr<accessors::ICalSolutionSource> solSrc = accessors::CalibAccessFactory::rwCalSolutionSource(config().makeSubset("bpdelaytool.output."));
           ASKAPCHECK(solSrc, "Unable to get output calibration solution source!");
