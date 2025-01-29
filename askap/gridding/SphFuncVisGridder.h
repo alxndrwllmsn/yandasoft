@@ -92,9 +92,6 @@ namespace askap
 				/// @param[in] support support size in pixels (spheroidal
 				/// function with m=2*support will be generated)
 				/// @param[in] interpolate if true, interpolate the edge values
-				//static void correctConvolution(casacore::Array<imtype>& image,
-			    //		scimath::SpheroidalFunction& sf, int support = 3,
-			    //		bool interpolate = true);
                 template<typename T>
 				static void correctConvolution(casacore::Array<T>& grid,
 					scimath::SpheroidalFunction& sf, int support = 3,
