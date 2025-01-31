@@ -130,7 +130,7 @@ robottests_no_enable_float_params:
 # setup path and library path to ensure we're testing the right thing
 # See also AXA-1996 - got caught up by the lack of these lines earlier
     - export PATH=${CDIR}/_install2/bin:${PATH}
-    - export LD_LIBRARY_PATH=${CDIR}/_install/lib:${LD_LIBRARY_PATH}
+    - export LD_LIBRARY_PATH=${CDIR}/_install2/lib:${LD_LIBRARY_PATH}
     - which cimager
     - cd tests/data/simulation/synthregression
     - python -m robot synthregression.robot
