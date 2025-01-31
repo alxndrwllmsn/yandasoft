@@ -261,7 +261,6 @@ namespace askap
                 /// @param[in] nx, ny - size of full size convolution function grid
                 /// @param[in] ccellx, celly - UV cell size after oversampling
                 /// @param[in] w - w-value for current plane
-                //void populateThisPlane(casacore::Matrix<casacore::Complex> &cfPlane,
                 void populateThisPlane(casacore::Matrix<imtypeComplex> &cfPlane,
                                        const int qnx, const int qny,
                                        const int nx, const int ny,
@@ -269,7 +268,6 @@ namespace askap
                                        const double w, const casacore::Vector<float>& ccfx,
                                        const casacore::Vector<float>& ccfy);
                 /// @brief helper method. store the convolution function to the itsConvFunc vector.
-                //void populateItsConvFunc(const casacore::Matrix<casacore::Complex> &thisPlane, const int iw, 
                 void populateItsConvFunc(const casacore::Matrix<imtypeComplex> &thisPlane, const int iw, 
                                          const int support, const CFSupport& cfSupport, const int cSize, 
                                          const int nx, const int ny);

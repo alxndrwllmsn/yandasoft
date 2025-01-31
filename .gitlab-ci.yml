@@ -69,6 +69,33 @@ test:
       junit: _build/ctest.xml
     when: always
 
+test_no_enable_float_params:
+  extends: .common
+  stage: test
+  dependencies:
+    - build_no_enable_float_params
+  before_script:
+    - sudo apt update && sudo apt install -y cmake xsltproc
+  variables:
+    CASARCFILES: ${CI_PROJECT_DIR}/_build/test_gitlab_casarc.cfg
+    TEST_DATASET_PATH: ${CI_PROJECT_DIR}/_build2/testdataset.ms
+  script:
+    - cd _build2
+    - tar -xjf base-accessors/measdata.tar.bz2
+    - "echo 'measures.directory: '${PWD}'/data' > ${CASARCFILES}"
+    - cat $CASARCFILES
+    - tar -xjf base-accessors/testdataset.tar.bz2
+    - ctest -C DartConfiguration.tcl -T test --verbose --no-compress-output
+  after_script:
+    - cd _build2
+    - askap-cmake/ctest2junit > ctest.xml
+  artifacts:
+    paths:
+      - _build2
+    reports:
+      junit: _build2/ctest.xml
+    when: always
+
 robottests:
   extends: .common
   stage: test
@@ -89,6 +116,28 @@ robottests:
     paths:
       - tests/data/simulation/synthregression    
       - _build
+    when: always
+
+robottests_no_enable_float_params:
+  extends: .common
+  stage: test
+  dependencies:
+     - build_no_enable_float_params
+  before_script:
+     - pip install robotframework
+  script:
+    - export CDIR=${PWD}
+# setup path and library path to ensure we're testing the right thing
+# See also AXA-1996 - got caught up by the lack of these lines earlier
+    - export PATH=${CDIR}/_install2/bin:${PATH}
+    - export LD_LIBRARY_PATH=${CDIR}/_install/lib:${LD_LIBRARY_PATH}
+    - which cimager
+    - cd tests/data/simulation/synthregression
+    - python -m robot synthregression.robot
+  artifacts:
+    paths:
+      - tests/data/simulation/synthregression
+      - _build2
     when: always
 
 pages:

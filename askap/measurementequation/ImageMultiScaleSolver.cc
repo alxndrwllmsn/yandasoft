@@ -256,7 +256,7 @@ namespace askap
             } else {
                 imagemath::MultiDimArrayPlaneIter fullResPlaneIter(ip.shape(fullResName));
                 //cleanArray.reference( fullResPlaneIter.getPlane( ip.valueT(fullResName), planeIter.position() ) );
-                auto refArray = ip.valueF(fullResName);
+                casacore::Array<float> refArray = ip.valueF(fullResName);
                 cleanArray.reference(fullResPlaneIter.getPlane(refArray, planeIter.position()));
             }
           }

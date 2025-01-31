@@ -526,6 +526,8 @@ namespace askap
         static casacore::Projection getProjection(const bool ewprojection, const double dec = 0.);
 
     private:
+        template <typename T>
+        static casa::Array<float> pad(casacore::Array<T>& psfSlice,const casa::IPosition& newShape);
         /// @brief image accessor
         static boost::shared_ptr<accessors::IImageAccess<>> theirImageAccessor;
 

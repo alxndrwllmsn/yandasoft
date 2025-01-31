@@ -632,7 +632,6 @@ void WProjectVisGridder::normalise(std::vector<casacore::Matrix<casacore::Comple
         }
     } // for plane
 }
-//void WProjectVisGridder::populateThisPlane(casacore::Matrix<casacore::Complex> &thisPlane,
 void WProjectVisGridder::populateThisPlane(casacore::Matrix<imtypeComplex> &thisPlane,
                                            const int qnx, const int qny, const int nx, const int ny,
                                            const double ccellx, const double ccelly, const double w,
