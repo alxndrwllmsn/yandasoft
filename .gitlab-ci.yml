@@ -77,7 +77,7 @@ test_no_enable_float_params:
   before_script:
     - sudo apt update && sudo apt install -y cmake xsltproc
   variables:
-    CASARCFILES: ${CI_PROJECT_DIR}/_build/test_gitlab_casarc.cfg
+    CASARCFILES: ${CI_PROJECT_DIR}/_build2/test_gitlab_casarc.cfg
     TEST_DATASET_PATH: ${CI_PROJECT_DIR}/_build2/testdataset.ms
   script:
     - cd _build2
