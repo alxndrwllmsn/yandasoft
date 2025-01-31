@@ -68,22 +68,22 @@ namespace askap
 
         // initialise buffers to enable a filtering of the correction
         // function in Fourier space.
-        casacore::Vector<typename askap::scimath::ComplexTypeTrait<T>::type> bufx(shape(0));
-        casacore::Vector<typename askap::scimath::ComplexTypeTrait<T>::type> bufy(shape(1));
+        casacore::Vector<std::complex<T>> bufx(shape(0));
+        casacore::Vector<std::complex<T>> bufy(shape(1));
 
         // note grdsf(1)=0.
         for (int ix=0; ix<shape(0); ++ix)
         {
             const double nux=std::abs(double(ix-xHalfSize))/double(xHalfSize);
             const double val = sf(nux);
-            bufx(ix) = typename askap::scimath::ComplexTypeTrait<T>::type(val,0.0);
+            bufx(ix) = std::complex<T>(val,0.);
         }
 
         for (int iy=0; iy<shape(1); ++iy)
         {
             const double nuy=std::abs(double(iy-yHalfSize))/double(yHalfSize);
             const double val = sf(nuy);
-            bufy(iy) = typename askap::scimath::ComplexTypeTrait<T>::type(val,0.0);
+            bufy(iy) = std::complex<T>(val,0.);
         }
 
         if (interpolate) {

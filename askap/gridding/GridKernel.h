@@ -37,7 +37,6 @@
 #include <casacore/casa/Arrays/Matrix.h>
 #include <casacore/casa/BasicSL/Complex.h>
 
-#include <askap/askap/AskapImageType.h>
 
 namespace askap {
     namespace synthesis {

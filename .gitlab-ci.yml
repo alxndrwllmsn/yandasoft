@@ -118,6 +118,7 @@ robottests:
       - _build
     when: always
 
+<<<<<<< HEAD
 test_no_enable_float_params:
   extends: .common
   stage: test
@@ -143,6 +144,28 @@ test_no_enable_float_params:
       - _build2
     reports:
       junit: _build2/ctest.xml
+=======
+robottests_no_enable_float_params:
+  extends: .common
+  stage: test
+  dependencies:
+     - build_no_enable_float_params
+  before_script:
+     - pip install robotframework
+  script:
+    - export CDIR=${PWD}
+# setup path and library path to ensure we're testing the right thing
+# See also AXA-1996 - got caught up by the lack of these lines earlier
+    - export PATH=${CDIR}/_install2/bin:${PATH}
+    - export LD_LIBRARY_PATH=${CDIR}/_install/lib:${LD_LIBRARY_PATH}
+    - which cimager
+    - cd tests/data/simulation/synthregression
+    - python -m robot synthregression.robot
+  artifacts:
+    paths:
+      - tests/data/simulation/synthregression
+      - _build2
+>>>>>>> bffc586 (AXA-1634. Modified code to address PR's review comments)
     when: always
 
 pages:

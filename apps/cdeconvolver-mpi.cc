@@ -806,7 +806,6 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     LOFAR::ParameterSet cleanset = subset.makeSubset("solver.Clean.");
 
     Float sigmaValue(0);
-    //Matrix<imtype> madMap;
     Matrix<float> madMap;
     // could make the following a function that returns the updated parset and add to configure line
     const std::string parName = "threshold.minorcycle";

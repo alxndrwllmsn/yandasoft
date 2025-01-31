@@ -138,15 +138,7 @@ namespace askap
 //       casa::convertArray<float, imtype>(floatPSFSlice, scimath::PaddingUtils::centeredSubArray(psfSlice,newShape));
 //       #endif
 
-       static_assert(std::is_floating_point_v<T>,"T is neither a float or double");
-       casa::Array<float> floatPSFSlice;
-       if constexpr ( std::is_same_v<T,float> ) {
-          floatPSFSlice = scimath::PaddingUtils::centeredSubArray(psfSlice,newShape);
-       } else {
-          floatPSFSlice.resize(newShape);
-          //casa::Array<float> floatPSFSlice(newShape);
-          casa::convertArray<float, double>(floatPSFSlice, scimath::PaddingUtils::centeredSubArray(psfSlice,newShape));
-       }
+       casa::Array<float> floatPSFSlice = pad(psfSlice,newShape);
         
        // hack for debugging only
        //floatPSFSlice = imageHandler().read("tmp.img").nonDegenerate();
@@ -229,6 +221,24 @@ namespace askap
        }
        beam[2] = pa;
        return beam;
+    }
+
+    template<>
+    inline casa::Array<float> 
+    SynthesisParamsHelper::pad(casacore::Array<float>& psfSlice,const casa::IPosition& newShape)
+    {
+       casa::Array<float> floatPSFSlice = scimath::PaddingUtils::centeredSubArray(psfSlice,newShape); 
+       return floatPSFSlice;
+    }
+
+    template<>
+    inline casa::Array<float>
+    SynthesisParamsHelper::pad(casacore::Array<double>& psfSlice,const casa::IPosition& newShape)
+    {
+        casa::Array<float> floatPSFSlice;
+        floatPSFSlice.resize(newShape);
+        casa::convertArray<float, double>(floatPSFSlice, scimath::PaddingUtils::centeredSubArray(psfSlice,newShape));
+        return floatPSFSlice;
     }
   }
 }

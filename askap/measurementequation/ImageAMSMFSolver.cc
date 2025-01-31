@@ -507,10 +507,8 @@ namespace askap
                             imagemath::MultiDimArrayPlaneIter fullResPlaneIter(ip.shape(fullResName));
                             imagemath::MultiDimArrayPlaneIter it(casacore::IPosition(3,3,3));
                     
-                            auto tempArray = ip.valueF(fullResName);
+                            casacore::Array<float> tempArray = ip.valueF(fullResName);
                             cleanVec(order).reference(fullResPlaneIter.getPlane( tempArray,planeIter.position()));
-                            //cleanVec(order).reference(
-                            //    fullResPlaneIter.getPlane(ip.valueF(fullResName), planeIter.position() ) );
                         }
                     }
 
