@@ -62,6 +62,7 @@ tWeightsLogGather
 tMajorCycleComms
 tClearMSCache
 tDeconvolveTimerUtils
+bpdelaytool
 )
 
 

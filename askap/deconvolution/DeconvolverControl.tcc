@@ -1,6 +1,6 @@
 /// @file DeconvolverControl.tcc
 /// @brief Base class for Control of Deconvolver
-/// @details All the Controling is delegated to this class so that
+/// @details All the Controlling is delegated to this class so that
 /// more control is possible.
 /// @ingroup Deconvolver
 ///
@@ -53,7 +53,7 @@ namespace askap {
                 itsTargetFlux(T(0.0)),itsGain(1.0), itsTolerance(1e-4),
                 itsFractionalThreshold(T(0.0)),itsAbsoluteThreshold(0.0),
                 itsPSFWidth(0), itsDetectDivergence(False), itsDetectMildDivergence(False),
-                itsDivergenceLevels({1.1f,2.0f,1.1f}), itsDeepCleanMode(False), itsLambda(T(100.0))
+                itsDivergenceLevels({1.1f,2.0f,2.0f,0.05f}), itsDeepCleanMode(False), itsLambda(T(100.0))
         {
             // Install a signal handler to count signals so receipt of a signal
             // can be used to terminate the minor-cycle loop
@@ -143,11 +143,12 @@ namespace askap {
 
             // Check for mild divergence - just go to next major cycle
             if (detectMildDivergence()) {
-                // next component > 1.1x smallest component this cycle & have done >25% of iterations
+                // next component > 1.1x smallest component this cycle & have done >5% of iterations
                 if ( state.objectiveFunction() > itsDivergenceLevels[0] * state.smallestObjectiveFunction() &&
-                     state.currentIter() > 0.25 * targetIter())
+                     state.currentIter() > itsDivergenceLevels[3] * targetIter())
                 {
-                    ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge - skip to next major cycle");
+                    ASKAPLOG_INFO_STR(decctllogger, "Clean starting to diverge at "<<state.objectiveFunction()<<" > "
+                    << itsDivergenceLevels[0] << "*" << state.smallestObjectiveFunction() << " - stopping minor cycles");
                     setTerminationCause(DIVERGING);
                     return True;
                 }
@@ -223,9 +224,9 @@ namespace askap {
             setPSFWidth(parset.getInt32("psfwidth", 0));
             setDetectDivergence(parset.getBool("detectdivergence",true));
             setDetectMildDivergence(parset.getBool("detectmilddivergence",false));
-            const std::vector<casa::Float> levels = parset.getFloatVector("divergencelevels",{1.1f,2.0f,1.1f});
-            ASKAPCHECK(levels.size()==3 && levels[0]>1 && levels[1]>1 && levels[2]>1,
-                "divergencelevels parameter should have 3 entries, each > 1.0");
+            const std::vector<casa::Float> levels = parset.getFloatVector("divergencelevels",{1.1f,2.0f,2.0f,0.05f});
+            ASKAPCHECK(levels.size()==4 && levels[0]>1 && levels[1]>1 && levels[2]>1,
+                "divergencelevels parameter should have 4 entries, each first three > 1.0");
             setDivergenceLevels(levels);
         }
 

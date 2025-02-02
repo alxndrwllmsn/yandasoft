@@ -43,6 +43,7 @@ ASKAP_LOGGER(logger, ".measurementequation.imagefftequation");
 #include <askap/profile/AskapProfiler.h>
 #include <askap/gridding/GenericUVWeightAccessor.h>
 #include <askap/gridding/UVWeightParamsHelper.h>
+#include <askap/gridding/VisGridderFactory.h>
 #include <askap/measurementequation/ImageParamsHelper.h>
 
 #include <casacore/scimath/Mathematics/RigidVector.h>
@@ -107,7 +108,7 @@ namespace askap
     }
 
 
-    ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params& ip,
+    ImageFFTEquation::ImageFFTEquation(const askap::scimath::Params::ShPtr& ip,
         IDataSharedIter& idi, IVisGridder::ShPtr gridder,
         const LOFAR::ParameterSet& parset) : scimath::Equation(ip),
       askap::scimath::ImagingEquation(ip), itsGridder(gridder), itsIdi(idi),
@@ -148,6 +149,14 @@ namespace askap
            ASKAPLOG_INFO_STR(logger, "Will reuse the PSF/PCF grids each major cycle");
        }
        itsSphFuncOffsetFields = parset.getBool("sphfuncforoffset", false);
+       if (itsSphFuncOffsetFields  && !itsAltGridder) {
+          const string gridder = parset.getString("gridder","");
+          LOFAR::ParameterSet altParset = parset.makeSubset("");
+          altParset.subtractSubset("gridder."+gridder);
+          altParset.replace("gridder","SphFunc");
+          altParset.adoptCollection(parset.makeSubset("gridder."+gridder),"gridder.SphFunc");
+          itsAltGridder = VisGridderFactory::make(altParset);
+       }
     }
 
     /// @brief define whether to use an alternative gridder for the PSF
@@ -202,6 +211,7 @@ namespace askap
         static_cast<askap::scimath::Equation*>(this)->operator=(other);
         itsIdi=other.itsIdi;
         itsGridder = other.itsGridder;
+        itsAltGridder = other.itsAltGridder;
         itsSphFuncPSFGridder = other.itsSphFuncPSFGridder;
         itsBoxPSFGridder = other.itsBoxPSFGridder;
         itsUsePreconGridder = other.itsUsePreconGridder;
@@ -442,8 +452,7 @@ namespace askap
           if (first || !itsSphFuncOffsetFields) {
             itsModelGridders[imageName]=itsGridder->clone();
           } else {
-            boost::shared_ptr<SphFuncVisGridder> gridder(new SphFuncVisGridder);
-            itsModelGridders[imageName]= gridder;
+            itsModelGridders[imageName]= itsAltGridder->clone();
             ASKAPLOG_INFO_STR(logger, "Using Spheroidal gridder for "<<imageName);
           }
         }
@@ -461,8 +470,7 @@ namespace askap
           if (first || !itsSphFuncOffsetFields) {
             itsResidualGridders[imageName]=itsGridder->clone();
           } else {
-            boost::shared_ptr<SphFuncVisGridder> gridder(new SphFuncVisGridder);
-            itsResidualGridders[imageName]= gridder;
+            itsResidualGridders[imageName]= itsAltGridder->clone();
           }
           assignUVWeightAccessorIfNecessary(itsResidualGridders[imageName], wtAcc);
         }
@@ -471,9 +479,11 @@ namespace askap
           if (itsBoxPSFGridder) {
              boost::shared_ptr<BoxVisGridder> psfGridder(new BoxVisGridder);
              itsPSFGridders[imageName] = psfGridder;
-          } else if (itsSphFuncPSFGridder || (!first && itsSphFuncOffsetFields)) {
+          } else if (itsSphFuncPSFGridder) {
              boost::shared_ptr<SphFuncVisGridder> psfGridder(new SphFuncVisGridder);
              itsPSFGridders[imageName] = psfGridder;
+          } else if (!first && itsSphFuncOffsetFields) {
+             itsPSFGridders[imageName] = itsAltGridder->clone();
           } else {
              itsPSFGridders[imageName] = itsGridder->clone();
           }

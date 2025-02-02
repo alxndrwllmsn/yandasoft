@@ -914,7 +914,6 @@ namespace askap
     }
 
     /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
-    /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
     /// @param[in] image the array to oversample
     /// @param[in] osfactor extra oversampling factor
     /// @param[in] norm bool true if we want to renormalise the array (e.g., keep psf peak at 1)
@@ -1153,6 +1152,66 @@ namespace askap
             }
         }
     }
+
+    void SynthesisParamsHelper::adjustCellsize(Array<float> & pixels, double inputInc, double outputInc, 
+        uInt inSize, uInt outSize)
+    {
+        const double tol = 1e-5;
+        ASKAPDEBUGASSERT(inputInc != 0);
+        const double fac = outputInc / inputInc;
+        ASKAPCHECK(fac > 1-tol,"Input cellsize should be smaller than or equal to output cellsize");
+        if (abs(fac-1) > tol) {
+            // try to downsample - need to use exact cellsize ratio but
+            // need to make sure image sizes are good FFT sizes for downsampling
+            // We try padding or cropping the input image
+            bool found = false;
+            uInt n1 = inSize;
+            for (int k = 0; k < inSize/2 && !found ; k++) {
+                // first try padding
+                n1 = scimath::goodFFTSize(inSize + 2 * k);
+                const uInt n2 = scimath::goodFFTSize(static_cast<int>(lround(n1/fac)));
+                found = abs(double(n1)/n2 - fac) < tol;
+                ASKAPLOG_DEBUG_STR(logger,"tried n1="<<n1<<", n2="<<n2<<", fac="<<fac<<", n1/n2="<<double(n1)/n2<<", match="<<found);
+                // try cropping if the input image covers a larger area than the output
+                if (!found && k > 0) {
+                    n1 = scimath::goodFFTSize(inSize - 2 * k);
+                    if (inputInc*n1 > outputInc*outSize) {
+                        const uInt n2 = scimath::goodFFTSize(static_cast<int>(lround(n1/fac)));
+                        found = abs(double(n1)/n2 - fac) < tol;
+                        ASKAPLOG_DEBUG_STR(logger,"tried n1="<<n1<<", n2="<<n2<<", fac="<<fac<<", n1/n2="<<double(n1)/n2<<", match="<<found);
+                    } 
+                }
+            }
+            ASKAPCHECK(found,"No valid pixel ratio found for given cell sizes "<<inputInc<<" and "<<outputInc);
+            // pad or crop the pixels array
+            if (n1 > inSize) {
+                // pad
+                Array<float> imagePixels(IPosition(4,n1,n1,1,1),0.0f);
+                // make reference to central area
+                IPosition blc(4, n1/2 - inSize/2, n1/2 - inSize/2, 0, 0);
+                IPosition trc(4, n1/2 + inSize/2 - 1, n1/2 + inSize/2 - 1, 0, 0);
+                Array<float> subImage = imagePixels(blc, trc);
+                // copy in the pixels
+                subImage = pixels;
+                SynthesisParamsHelper::downsample(imagePixels,fac,false);
+                // replace original array with the downsampled array
+                pixels.reference(imagePixels);
+            } else if (n1 < inSize) {
+                // crop
+                IPosition blc(4, inSize/2 - n1/2, inSize/2 - n1/2, 0, 0);
+                IPosition trc(4, inSize/2 + n1/2 - 1, inSize/2 + n1/2 - 1, 0, 0);
+                Array<float> imagePixels;
+                // make copy of central area
+                imagePixels = pixels(blc, trc);
+                SynthesisParamsHelper::downsample(imagePixels,fac,false);
+                // replace original array with the downsampled array
+                pixels.reference(imagePixels);
+            } else {
+                SynthesisParamsHelper::downsample(pixels,fac,true);
+            }
+        }
+    }
+
 
     boost::shared_ptr<casacore::TempImage<float> >
     SynthesisParamsHelper::tempImage(const askap::scimath::Params& ip,

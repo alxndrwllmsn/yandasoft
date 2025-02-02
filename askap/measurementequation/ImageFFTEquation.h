@@ -93,11 +93,11 @@ namespace askap
           accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder);
 
         /// Standard constructor with specified gridder
-        /// @param ip Parameters
+        /// @param ip Parameters -shared
         /// @param idi Data iterator
         /// @param gridder Shared pointer to a gridder
         /// @param parset parameter set to check for PSF/PCF options.
-        ImageFFTEquation(const askap::scimath::Params& ip,
+        ImageFFTEquation(const askap::scimath::Params::ShPtr& ip,
           accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder,
           const LOFAR::ParameterSet& parset);
 
@@ -217,8 +217,8 @@ namespace askap
 
       private:
 
-      /// Pointer to prototype gridder
-        IVisGridder::ShPtr itsGridder;
+      /// Pointer to prototype gridders
+        IVisGridder::ShPtr itsGridder, itsAltGridder;
 
         /// Map of gridders for the model
         mutable std::map<string, IVisGridder::ShPtr> itsModelGridders;
