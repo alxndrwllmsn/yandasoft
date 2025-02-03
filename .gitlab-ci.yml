@@ -118,33 +118,6 @@ robottests:
       - _build
     when: always
 
-<<<<<<< HEAD
-test_no_enable_float_params:
-  extends: .common
-  stage: test
-  dependencies:
-    - build_no_enable_float_params
-  before_script:
-    - sudo apt update && sudo apt install -y cmake xsltproc
-  variables:
-    CASARCFILES: ${CI_PROJECT_DIR}/_build2/test_gitlab_casarc.cfg
-    TEST_DATASET_PATH: ${CI_PROJECT_DIR}/_build2/testdataset.ms
-  script:
-    - cd _build2
-    - tar -xjf base-accessors/measdata.tar.bz2
-    - "echo 'measures.directory: '${PWD}'/data' > ${CASARCFILES}"
-    - cat $CASARCFILES
-    - tar -xjf base-accessors/testdataset.tar.bz2
-    - ctest -C DartConfiguration.tcl -T test --verbose --no-compress-output
-  after_script:
-    - cd _build2
-    - askap-cmake/ctest2junit > ctest.xml
-  artifacts:
-    paths:
-      - _build2
-    reports:
-      junit: _build2/ctest.xml
-=======
 robottests_no_enable_float_params:
   extends: .common
   stage: test
@@ -165,7 +138,6 @@ robottests_no_enable_float_params:
     paths:
       - tests/data/simulation/synthregression
       - _build2
->>>>>>> bffc586 (AXA-1634. Modified code to address PR's review comments)
     when: always
 
 pages:
