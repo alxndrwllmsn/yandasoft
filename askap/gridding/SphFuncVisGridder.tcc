@@ -100,7 +100,7 @@ namespace askap
             // Some more advanced gridders have support>3 (e.g. w-proj).
             //
             int support = 3;
-            const typename askap::scimath::ComplexTypeTrait<T>::type maxBefore = bufx(shape(0)/2);
+            const std::complex<T> maxBefore = bufx(shape(0)/2);
             scimath::fft(bufx, true);
             scimath::fft(bufy, true);
             for (int ix=0; ix<shape(0)/2-support; ++ix) {
@@ -118,7 +118,7 @@ namespace askap
             scimath::fft(bufx, false);
             scimath::fft(bufy, false);
             // Normalise after filtering.
-            const typename askap::scimath::ComplexTypeTrait<T>::type normalisation = maxBefore / bufx(shape(0)/2);
+            const std::complex<T> normalisation = maxBefore / bufx(shape(0)/2);
             bufx *= normalisation;
             bufy *= normalisation;
         }
