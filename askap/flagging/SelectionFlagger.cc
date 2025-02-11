@@ -111,8 +111,12 @@ SelectionFlagger:: SelectionFlagger(const LOFAR::ParameterSet& parset,
 
     if (parset.isDefined("uvrange")) {
         mySelection.setUvDistExpr(parset.getString("uvrange"));
-        // Specifying a uvrange does results in flagging of baselines
-        itsRowCriteria.push_back(BASELINE);
+
+        // Specifying a uvrange results in row selection
+        itsRowCriteria.push_back(TEN);
+
+        // Create a table expression over a MS representing the selection
+        itsTEN = mySelection.toTableExprNode(&myMS);
     }
 
     if (parset.isDefined("autocorr")) {
@@ -278,6 +282,9 @@ bool SelectionFlagger::dispatch(const std::vector<SelectionCriteria>& v,
             case SelectionFlagger::AUTOCORR:
                 if (!checkAutocorr(di, row)) return false;
                 break;
+            case SelectionFlagger::TEN:
+                if (!tdi->isSelected(itsTEN,row)) return false;
+                break;
             default:
                 break;
         }
@@ -312,19 +319,19 @@ void SelectionFlagger::checkDetailed(const IDataSharedIter& di,
         }
 
         if (!dryRun) {
-            flag(row, Slice(startCh,stopCh,1,true), Slice()) = true;
+            flag(Slice(), Slice(startCh,stopCh,1,false), row) = true;
         }
-        itsStats.visFlagged += (stopCh-startCh+1)*flag.nplane();
+        itsStats.visFlagged += (stopCh-startCh+1)*flag.nrow();
     }
 }
 
 void SelectionFlagger::flagRow(casacore::Cube<casacore::Bool>& flag, const casacore::uInt row, const bool dryRun)
 {
 
-    itsStats.visFlagged += flag.shape()(1) * flag.shape()(2);
+    itsStats.visFlagged += flag.shape()(1) * flag.shape()(0);
     itsStats.rowsFlagged++;
 
     if (!dryRun) {
-        flag(casacore::Slice(row),casacore::Slice(),casacore::Slice()) = true;
+        flag(casacore::Slice(),casacore::Slice(),casacore::Slice(row)) = true;
     }
 }

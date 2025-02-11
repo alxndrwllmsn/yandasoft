@@ -50,7 +50,7 @@ using namespace askap::synthesis;
 class CcontsubtractApp : public askap::Application
 {
     public:
-        virtual int run(int argc, char* argv[]) override
+        int run(int argc, char* argv[]) final
         {
             StatReporter stats;
 
@@ -66,14 +66,13 @@ class CcontsubtractApp : public askap::Application
                     }
                 }
                 // We cannot issue log messages until MPI is initialized!
-                ContSubtractParallel csub(comms, subset);
 
                 ASKAPLOG_INFO_STR(logger, "ASKAP synthesis continuum subtraction application " << ASKAP_PACKAGE_VERSION);
 
                 if (comms.isMaster()) {
                     ASKAPLOG_INFO_STR(logger, "Parset file contents:\n" << config());
                 }
-
+                ContSubtractParallel csub(comms, subset);
                 csub.init();
                 csub.doSubtraction();
             } catch (const askap::AskapError& e) {
@@ -90,7 +89,7 @@ class CcontsubtractApp : public askap::Application
         }
 
     private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
             return pkgVersion;
         }

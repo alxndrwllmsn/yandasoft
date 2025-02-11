@@ -33,6 +33,9 @@
 // own includes
 #include <askap/gridding/GenericUVWeightBuilder.h>
 
+#include <askap/askap/AskapLogging.h>
+ASKAP_LOGGER(logger, ".gridding.genericuvweightbuilder");
+
 namespace askap {
 
 namespace synthesis {
@@ -52,6 +55,26 @@ GenericUVWeightBuilder::GenericUVWeightBuilder(casacore::uInt coeffBeam,
    // could've used the constructor directly, but it is safer this way and more clear that we won't have a dangling pointer
    const boost::shared_ptr<GenericUVWeightIndexTranslator> translator(new GenericUVWeightIndexTranslator(coeffBeam, coeffField, coeffSource));
    setTranslator(translator);
+}
+
+/// @brief reset the object to a pristine state like after the default constructor
+/// @details This method is a bit of the technical debt. It is not necessary for the uv-weight framework itself, but
+/// needed to be able to reuse normal equations reduction code via the EstimatorAdapter. As defined in the normal equations
+/// class hierarchy, it is supposed to restore the state of object as it would be after the default constructor. Note, in
+/// the case of this class, the default constructor actually implies using zero for all coefficients (coeffBeam, etc). So if the
+/// original object was setup with non-trivial mapping it would change. It is, however, expected that we won't add new data
+/// to the builder following either reset or merge call (in our use case, reset could happen as part of the merge and only after
+/// the appropriate portion of data has already been accumulated).
+void GenericUVWeightBuilder::reset() {
+   // although we don't expect to exercise index translation following a call to either reset or merge methods, assign the default translation so
+   // the behaviour matches what has been documented in the interface of normal equations. In principle, the user can call setTranslator directly
+   // later on to set the translation with desired parameters if needed.
+   const boost::shared_ptr<GenericUVWeightIndexTranslator> translator(new GenericUVWeightIndexTranslator(0u, 0u, 0u));
+   setTranslator(translator);
+   itsUSize = 0u;
+   itsVSize = 0u;
+   itsNPlanes = 0u;
+   itsWeights.clear();
 }
 
 /// @brief obtain weight grid for a given index
@@ -148,6 +171,7 @@ UVWeightCollection& GenericUVWeightBuilder::finalise(const IUVWeightCalculator &
    // we can add OpenMP parallelism later for either index or plane loop (or both), if required
    // (although care must be taken with slice creation as this part is not thread safe)
    for (std::set<casacore::uInt>::const_iterator ci = indices.begin(); ci != indices.end(); ++ci) {
+        ASKAPLOG_DEBUG_STR(logger, "Finalising uv-weights for (generalised) index "<<*ci);
         ASKAPDEBUGASSERT(itsWeights.exists(*ci));
         casacore::Cube<float> &cube = itsWeights.get(*ci);
         for (casacore::uInt plane = 0; plane < cube.nplane(); ++plane) {
@@ -157,6 +181,43 @@ UVWeightCollection& GenericUVWeightBuilder::finalise(const IUVWeightCalculator &
    }
 
    return itsWeights;
+}
+
+/// @brief write the object to a blob stream
+/// @param[in] os the output stream
+void GenericUVWeightBuilder::writeToBlob(LOFAR::BlobOStream& os) const
+{
+   // figure out translation coefficients (although we could've added special methods to get them instead). Note, this is done more or less out
+   // of perfectionism, we don't expect to use index translation after serialisation / deserialisation cycle. Could even leave the translator object
+   // unset as a guard against using this logic after merge, but it is likely to trip other cross-checks too.  
+   const casacore::uInt coeffBeam = indexOf(1u, 0u, 0u);
+   const casacore::uInt coeffField = indexOf(0u, 1u, 0u);
+   const casacore::uInt coeffSource = indexOf(0u, 0u, 1u);
+   
+   os.putStart("GenericUVWeightBuilder", theirPayloadVersion); 
+   itsWeights.writeToBlob(os);
+   // technically, we only need to store collection. It really feels like we need two kinds of builders, one to build via accumulation and 
+   // the other via merge with pre-accumulated parts. 
+   os << itsUSize << itsVSize << itsNPlanes << coeffBeam << coeffField << coeffSource;
+   os.putEnd(); 
+}
+
+/// @brief read the object from a blob stream
+/// @param[in] is the input stream
+/// @note Not sure whether the parameter should be made const or not
+void GenericUVWeightBuilder::readFromBlob(LOFAR::BlobIStream& is)
+{
+   const int version = is.getStart("GenericUVWeightBuilder");
+   ASKAPCHECK(version == theirPayloadVersion, "Payload version mismatch reading from blob");
+   itsWeights.readFromBlob(is);
+   // technically, we only need to ship around the collection itself for our use case. But get other fields as well for completeness
+   is >> itsUSize >> itsVSize >> itsNPlanes;
+   // read translation coefficients and recreate generic translator from scratch
+   casacore::uInt coeffBeam, coeffField, coeffSource;
+   is >> coeffBeam >> coeffField >> coeffSource;
+   const boost::shared_ptr<GenericUVWeightIndexTranslator> translator(new GenericUVWeightIndexTranslator(coeffBeam, coeffField, coeffSource));
+   setTranslator(translator);
+   is.getEnd();
 }
 
 } // namespace synthesis

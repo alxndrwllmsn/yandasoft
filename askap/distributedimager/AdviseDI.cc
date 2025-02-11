@@ -31,6 +31,7 @@
 #include <askap/parallel/ImagerParallel.h>
 #include <askap/askap/AskapError.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
+#include <askap/scimath/fft/FFTUtils.h>
 #include <askap/dataaccess/TableDataSource.h>
 #include <askap/dataaccess/ParsetInterface.h>
 #include <askap/dataaccess/SharedIter.h>
@@ -209,10 +210,12 @@ void AdviseDI::prepare() {
 
     // need to calculate the allocations too.
 
-    ASKAPLOG_INFO_STR(logger,"Testing for Channels");
+    ASKAPLOG_DEBUG_STR(logger,"Testing for Channels");
     vector<int> itsChannels = getChannels();
-    ASKAPLOG_INFO_STR(logger,"Testing for Frequencies");
+    ASKAPASSERT(itsChannels.size() > 2u);
+    ASKAPLOG_DEBUG_STR(logger,"Testing for Frequencies");
     vector<double> itsFrequencies = getFrequencies();
+    ASKAPASSERT(itsFrequencies.size() > 2u);
 
     bool user_defined_channels = false;
     bool user_defined_frequencies = false;
@@ -423,6 +426,8 @@ void AdviseDI::prepare() {
 
         size_t n = itsChannels[0];
         const size_t st = itsChannels[1];
+        ASKAPCHECK(st < itsInputFrequencies.size(), "Start channel in the selection ("<<st<<
+                   ") is supposed to be less than the number of channels available ("<<itsInputFrequencies.size()<<")");
 
         if (st + n > itsInputFrequencies.size()){
             ASKAPLOG_WARN_STR(logger, "Requested nchan > available channels; truncating");
@@ -726,7 +731,7 @@ casacore::MVFrequency oneEdge, casacore::MVFrequency otherEdge) const {
     return matches;
 }
 
-void AdviseDI::updateDirectionFromWorkUnit(askap::cp::ContinuumWorkUnit& wu) {
+void AdviseDI::updateDirectionFromWorkUnit(const askap::cp::ContinuumWorkUnit& wu) {
 
   string wu_dataset = wu.get_dataset();
   std::vector<std::string> ms = getDatasets();
@@ -805,14 +810,10 @@ void AdviseDI::addMissingParameters(bool extra)
      }
      else {
          ASKAPCHECK(!itsParset.getBool("Images.nyquistgridding",false) && !itsParset.isDefined("Images.griddingcellsize"),
-             "Individual image cellsizes are not currently allowed with Nyquist gridding");
+             "Individual image cellsizes are not allowed with Nyquist gridding");
      }
      if (!itsParset.isDefined("Images."+imageNames[img]+".shape")) {
          shapeNeeded = true;
-     }
-     else {
-         ASKAPCHECK(!itsParset.getBool("Images.nyquistgridding",false) && !itsParset.isDefined("Images.griddingcellsize"),
-             "Individual image shapes are not currently allowed with Nyquist gridding");
      }
 
      param = "Images."+imageNames[img]+".frequency";
@@ -830,12 +831,10 @@ void AdviseDI::addMissingParameters(bool extra)
 
        if (itsParset.isDefined("Images.direction") ) {
          const std::vector<std::string> direction = itsParset.getStringVector("Images.direction");
-         const double ra = SynthesisParamsHelper::convertQuantity(direction[0],"rad");
-         const double dec = SynthesisParamsHelper::convertQuantity(direction[1],"rad");
-         const casacore::MVDirection itsDirection = casacore::MVDirection(ra,dec);
+         const MDirection mdir = asMDirection(direction);
 
          // Only J2000 is implemented at the moment.
-         string pstr = "["+printLon(itsDirection)+","+printLat(itsDirection)+", J2000]";
+         string pstr = "["+printLon(mdir)+","+printLat(mdir)+", J2000]";
          ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param << " (obtained from Images.direction) : " << pstr);
          itsParset.add(param, pstr);
        } else {
@@ -948,9 +947,9 @@ void AdviseDI::addMissingParameters(bool extra)
 
        param = "Images.shape"; // if image shape is undefined, use the advice.
        if (shapeNeeded && !itsParset.isDefined(param)) {
-           const double fieldSize = advice.squareFieldSize(1); // in deg
-           const long lSize = long(fieldSize * 3600 / cellSize[0]) + 1;
-           const long mSize = long(fieldSize * 3600 / cellSize[1]) + 1;
+           const double fieldSize = advice.squareFieldSize(1) * 3600; // in arcsec
+           const int lSize = scimath::goodFFTSize(static_cast<int>(fieldSize / cellSize[0]) + 1);
+           const int mSize = scimath::goodFFTSize(static_cast<int>(fieldSize / cellSize[1]) + 1);
            string pstr = "["+toString(lSize)+","+toString(mSize)+"]";
            ASKAPLOG_INFO_STR(logger, "  Advising on parameter " << param <<": " << pstr);
            itsParset.add(param, pstr);

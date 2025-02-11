@@ -1,4 +1,4 @@
-/// @file cdeconvolver.cc
+/// @file cdeconvolver-mpi.cc
 ///
 /// @brief Image deconvolution program
 ///
@@ -56,7 +56,7 @@
 #include <askap/imageaccess/WeightsLog.h>
 #include <askap/askapparallel/AskapParallel.h>
 #include <askap/imagemath/utils/MultiDimArrayPlaneIter.h>
-#include <askap/scimath/fft/FFTWrapper.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/scimath/utils/SpheroidalFunction.h>
 #include <askap/gridding/SphFuncVisGridder.h>
 
@@ -86,7 +86,7 @@ class CdeconvolverApp : public askap::Application
         int itsBeamReferenceChannel;
         LOFAR::ParameterSet itsParset;
 
-        void getRealFFT(casacore::Array<casacore::Float> &fArray, casacore::Array<casacore::Complex> &cArray);
+        void getRealFFT(casacore::Matrix<casacore::Float> &fArray, casacore::Matrix<casacore::Complex> &cArray);
 
         // Precondition and deconvolve the inputs to produce the outputs, note inputs are modified (used as scratch)
         void doTheWork(const LOFAR::ParameterSet subset,
@@ -130,7 +130,7 @@ class CdeconvolverApp : public askap::Application
             return std::make_pair(first_chan, num_chans);
         }
 
-        virtual int run(int argc, char* argv[]) override
+        int run(int argc, char* argv[]) final
         {
             askap::askapparallel::AskapParallel comms(argc, const_cast<const char**>(argv));
             try {
@@ -194,6 +194,10 @@ class CdeconvolverApp : public askap::Application
             // file to store the statistics (optional)
             const std::string outputStats = subset.getString("outputStats","");
 
+            // are we applying custom weights per grid?
+            const std::vector<float> weights(subset.getFloatVector("weights",std::vector<float>(nCubes,1.0f)));
+            ASKAPCHECK(weights.size() == nCubes,"Number of weights values must match number of input grids");
+
             // Check if we're loading real/imag fits cubes
             bool combineRealImag = false;
             bool imagePlaneInput = false;
@@ -212,7 +216,7 @@ class CdeconvolverApp : public askap::Application
                 combineRealImag = true;
                 ASKAPLOG_INFO_STR(logger, "Assuming CASA ADIOS2 real+imag uv-grid input");
             } else {
-                ASKAPLOG_INFO_STR(logger,"Trying to work out casa image data type");
+                ASKAPLOG_INFO_STR(logger,"Trying to work out casa image data type for "<<visGridCubeNames[0]);
                 shared_ptr<casacore::LatticeBase> lattp(casacore::ImageOpener::openImage(visGridCubeNames[0]));
                 imagePlaneInput = (lattp->dataType() == casacore::DataType::TpFloat);
                 if (imagePlaneInput) {
@@ -250,25 +254,46 @@ class CdeconvolverApp : public askap::Application
             // Lets load in a cube
 
             // First get the shape and coordinates
+            // The input grids may vary in size - for uv grids we can deal with this by finding the largest
+            // one. Image grids will have to match.
             casacore::IPosition shape;
+            casacore::Vector<casacore::IPosition> shapes(nCubes);
             casacore::CoordinateSystem coordSys;
             // gaussian taper wants to know field of view
             casacore::Vector<casacore::Double> fov(2,0.0);
+            uInt iMax = 0;
+            for (uInt i = 0; i < nCubes; i++) {
+                if (combineRealImag) {
+                    // in this case we only support image plane coordinate system
+                    shapes(i) = iaccF->shape(visGridCubeNames[i]+".real");
+                } else if (imagePlaneInput) {
+                    shapes(i) = iaccF->shape(visGridCubeNames[i]);
+                } else{
+                    // probably UV coordinate system - use parset
+                    shapes(i) = iaccC->shape(visGridCubeNames[i]);
+                }
+                if (shape.nelements()==0) {
+                    shape = shapes(i);
+                    iMax = i;
+                } else if (imagePlaneInput) {
+                    ASKAPCHECK(shape == shapes(i),"All input images should have the same shape");
+                } else if (shape[0] < shapes(i)[0]) {
+                    shape = shapes(i);
+                    iMax = i;
+                }
+            }
             if (combineRealImag) {
-                // in this case we only support image plane coordinate system
-                shape = iaccF->shape(visGridCubeNames[0]+".real");
-                coordSys = iaccF->coordSys(visGridCubeNames[0]+".real");
+                coordSys = iaccF->coordSys(visGridCubeNames[iMax]+".real");
                 fov(0) = shape[0] * abs(coordSys.increment()(0));
                 fov(1) = shape[1] * abs(coordSys.increment()(1));
             } else if (imagePlaneInput) {
-                shape = iaccF->shape(visGridCubeNames[0]);
-                coordSys = iaccF->coordSys(visGridCubeNames[0]);
+                coordSys = iaccF->coordSys(visGridCubeNames[iMax]);
                 fov(0) = shape[0] * abs(coordSys.increment()(0));
                 fov(1) = shape[1] * abs(coordSys.increment()(1));
-            } else{
-                // probably UV coordinate system - use parset
-                shape = iaccC->shape(visGridCubeNames[0]);
-                coordSys = iaccC->coordSys(visGridCubeNames[0]);
+            } else {
+                coordSys = iaccC->coordSys(visGridCubeNames[iMax]);
+                ASKAPLOG_INFO_STR(logger,"Setting Images.shape="+shape.toString());
+                subset.replace("Images.shape",shape.toString());
             }
 
             if (fov(0)>0) {
@@ -438,55 +463,60 @@ class CdeconvolverApp : public askap::Application
                                      " and is " << numChannelsLocal << " in size");
             bool firstPassForMaster = true;
 
+            casacore::IPosition outShape(4,shape[0],shape[1],1,1);
+            casacore::IPosition outBlc(4,0);
+            casacore::IPosition outTrc(4,0);
+            ASKAPLOG_INFO_STR(logger,"Output image shape " << shape);
+
             for (int channel = firstChannel; channel < firstChannel + numChannelsLocal; channel++) {
 
                 //FIXME: this is just looping over each channel of the allocation
 
-                ASKAPLOG_INFO_STR(logger,"Input image shape " << shape);
                 ASKAPLOG_INFO_STR(logger,"Processing Channel " << channel);
 
-                casacore::IPosition inblc(shape.nelements(),0); // input bottom left corner of this allocation
-                casacore::IPosition intrc(shape-1); // get the top right
-
-                // assumes pol, chan are axis 2 and 3
-                inblc[3] = channel;
-                intrc[3] = channel;
-                ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
-
-                if (combineRealImag) {
-                    psfGrid = casacore::makeComplex(iaccF->read(psfGridCubeNames[0]+".real",inblc,intrc),
-                        iaccF->read(psfGridCubeNames[0]+".imag",inblc,intrc));
-                    pcfGrid = casacore::makeComplex(iaccF->read(pcfGridCubeNames[0]+".real",inblc,intrc),
-                        iaccF->read(pcfGridCubeNames[0]+".imag",inblc,intrc));
-                    visGrid = casacore::makeComplex(iaccF->read(visGridCubeNames[0]+".real",inblc,intrc),
-                        iaccF->read(visGridCubeNames[0]+".imag",inblc,intrc));
-                } else if (imagePlaneInput) {
-                    psfImage = iaccF->read(psfGridCubeNames[0], inblc, intrc);
-                    pcfImage = iaccF->read(pcfGridCubeNames[0], inblc, intrc);
-                    dirtyImage = iaccF->read(visGridCubeNames[0], inblc, intrc);
+                if (imagePlaneInput) {
+                    psfImage = casacore::Array<casacore::Float>(outShape,0);
+                    pcfImage = casacore::Array<casacore::Float>(outShape,0);
+                    dirtyImage = casacore::Array<casacore::Float>(outShape,0);
                 } else {
-                    psfGrid = iaccC->read(psfGridCubeNames[0], inblc, intrc);
-                    pcfGrid = iaccC->read(pcfGridCubeNames[0], inblc, intrc);
-                    visGrid = iaccC->read(visGridCubeNames[0], inblc, intrc);
+                    psfGrid = casacore::Array<casacore::Complex>(outShape,0);
+                    pcfGrid = casacore::Array<casacore::Complex>(outShape,0);
+                    visGrid = casacore::Array<casacore::Complex>(outShape,0);
                 }
 
                 // accumulate multiple inputs (if nCubes>1)
-                for (uint i = 1; i < nCubes; i++) {
-                    if (combineRealImag) {
-                        psfGrid += casacore::makeComplex(iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
-                            iaccF->read(psfGridCubeNames[i]+".imag",inblc,intrc));
-                        pcfGrid += casacore::makeComplex(iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
-                            iaccF->read(pcfGridCubeNames[i]+".imag",inblc,intrc));
-                        visGrid += casacore::makeComplex(iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
-                            iaccF->read(visGridCubeNames[i]+".imag",inblc, intrc));
-                    } else if (imagePlaneInput) {
-                        psfImage += iaccF->read(psfGridCubeNames[i], inblc, intrc);
-                        pcfImage += iaccF->read(pcfGridCubeNames[i], inblc, intrc);
-                        dirtyImage += iaccF->read(visGridCubeNames[i], inblc, intrc);
+                for (uint i = 0; i < nCubes; i++) {
+                    casacore::IPosition inblc(shapes(i).nelements(),0); // input bottom left corner of this allocation
+                    casacore::IPosition intrc(shapes(i)-1); // get the top right
+
+                    // assumes pol, chan are axis 2 and 3
+                    inblc[3] = channel;
+                    intrc[3] = channel;
+                    ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
+                    outBlc[0] = shape[0]/2 - shapes(i)[0]/2; 
+                    outTrc[0] = shape[0]/2 + shapes(i)[0]/2 - 1; 
+                    outBlc[1] = shape[1]/2 - shapes(i)[1]/2; 
+                    outTrc[1] = shape[1]/2 + shapes(i)[1]/2 - 1; 
+                    if (imagePlaneInput) {
+                        psfImage += weights[i] * iaccF->read(psfGridCubeNames[i], inblc, intrc);
+                        pcfImage += weights[i] * iaccF->read(pcfGridCubeNames[i], inblc, intrc);
+                        dirtyImage += weights[i] * iaccF->read(visGridCubeNames[i], inblc, intrc);
                     } else {
-                        psfGrid += iaccC->read(psfGridCubeNames[i], inblc, intrc);
-                        pcfGrid += iaccC->read(pcfGridCubeNames[i], inblc, intrc);
-                        visGrid += iaccC->read(visGridCubeNames[i], inblc, intrc);
+                        casacore::Array<casacore::Complex> psfGridRef = psfGrid(outBlc,outTrc);
+                        casacore::Array<casacore::Complex> pcfGridRef = pcfGrid(outBlc,outTrc);
+                        casacore::Array<casacore::Complex> visGridRef = visGrid(outBlc,outTrc);
+                        if (combineRealImag) {
+                            psfGridRef += casacore::makeComplex(weights[i] * iaccF->read(psfGridCubeNames[i]+".real",inblc, intrc),
+                                weights[i] * iaccF->read(psfGridCubeNames[i]+".imag",inblc,intrc));
+                            pcfGridRef += casacore::makeComplex(weights[i] * iaccF->read(pcfGridCubeNames[i]+".real",inblc, intrc),
+                                weights[i] * iaccF->read(pcfGridCubeNames[i]+".imag",inblc,intrc));
+                            visGridRef += casacore::makeComplex(weights[i] * iaccF->read(visGridCubeNames[i]+".real",inblc, intrc),
+                                weights[i] * iaccF->read(visGridCubeNames[i]+".imag",inblc, intrc));
+                        } else {
+                            psfGridRef += casacore::Complex(weights[i]) * iaccC->read(psfGridCubeNames[i], inblc, intrc);
+                            pcfGridRef += casacore::Complex(weights[i]) * iaccC->read(pcfGridCubeNames[i], inblc, intrc);
+                            visGridRef += casacore::Complex(weights[i]) * iaccC->read(visGridCubeNames[i], inblc, intrc);
+                        }
                     }
                 }
 
@@ -502,14 +532,14 @@ class CdeconvolverApp : public askap::Application
                     ASKAPLOG_INFO_STR(logger, "Processing from position: " << curpos);
 
                     // the inputs
-                    casacore::Array<casacore::Float> psfIn;
-                    casacore::Array<casacore::Float> pcfIn;
-                    casacore::Array<casacore::Float> dirtyIn;
+                    casacore::Matrix<casacore::Float> psfIn;
+                    casacore::Matrix<casacore::Float> pcfIn;
+                    casacore::Matrix<casacore::Float> dirtyIn;
 
                     if (!imagePlaneInput) {
-                        casacore::Array<casacore::Complex> psfPlane = planeIter.getPlane(psfGrid, curpos);
-                        casacore::Array<casacore::Complex> pcfPlane = planeIter.getPlane(pcfGrid, curpos);
-                        casacore::Array<casacore::Complex> visPlane = planeIter.getPlane(visGrid, curpos);
+                        casacore::Matrix<casacore::Complex> psfPlane = planeIter.getPlane(psfGrid, curpos).nonDegenerate();
+                        casacore::Matrix<casacore::Complex> pcfPlane = planeIter.getPlane(pcfGrid, curpos).nonDegenerate();
+                        casacore::Matrix<casacore::Complex> visPlane = planeIter.getPlane(visGrid, curpos).nonDegenerate();
                         getRealFFT(psfIn,psfPlane);
                         getRealFFT(pcfIn,pcfPlane);
                         getRealFFT(dirtyIn,visPlane);
@@ -566,7 +596,7 @@ class CdeconvolverApp : public askap::Application
                       comms.send((void *) &buf,sizeof(int),to);
                     }
                     if ( calcstats && writeRestored) {
-                      statsAndMask.calculate("",channel,restored);
+                      statsAndMask.calculate(channel,restored);
                     }
                 }
             }
@@ -602,24 +632,26 @@ class CdeconvolverApp : public askap::Application
         }
 
     private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
             return pkgVersion;
         }
 };
 
 /// get the real part of the FFT of the input
-void CdeconvolverApp::getRealFFT(casacore::Array<casacore::Float> &fArray,
-                                casacore::Array<casacore::Complex> &cArray) {
+void CdeconvolverApp::getRealFFT(casacore::Matrix<casacore::Float> &fArray,
+                                casacore::Matrix<casacore::Complex> &cArray) {
 
     fArray.resize(cArray.shape());
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     #ifdef ASKAP_FLOAT_IMAGE_PARAMS
-    askap::scimath::fft2d(cArray,false);
+    fft2d(cArray,false);
     casacore::real(fArray,cArray);
     #else
-    casacore::Array<casacore::DComplex> scratch(cArray.shape());
+    casacore::Matrix<casacore::DComplex> scratch(cArray.shape());
     casacore::convertArray<casacore::DComplex,casacore::Complex>(scratch, cArray);
-    askap::scimath::fft2d(scratch, false);
+    fft2d(scratch, false);
     casacore::convertArray<casacore::Float, casacore::Double>(fArray,real(scratch));
     #endif
     fArray *= static_cast<casacore::Float>(fArray.nelements());
@@ -837,45 +869,109 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     // copy cleaning parameters and add any extra stopping criteria
     LOFAR::ParameterSet cleanset = subset.makeSubset("solver.Clean.");
 
-    // could make the following a function that returns the update parset and add to configure line
+    Float sigmaValue(0);
+    Matrix<imtype> madMap;
+    // could make the following a function that returns the updated parset and add to configure line
     const std::string parName = "threshold.minorcycle";
     if (subset.isDefined(parName)) {
         const std::vector<std::string> thresholds = subset.getStringVector(parName);
-        ASKAPCHECK(thresholds.size() && (thresholds.size()<3), "Parameter "<<parName<<
-                   " must contain either 1 element or a vector of 2 elements, you have "<< thresholds.size());
+        ASKAPCHECK(thresholds.size() && (thresholds.size()<4), "Parameter "<<parName<<
+                   " must contain either 1 element or a vector of 2-3 elements, you have "<< thresholds.size());
         bool absoluteThresholdDefined = false;
         bool relativeThresholdDefined = false;
-        for (std::vector<std::string>::const_iterator ci = thresholds.begin();
-             ci != thresholds.end(); ++ci) {
-
+        bool absoluteThreshold2Defined = false;
+        bool noiseThresholdDefined = false;
+        bool noiseThreshold2Defined = false;
+        // do we want spatially variant sigma thresholds?
+        const uInt boxSize = subset.getUint("solver.Clean.noiseboxsize",0);
+        for (const string& t : thresholds) {
             casacore::Quantity cThreshold;
-            casacore::Quantity::read(cThreshold, *ci);
-            cThreshold.convert();
-            if (cThreshold.isConform("Jy")) {
-                ASKAPCHECK(!absoluteThresholdDefined, "Parameter "<<parName<<
-                           " defines absolute threshold twice ("<<*ci<<"). Deep cleaning not supported.");
-                absoluteThresholdDefined = true;
+            // check for noise thresholds
+            const string sigma("sigma");
+            const size_t pos = t.rfind(sigma);
+            if (pos != std::string::npos && pos == t.size() - sigma.size()) {
+              ASKAPCHECK(!noiseThreshold2Defined, "Parameter "<<parName<<
+                         " defines noise threshold thrice ("<<t<<")");
+              ASKAPCHECK(!absoluteThresholdDefined,"Cannot mix "<<
+              "absolute and noise thresholds");
+              casacore::Quantity::read(cThreshold, t.substr(0,pos));
+              if (noiseThresholdDefined) {
+                  noiseThreshold2Defined = true;
+                  std::ostringstream pstr;
+                  pstr<<cThreshold.getValue("") * sigmaValue;
+                  cleanset.add("targetobjective2", pstr.str().c_str());
+                  ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the noise threshold of "<<
+                                      cThreshold.getValue("")<<" sigma");
+              } else {
+                  noiseThresholdDefined = true;
+                // get noise for thresholds if needed
+                // get mad estimate for sigma
+                // may need to take mask into account?
+                Float mad = casacore::madfm(dirtyIn);
+                sigmaValue = 1.48f * mad;
+                boost::shared_ptr<DeconvolverMultiTermBasisFunction<Float,Complex>> dcmtbf = 
+                    boost::dynamic_pointer_cast<DeconvolverMultiTermBasisFunction<Float,Complex>>(deconvolver);
+                if (dcmtbf && boxSize > 0) {
+                    // get mad map for position dependent threshold
+                    madMap = casacore::boxedArrayMath(dirtyIn.nonDegenerate(),
+                        IPosition(2,boxSize),MadfmFunc<imtype>());
+                    //normalise madMap to overall mad and send it to cleaner
+                    if (mad > 0) {
+                        madMap /= mad;
+                        // do we want to enforce madMap >= 1 ?
+                    }
+                   dcmtbf->setNoiseMap(madMap, boxSize);
+                }
                 std::ostringstream pstr;
-                pstr<<cThreshold.getValue("Jy");
-                cleanset.add("absolutethreshold", pstr.str().c_str());
-                ASKAPLOG_INFO_STR(logger, "Will stop the minor cycle at the absolute threshold of "<<
-                                  pstr.str().c_str()<<" Jy");
-            } else if (cThreshold.isConform("")) {
-                ASKAPCHECK(!relativeThresholdDefined, "Parameter "<<parName<<
-                           " defines relative threshold twice ("<<*ci<<")");
-                relativeThresholdDefined = true;
-                std::ostringstream pstr;
-                pstr<<cThreshold.getValue();
-                cleanset.add("fractionalthreshold", pstr.str().c_str());
-                ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the relative threshold of "<<
-                                  cThreshold.getValue()*100.<<"\%");
+                pstr<<cThreshold.getValue("") * sigmaValue;
+                cleanset.add("targetobjective", pstr.str().c_str());
+                ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the noise threshold of "<<
+                                    cThreshold.getValue("")<<" sigma");
+                if (boxSize > 0) {
+                ASKAPLOG_INFO_STR(logger, "Will use a spatially variant noise threshold with box size of "<<
+                                    boxSize<<" pixels");
+                }
+              }
             } else {
-                ASKAPTHROW(AskapError, "Unable to convert units in the quantity "<<
-                           cThreshold<<" to either Jy or a dimensionless quantity");
+                casacore::Quantity::read(cThreshold, t);
+                cThreshold.convert();
+                if (cThreshold.isConform("Jy")) {
+                    ASKAPCHECK(!absoluteThreshold2Defined, "Parameter "<<parName<<
+                            " defines absolute threshold thrice ("<<t<<")");
+                    ASKAPCHECK(!noiseThresholdDefined,"Cannot mix "<<
+                    "absolute and noise thresholds");
+
+                    if (absoluteThresholdDefined) {
+                    absoluteThreshold2Defined = true;
+                        std::ostringstream pstr;
+                        pstr<<cThreshold.getValue("Jy");
+                        cleanset.add("targetobjective2", pstr.str().c_str());
+                        ASKAPLOG_INFO_STR(logger, "Will stop deep minor cycle at the absolute threshold of "<<
+                                        cThreshold.getValue("mJy")<<" mJy");
+                    } else {
+                        absoluteThresholdDefined = true;
+                        std::ostringstream pstr;
+                        pstr<<cThreshold.getValue("Jy");
+                        cleanset.add("targetobjective", pstr.str().c_str());
+                        ASKAPLOG_INFO_STR(logger, "Will stop the minor cycle at the absolute threshold of "<<
+                                        pstr.str().c_str()<<" Jy");
+                    }
+                } else if (cThreshold.isConform("")) {
+                    ASKAPCHECK(!relativeThresholdDefined, "Parameter "<<parName<<
+                            " defines relative threshold twice ("<<t<<")");
+                    relativeThresholdDefined = true;
+                    std::ostringstream pstr;
+                    pstr<<cThreshold.getValue();
+                    cleanset.add("fractionalthreshold", pstr.str().c_str());
+                    ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the relative threshold of "<<
+                                    cThreshold.getValue()*100.<<"\%");
+                } else {
+                    ASKAPTHROW(AskapError, "Unable to convert units in the quantity "<<
+                            cThreshold<<" to either Jy or a dimensionless quantity");
+                }
             }
         }
     }
-
     // tortured way to get the (oversampled) cellsize of the output cubes (only one has to exist)
     casacore::Vector<casacore::Double> increments;
     if (itsRestoredCube) {
@@ -928,7 +1024,9 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
     }
 
     ASKAPLOG_INFO_STR(logger,"Configure deconvolver");
+    cleanset.replace("configurebase","true");
     deconvolver->configure(cleanset);
+
 
     ASKAPLOG_INFO_STR(logger,"Do the deconvolution");
     deconvolver->deconvolve();
@@ -948,7 +1046,6 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
         }
     }
 }
-
 void CdeconvolverApp::writeBeamInfo(askap::askapparallel::AskapParallel &comms)
 {
     if (itsRestoredCube) {
