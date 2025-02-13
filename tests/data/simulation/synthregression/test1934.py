@@ -155,6 +155,8 @@ if True:
    # now with joint deconvolution (simply add a keyword to the same parset, the default value was false)
    os.system("rm -rf *.1934.* *.1934")
    spr.addToParset("Cimager.updatedirection=true")
+   # turn off masking because stats don't cope with NaN values
+   spr.addToParset("Cimager.maskmosaic=false")
    spr.runNewImagerParallel(nProcs=2, timeout="5m")
    analyseResult(spr, checkFlux = True, resultHasMFSName = False)
    checkBeamLog()

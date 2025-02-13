@@ -93,11 +93,11 @@ namespace askap
           accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder);
 
         /// Standard constructor with specified gridder
-        /// @param ip Parameters
+        /// @param ip Parameters -shared
         /// @param idi Data iterator
         /// @param gridder Shared pointer to a gridder
         /// @param parset parameter set to check for PSF/PCF options.
-        ImageFFTEquation(const askap::scimath::Params& ip,
+        ImageFFTEquation(const askap::scimath::Params::ShPtr& ip,
           accessors::IDataSharedIter& idi, IVisGridder::ShPtr gridder,
           const LOFAR::ParameterSet& parset);
 
@@ -217,8 +217,8 @@ namespace askap
 
       private:
 
-      /// Pointer to prototype gridder
-        IVisGridder::ShPtr itsGridder;
+      /// Pointer to prototype gridders
+        IVisGridder::ShPtr itsGridder, itsAltGridder;
 
         /// Map of gridders for the model
         mutable std::map<string, IVisGridder::ShPtr> itsModelGridders;
@@ -288,6 +288,9 @@ namespace askap
         bool itsBoxPSFGridder;
 
         bool itsUsePreconGridder;
+
+        /// @brief true, if we grid the offset fields using the default spheroidal function gridder
+        bool itsSphFuncOffsetFields;
 
         /// @brief if set, visibility cube will be passed through this object function
         /// @details For the parallel implementation of the measurement equation we need

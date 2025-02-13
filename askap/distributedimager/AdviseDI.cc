@@ -210,10 +210,12 @@ void AdviseDI::prepare() {
 
     // need to calculate the allocations too.
 
-    ASKAPLOG_INFO_STR(logger,"Testing for Channels");
+    ASKAPLOG_DEBUG_STR(logger,"Testing for Channels");
     vector<int> itsChannels = getChannels();
-    ASKAPLOG_INFO_STR(logger,"Testing for Frequencies");
+    ASKAPASSERT(itsChannels.size() > 2u);
+    ASKAPLOG_DEBUG_STR(logger,"Testing for Frequencies");
     vector<double> itsFrequencies = getFrequencies();
+    ASKAPASSERT(itsFrequencies.size() > 2u);
 
     bool user_defined_channels = false;
     bool user_defined_frequencies = false;
@@ -424,6 +426,8 @@ void AdviseDI::prepare() {
 
         size_t n = itsChannels[0];
         const size_t st = itsChannels[1];
+        ASKAPCHECK(st < itsInputFrequencies.size(), "Start channel in the selection ("<<st<<
+                   ") is supposed to be less than the number of channels available ("<<itsInputFrequencies.size()<<")");
 
         if (st + n > itsInputFrequencies.size()){
             ASKAPLOG_WARN_STR(logger, "Requested nchan > available channels; truncating");

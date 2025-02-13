@@ -769,12 +769,18 @@ namespace askap
       ASKAPTRACE("SynthesisParamsHelper::loadImageParameter");
       casacore::Array<float> imagePixels = imageHandler().read(imagename);
       casacore::CoordinateSystem imageCoords = imageHandler().coordSys(imagename);
+      loadImageParameter(ip, name, imagePixels, imageCoords, extraOversampleFactor);
+    }
 
+    void SynthesisParamsHelper::loadImageParameter(askap::scimath::Params& ip, const string& name,
+		casacore::Array<float>& imagePixels, const casacore::CoordinateSystem& imageCoords,
+        const boost::optional<float> extraOversampleFactor, int channel)
+    {
       /// Fill in the axes information
       Axes axes;
       /// First do the direction
       int whichDir=imageCoords.findCoordinate(Coordinate::DIRECTION);
-      ASKAPCHECK(whichDir>-1, "No direction coordinate present in the image "<<imagename);
+      ASKAPCHECK(whichDir>-1, "No direction coordinate present in the supplied image coordinates");
       casacore::DirectionCoordinate radec(imageCoords.directionCoordinate(whichDir));
       casacore::Vector<casacore::Int> axesDir = imageCoords.pixelAxes(whichDir);
       ASKAPCHECK(axesDir.nelements() == 2, "Direction axis "<<whichDir<<
@@ -786,27 +792,6 @@ namespace askap
       casacore::Vector<casacore::String> units(2);
       units.set("rad");
       radec.setWorldAxisUnits(units);
-
-      /*
-	  casacore::Vector<double> start(2);
-      casacore::Vector<double> end(2);
-      casacore::Vector<double> pixelbuf(2);
-      const casacore::Vector<double> refPix(radec.referencePixel());
-
-      pixelbuf(0)=0;
-      pixelbuf(1)=refPix(1);
-      ASKAPCHECK(radec.toWorld(start,pixelbuf), "Pixel to world conversion error: "<<radec.errorMessage());
-      pixelbuf(0)=imagePixels.shape()[0]-1;
-      ASKAPCHECK(radec.toWorld(end,pixelbuf), "Pixel to world conversion error: "<<radec.errorMessage());
-      axes.add("RA", start(0), end(0));
-
-      pixelbuf(0)=refPix(0);
-      pixelbuf(1)=0;
-      ASKAPCHECK(radec.toWorld(start,pixelbuf), "Pixel to world conversion error: "<<radec.errorMessage());
-      pixelbuf(1)=imagePixels.shape()[1]-1;
-      ASKAPCHECK(radec.toWorld(end,pixelbuf), "Pixel to world conversion error: "<<radec.errorMessage());
-      axes.add("DEC", start(1), end(1));
-      */
       axes.addDirectionAxis(radec);
 
       int whichStokes = imageCoords.findCoordinate(Coordinate::STOKES);
@@ -837,11 +822,16 @@ namespace askap
       ASKAPCHECK(axesSpectral.nelements() == 1, "Spectral axis "<<whichSpectral<<
                  " is expected to correspond to just one pixel axes, you have "<<axesSpectral);
       ASKAPASSERT(casacore::uInt(axesSpectral[0])<imagePixels.shape().nelements());
-      const int nChan = imagePixels.shape()(axesSpectral[0]);
+      const int nChan = (channel < 0 ? imagePixels.shape()(axesSpectral[0]) : 1);
       casacore::SpectralCoordinate freq(imageCoords.spectralCoordinate(whichSpectral));
       double startFreq, endFreq;
-      freq.toWorld(startFreq, 0.0);
-      freq.toWorld(endFreq, double(nChan-1));
+      if (channel < 0) {
+        freq.toWorld(startFreq, 0.0);
+        freq.toWorld(endFreq, double(nChan-1));
+      } else {
+        freq.toWorld(startFreq, double(channel));
+        freq.toWorld(endFreq, double(channel));
+      }
       axes.add("FREQUENCY", startFreq, endFreq);
 
       casacore::IPosition targetShape(4, imagePixels.shape()(0), imagePixels.shape()(1), nPol, nChan);
@@ -860,9 +850,11 @@ namespace askap
 
           ASKAPLOG_INFO_STR(logger, "About to add new image parameters with name "<<fullresname<<
                       " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
-          ASKAPLOG_INFO_STR(logger, "Spectral axis will have startFreq="<<startFreq<<" Hz, endFreq="<<endFreq<<
-                                    "Hz, nChan="<<nChan);
-          ip.add(fullresname, imagePixels.reform(targetShape), axes);
+          if (!ip.has(fullresname)) {
+            ip.add(fullresname, imagePixels.reform(targetShape), axes);
+          } else {
+            ip.update(fullresname, imagePixels.reform(targetShape));
+          }
 
           // now downsample the input sky model to the working resolution
           /// @todo should this be done at higher precision ifndef ASKAP_FLOAT_IMAGE_PARAMS?
@@ -878,16 +870,25 @@ namespace askap
 
           ASKAPLOG_INFO_STR(logger, "Also adding downsampled image parameters with name "<<name<<
                       " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
-          ip.add(name, imagePixels.reform(targetShape), axes);
+          if (!ip.has(name)) {
+            ip.add(name, imagePixels.reform(targetShape), axes);
+          } else {
+            ip.update(name, imagePixels.reform(targetShape));
+          }
 
       }
       else {
           ASKAPLOG_INFO_STR(logger, "About to add new image parameter with name "<<name<<
                       " reshaped to "<<targetShape<<" from original image shape "<<imagePixels.shape());
-          ASKAPLOG_INFO_STR(logger, "Spectral axis will have startFreq="<<startFreq<<" Hz, endFreq="<<endFreq<<
-                                    "Hz, nChan="<<nChan);
-          ip.add(name, imagePixels.reform(targetShape), axes);
+          if (!ip.has(name)) {
+            ip.add(name, imagePixels.reform(targetShape), axes);
+          } else {
+            ip.update(name, imagePixels.reform(targetShape));
+          }
       }
+      ASKAPLOG_INFO_STR(logger, "Spectral axis will have startFreq="<<startFreq<<" Hz, endFreq="<<endFreq<<
+                        "Hz, nChan="<<nChan);
+
 
     }
 
@@ -912,7 +913,6 @@ namespace askap
       }
     }
 
-    /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
     /// @brief zero-pad in the Fourier domain to increase resolution before cleaning
     /// @param[in] image the array to oversample
     /// @param[in] osfactor extra oversampling factor
@@ -1152,6 +1152,66 @@ namespace askap
             }
         }
     }
+
+    void SynthesisParamsHelper::adjustCellsize(Array<float> & pixels, double inputInc, double outputInc, 
+        uInt inSize, uInt outSize)
+    {
+        const double tol = 1e-5;
+        ASKAPDEBUGASSERT(inputInc != 0);
+        const double fac = outputInc / inputInc;
+        ASKAPCHECK(fac > 1-tol,"Input cellsize should be smaller than or equal to output cellsize");
+        if (abs(fac-1) > tol) {
+            // try to downsample - need to use exact cellsize ratio but
+            // need to make sure image sizes are good FFT sizes for downsampling
+            // We try padding or cropping the input image
+            bool found = false;
+            uInt n1 = inSize;
+            for (int k = 0; k < inSize/2 && !found ; k++) {
+                // first try padding
+                n1 = scimath::goodFFTSize(inSize + 2 * k);
+                const uInt n2 = scimath::goodFFTSize(static_cast<int>(lround(n1/fac)));
+                found = abs(double(n1)/n2 - fac) < tol;
+                ASKAPLOG_DEBUG_STR(logger,"tried n1="<<n1<<", n2="<<n2<<", fac="<<fac<<", n1/n2="<<double(n1)/n2<<", match="<<found);
+                // try cropping if the input image covers a larger area than the output
+                if (!found && k > 0) {
+                    n1 = scimath::goodFFTSize(inSize - 2 * k);
+                    if (inputInc*n1 > outputInc*outSize) {
+                        const uInt n2 = scimath::goodFFTSize(static_cast<int>(lround(n1/fac)));
+                        found = abs(double(n1)/n2 - fac) < tol;
+                        ASKAPLOG_DEBUG_STR(logger,"tried n1="<<n1<<", n2="<<n2<<", fac="<<fac<<", n1/n2="<<double(n1)/n2<<", match="<<found);
+                    } 
+                }
+            }
+            ASKAPCHECK(found,"No valid pixel ratio found for given cell sizes "<<inputInc<<" and "<<outputInc);
+            // pad or crop the pixels array
+            if (n1 > inSize) {
+                // pad
+                Array<float> imagePixels(IPosition(4,n1,n1,1,1),0.0f);
+                // make reference to central area
+                IPosition blc(4, n1/2 - inSize/2, n1/2 - inSize/2, 0, 0);
+                IPosition trc(4, n1/2 + inSize/2 - 1, n1/2 + inSize/2 - 1, 0, 0);
+                Array<float> subImage = imagePixels(blc, trc);
+                // copy in the pixels
+                subImage = pixels;
+                SynthesisParamsHelper::downsample(imagePixels,fac,false);
+                // replace original array with the downsampled array
+                pixels.reference(imagePixels);
+            } else if (n1 < inSize) {
+                // crop
+                IPosition blc(4, inSize/2 - n1/2, inSize/2 - n1/2, 0, 0);
+                IPosition trc(4, inSize/2 + n1/2 - 1, inSize/2 + n1/2 - 1, 0, 0);
+                Array<float> imagePixels;
+                // make copy of central area
+                imagePixels = pixels(blc, trc);
+                SynthesisParamsHelper::downsample(imagePixels,fac,false);
+                // replace original array with the downsampled array
+                pixels.reference(imagePixels);
+            } else {
+                SynthesisParamsHelper::downsample(pixels,fac,true);
+            }
+        }
+    }
+
 
     boost::shared_ptr<casacore::TempImage<float> >
     SynthesisParamsHelper::tempImage(const askap::scimath::Params& ip,

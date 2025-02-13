@@ -90,6 +90,9 @@ namespace askap
           // check for noise thresholds
           const string sigma("sigma");
           const size_t pos = t.rfind(sigma);
+          // do we want spatially variant sigma thresholds?
+           const uInt boxSize = parset.getUint("solver.Clean.noiseboxsize",0);
+
           if (pos != std::string::npos && pos == t.size() - sigma.size()) {
               ASKAPCHECK(!noiseThreshold2Defined, "Parameter "<<parName<<
                          " defines noise threshold thrice ("<<t<<")");
@@ -116,6 +119,11 @@ namespace askap
                     ics->setNoiseThreshold(cThreshold.getValue());
                     ASKAPLOG_INFO_STR(logger, "Will stop minor cycle at the noise threshold of "<<
                                       cThreshold.getValue("")<<" sigma");
+                    if (boxSize > 0) {
+                      ics->setNoiseBoxSize(boxSize);
+                      ASKAPLOG_INFO_STR(logger, "Will use a spatially variant noise threshold with box size of "<<
+                                      boxSize<<" pixels");
+                    }
                   } else {
                     ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
                                       "a noise threshold, ignoring "<<t<<" in "<<parName);
@@ -183,18 +191,16 @@ namespace askap
         }
       } // if - parameter defined
 
-      const std::string parName3 = "threshold.usefirstimage";
-      if (parset.isDefined(parName3)) {
-        boost::shared_ptr<ImageCleaningSolver> ics =
-                boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
-        if (ics) {
-            ics->setUseFirstImageForThresholds(parset.getBool(parName3, false));
-        } else {
-            ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
-                "to use thresholds from first image, ignoring "<<parName3);
-        } // if - parameter defined
+      const std::string parName3 = "threshold.firstimage";
+      boost::shared_ptr<ImageCleaningSolver> ics =
+            boost::dynamic_pointer_cast<ImageAMSMFSolver>(solver);
+      if (ics) {
+        ASKAPLOG_INFO_STR(logger, "Using the first image to set thresholds for the other images");
+        ics->setUseFirstImageForThresholds(parset.getBool(parName3, true));
+      } else {
+        ASKAPLOG_INFO_STR(logger, "The type of the image solver used does not allow to specify "
+            "to use thresholds from first image, ignoring "<<parName3);
       }
-
     } // method
 
 
@@ -330,7 +336,7 @@ namespace askap
           ASKAPCHECK(!parset.isDefined("solver.nterms"), "Specify nterms for each image instead of using solver.nterms");
           ASKAPCHECK(!parset.isDefined("solver.Clean.nterms"),
               "Specify nterms for each image instead of using solver.Clean.nterms");
-          solver.reset(new ImageAMSMFSolver(casacore::Vector<float>(scales)));
+          solver.reset(new ImageAMSMFSolver());
           ASKAPLOG_INFO_STR(logger, "Constructed basis function multi-frequency solver" );
         }
         else {

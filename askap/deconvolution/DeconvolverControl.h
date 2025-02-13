@@ -61,6 +61,7 @@ namespace askap {
                 /// @brief Enumerate the possible termination causes
                 enum TerminationCause {
                     CONVERGED,
+                    DIVERGING,
                     DIVERGED,
                     EXCEEDEDITERATIONS,
                     SIGNALED,
@@ -215,7 +216,7 @@ namespace askap {
                     itsFractionalThreshold = fractionalThreshold;
                 }
 
-                casacore::Float fractionalThreshold() {
+                casacore::Float fractionalThreshold() const {
                     return itsFractionalThreshold;
                 }
 
@@ -228,7 +229,7 @@ namespace askap {
                     itsAbsoluteThreshold = absoluteThreshold;
                 }
 
-                casacore::Float absoluteThreshold() {
+                casacore::Float absoluteThreshold() const {
                     return itsAbsoluteThreshold;
                 }
 
@@ -241,26 +242,34 @@ namespace askap {
                 void setPSFWidth(const casacore::Int psfWidth) {itsPSFWidth = psfWidth;}
 
                 /// @brief Get the desired PSF width in pixels
-                casacore::Int psfWidth() const {return itsPSFWidth;};
+                casacore::Int psfWidth() const {return itsPSFWidth;}
 
-                /// @brief Detect if the (clean) algorithm is diverging
+                /// @brief Detect if the (clean) algorithm has diverged
                 /// @param[in] Set to True to detect divergence
                 void setDetectDivergence(casa::Bool detect) { itsDetectDivergence = detect;}
 
                 /// @brief Returns True if divergence detection is active
-                casa::Bool detectDivergence() { return itsDetectDivergence; }
+                casa::Bool detectDivergence() const { return itsDetectDivergence; }
+
+                /// @brief Detect if the (clean) algorithm is just starting to diverge
+                /// @param[in] Set to True to detect mild divergence
+                void setDetectMildDivergence(casa::Bool detect) { itsDetectMildDivergence = detect;}
+
+                /// @brief Set divergence detection parameters
+                /// @details Set the 4 divergence detection parameters: 1 - mild minor cycle divergence,
+                /// 2 - fatal minor cycle divergence, 3 - fatal major cycle divergence
+                /// 4 - fraction of minor cycles to complete before mild divergence detection kicks in
+                /// @param[in] divergence levels, vector of 4 values
+                void setDivergenceLevels(const std::vector<casa::Float>& levels) { itsDivergenceLevels = levels;}
+
+                /// @brief Returns True if mild divergence detection is active
+                casa::Bool detectMildDivergence() const { return itsDetectMildDivergence; }
 
                 /// @brief Set deep clean mode
                 void setDeepCleanMode() {itsDeepCleanMode = True;}
 
                 /// @brief Returns True if divergence detection is active
-                casa::Bool deepCleanMode() { return itsDeepCleanMode; }
-
-                /// @brief Returns True if there is a flag to reset the mask
-                casa::Bool maskNeedsResetting() { return itsMaskNeedsResetting; }
-
-                /// @brief Update the flag to reset the mask
-                void maskNeedsResetting(casa::Bool flag) { itsMaskNeedsResetting = flag; }
+                casa::Bool deepCleanMode() const { return itsDeepCleanMode; }
 
             private:
                 casacore::String itsAlgorithm;
@@ -275,8 +284,9 @@ namespace askap {
                 casa::Float itsTolerance;
                 casa::Int itsPSFWidth;
                 casa::Bool itsDetectDivergence;
+                casa::Bool itsDetectMildDivergence;
                 casa::Bool itsDeepCleanMode;
-                casa::Bool itsMaskNeedsResetting;
+                std::vector<casa::Float> itsDivergenceLevels;
                 T itsLambda;
                 askap::SignalCounter itsSignalCounter;
                 askap::ISignalHandler* itsOldHandler;

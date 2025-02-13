@@ -239,7 +239,7 @@ void CalcCore::createMeasurementEquation()
    // You therefore get no benefit from initialising the gridder.
    // Also this is why you cannot get at the grid from outside FFT equation
    // Changed itsModel argument to reference (like in doCalc)
-   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (itsModel, it, gridder()));
+   const boost::shared_ptr<ImageFFTEquation> fftEquation(new ImageFFTEquation (itsModel, it, gridder(), parset()));
    ASKAPDEBUGASSERT(fftEquation);
 
    fftEquation->configure(parset());

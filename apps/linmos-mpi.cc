@@ -67,7 +67,7 @@ using ImageBlcTrcMapT =  std::map<std::string,std::pair<casacore::IPosition,casa
 void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& outImgName,
                  const int nchanCube, ImageBlcTrcMapT& boundingBoxMap)
 {
-  ASKAPLOG_INFO_STR(logger,"calculateBlcTrc() invoked"); 
+  ASKAPLOG_INFO_STR(logger,"calculateBlcTrc() invoked");
   ASKAPCHECK(outMask.ndim() == 4, "outMask shape is no 4");
   ASKAPCHECK(outMask.shape()[2] == 1, "outMask shape(2) is not 1");
   ASKAPCHECK(outMask.shape()[3] == 1, "outMask shape(3) is not 1");
@@ -99,7 +99,7 @@ void calculateBlcTrc(const casacore::Array<bool>& outMask, const std::string& ou
       }
     } // for
     #pragma omp critical
-    { 
+    {
         if ( xMinLocal < xMin ) xMin = xMinLocal;
         if ( xMaxLocal > xMax ) xMax = xMaxLocal;
         if ( yMinLocal < yMin ) yMin = yMinLocal;
@@ -568,14 +568,14 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
           // coordinate of the input images.
           // the full shape and coordinate are used to calculate the reference pixel and the new coordinate.
           // The new coordinate and the trimmed output bounding box are then supplied to the setOutputParameters()
-          // method of the LinmosAccumulator class to explicitely set the size of the output image 
+          // method of the LinmosAccumulator class to explicitely set the size of the output image
           getFullShapeAndCoord(iacc,*it,channel,trc,nchanCube,inShapeVec,inCoordSysVec);
           getTrimmedShapeAndCoord(iacc,*it,inputBlcTrcMap,channel,inTrimmedShapeVec,inTrimmedCoordSysVec);
         } else /* trimming type = conservative */ {
           // note: inShapeVec and inCoordSysVec are trimmed and not full size in this case
           // the inShapeVec and the inCoordSysVec acquired here are supplied to one of the setOutputParameters()
           // methods of the LinmosAccumulator that takes a collection of shapes and coordinates. This version
-          // of setOutputParameters() then determines the appropriate size for the output image 
+          // of setOutputParameters() then determines the appropriate size for the output image
           getTrimmedShapeAndCoord(iacc,*it,inputBlcTrcMap,channel,inShapeVec,inCoordSysVec);
         }
       } // got the input shapes for this output image
@@ -631,7 +631,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
         accumulator.adjustOutputImageMap(blcTrcPair.first,trimmedShape);
       }
 
-      
+
       ASKAPLOG_INFO_STR(logger, " - Output Shape " << accumulator.outShape());
 
       casa::IPosition sliceShape = accumulator.outShape();
@@ -1057,6 +1057,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
       float itsCutoff = 0.01;
 
       if (parset.isDefined("cutoff")) itsCutoff = parset.getFloat("cutoff");
+      if (parset.isDefined("finalcutoff")) itsCutoff = parset.getFloat("finalcutoff");
 
       /// This logic is in addition to the mask in the accumulator
       /// which works on an individual beam weight

@@ -46,7 +46,8 @@ class DeconvolverMultiTermBasisFunctionTest : public CppUnit::TestFixture
 {
   CPPUNIT_TEST_SUITE(DeconvolverMultiTermBasisFunctionTest);
   CPPUNIT_TEST(testCreate);
-  CPPUNIT_TEST(testDeconvolveCenter);
+  CPPUNIT_TEST(testDeconvolveCenter1);
+  CPPUNIT_TEST(testDeconvolveCenter2);
   CPPUNIT_TEST_EXCEPTION(testWrongShape, AskapError);
   CPPUNIT_TEST_EXCEPTION(testDeconvolveOffsetPSF, AskapError);
   CPPUNIT_TEST(testDeconvolvePSFSubset);
@@ -119,8 +120,17 @@ public:
     CPPUNIT_ASSERT(itsDB->control()->terminationCause()==DeconvolverControl<Float>::CONVERGED);
   }
 
-  void testDeconvolveCenter() {
-    ASKAPLOG_INFO_STR(logger,"test DeconvolveCentre");
+
+  void testDeconvolveCenter1() {
+      testDeconvolveCenter("MAXBASE");
+  }
+  void testDeconvolveCenter2() {
+      testDeconvolveCenter("MAXCHISQ");
+  }
+
+  void testDeconvolveCenter(std::string solutionType) {
+    ASKAPLOG_INFO_STR(logger,"test DeconvolveCentre - "+solutionType);
+    itsDB->setSolutionType(solutionType);
     itsDB->dirty().set(0.0);
     itsDB->dirty()(IPosition(2,50,50))=1.0;
     CPPUNIT_ASSERT(itsDB->deconvolve());
@@ -146,9 +156,6 @@ public:
 
   void testScaleMask() {
       ASKAPLOG_INFO_STR(logger,"test ScaleMask");
-      itsDB->setSolutionType("MAXBASE");
-      itsDB->setUseScaleBitMask(true);
-      itsDB->setUseScalePixels(true);
       itsDB->dirty()(IPosition(2,45,45),IPosition(2,55,55))=1.0;
       itsDB->control()->setTargetObjectiveFunction2(0.1);
       itsDB->control()->setTargetIter(15);

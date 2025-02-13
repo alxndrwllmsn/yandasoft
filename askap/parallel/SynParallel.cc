@@ -377,16 +377,16 @@ namespace askap
        if (comms.isParallel()) {
            const int rankStoringCF = parset.getInt32("rankstoringcf", 1);
            if (comms.rank() == rankStoringCF) {
-               ASKAPLOG_INFO_STR(logger, "Rank "<<rankStoringCF<<
+               ASKAPLOG_DEBUG_STR(logger, "Rank "<<rankStoringCF<<
                        " will attempt to export convolution functions (if export is requested)");
            } else {
                boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(gridder);
                if (tvg) {
-                   ASKAPLOG_INFO_STR(logger, "Export of convolution functions will be inhibited for rank "<<
+                   ASKAPLOG_DEBUG_STR(logger, "Export of convolution functions will be inhibited for rank "<<
                          comms.rank());
                    tvg->setTableName("");
                } else {
-                   ASKAPLOG_INFO_STR(logger, "Unable to inhibit export of CFs for rank "<<
+                   ASKAPLOG_DEBUG_STR(logger, "Unable to inhibit export of CFs for rank "<<
                          comms.rank()<<" - operation not supported by the chosen type of the gridder");
                }
            }
