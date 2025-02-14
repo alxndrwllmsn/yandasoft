@@ -863,6 +863,7 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
         ASKAPLOG_DEBUG_STR(logger,"Merged");
 
         ASKAPDEBUGASSERT(rootImagerPtr);
+        lastcycle = checkStoppingThresholds(rootImagerPtr->params());
         if (itsWriteGrids && lastcycle && itsLocalSolver) {
             ASKAPLOG_INFO_STR(logger, "Extracting grids and summing them in the root imager");
             // the following would work regarless whether root imager and working imager are the same object or not
