@@ -292,8 +292,8 @@ class CdeconvolverApp : public askap::Application
                 fov(1) = shape[1] * abs(coordSys.increment()(1));
             } else {
                 coordSys = iaccC->coordSys(visGridCubeNames[iMax]);
-                ASKAPLOG_INFO_STR(logger,"Setting Images.shape="+shape.toString());
-                subset.replace("Images.shape",shape.toString());
+                ASKAPLOG_INFO_STR(logger,"Setting Images.shape=["+std::to_string(shape[0])+","+std::to_string(shape[1])+"]");
+                subset.replace("Images.shape","["+std::to_string(shape[0])+","+std::to_string(shape[1])+"]");
             }
 
             if (fov(0)>0) {
