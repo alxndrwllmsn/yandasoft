@@ -587,7 +587,8 @@ WProjectVisGridder::CFSupport WProjectVisGridder::calcSupport(const casacore::Ma
     return cfSupport;
 }
 
-void WProjectVisGridder::populateItsConvFunc(const casacore::Matrix<casacore::Complex> &cfPlane, const int iw,
+//void WProjectVisGridder::populateItsConvFunc(const casacore::Matrix<casacore::Complex> &cfPlane, const int iw,
+void WProjectVisGridder::populateItsConvFunc(const casacore::Matrix<imtypeComplex> &cfPlane, const int iw,
                          const int support, const CFSupport& cfSupport, const int cSize,
                          const int nx, const int ny)
 {
@@ -631,7 +632,7 @@ void WProjectVisGridder::normalise(std::vector<casacore::Matrix<casacore::Comple
         }
     } // for plane
 }
-void WProjectVisGridder::populateThisPlane(casacore::Matrix<casacore::Complex> &thisPlane,
+void WProjectVisGridder::populateThisPlane(casacore::Matrix<imtypeComplex> &thisPlane,
                                            const int qnx, const int qny, const int nx, const int ny,
                                            const double ccellx, const double ccelly, const double w,
                                            const casacore::Vector<float>& ccfx,

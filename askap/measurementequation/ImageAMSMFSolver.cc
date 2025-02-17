@@ -106,8 +106,10 @@ namespace askap
 
       // Work out overlap of offset fields with main field and create mask
       // Main field is expected to be the first and largest encountered
-      Matrix<imtype> extraMask = (itsUseOverlapMask ?
-          utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
+      //Matrix<imtype> extraMask = (itsUseOverlapMask ?
+      //    utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
+      Matrix<casacore::Float> extraMask = (itsUseOverlapMask ?
+          utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<casacore::Float>());
 
       string firstImage;
       double peakRes1 = 0;
@@ -503,8 +505,10 @@ namespace askap
                             ASKAPCHECK(index == 0, "Swapping to full-resolution param name but something is wrong");
                             fullResName.replace(index,5,"fullres");
                             imagemath::MultiDimArrayPlaneIter fullResPlaneIter(ip.shape(fullResName));
-                            cleanVec(order).reference(
-                                fullResPlaneIter.getPlane( ip.valueT(fullResName), planeIter.position() ) );
+                            imagemath::MultiDimArrayPlaneIter it(casacore::IPosition(3,3,3));
+                    
+                            casacore::Array<float> tempArray = ip.valueF(fullResName);
+                            cleanVec(order).reference(fullResPlaneIter.getPlane( tempArray,planeIter.position()));
                         }
                     }
 
@@ -513,16 +517,20 @@ namespace askap
 
             // get noise for thresholds if needed
             float sigma = 0.;
-            Matrix<imtype> madMap;
+            //Matrix<imtype> madMap;
+            Matrix<casacore::Float> madMap;
             if (noiseThreshold()>0) {
                 // get mad estimate for sigma
                 // may need to take mask into account?
-                imtype mad = casacore::madfm(dirtyVec(0));
+                //imtype mad = casacore::madfm(dirtyVec(0));
+                casacore::Float mad = casacore::madfm(dirtyVec(0));
                 sigma = 1.48f * mad;
                 if (noiseBoxSize()>0) {
                     // get mad map for position dependent threshold
+                    //madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
+                    //    IPosition(2,noiseBoxSize()),MadfmFunc<imtype>());
                     madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
-                        IPosition(2,noiseBoxSize()),MadfmFunc<imtype>());
+                        IPosition(2,noiseBoxSize()),MadfmFunc<casacore::Float>());
                     //normalise madMap to overall mad and send it to cleaner
                     if (mad > 0) {
                         madMap /= mad;

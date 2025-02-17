@@ -197,7 +197,8 @@ namespace askap
           // don't copy into cleanArray if instead referencing an existing cache
           casacore::Array<float> cleanArray;
           if (importModelFromNE) {
-              cleanArray = padImage(planeIter.getPlane(ip.valueF(indit->first)));
+              //cleanArray = padImage(planeIter.getPlane(ip.valueF(indit->first)));
+              cleanArray = padImage(planeIter.getPlane(ip.valueT(indit->first)));
           }
           ASKAPLOG_INFO_STR(logger, "Plane shape "<<planeIter.planeShape()<<" becomes "<<
                             dirtyArray.shape()<<" after padding");
@@ -254,7 +255,9 @@ namespace askap
                 SynthesisParamsHelper::oversample(cleanArray,*itsExtraOversamplingFactor,false);
             } else {
                 imagemath::MultiDimArrayPlaneIter fullResPlaneIter(ip.shape(fullResName));
-                cleanArray.reference( fullResPlaneIter.getPlane( ip.valueT(fullResName), planeIter.position() ) );
+                //cleanArray.reference( fullResPlaneIter.getPlane( ip.valueT(fullResName), planeIter.position() ) );
+                casacore::Array<float> refArray = ip.valueF(fullResName);
+                cleanArray.reference(fullResPlaneIter.getPlane(refArray, planeIter.position()));
             }
           }
 
