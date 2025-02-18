@@ -208,6 +208,9 @@ namespace askap
       int itsLimitSupport;
       /// Mapping from row, pol, and channel to planes of convolution function
       casacore::Cube<int> itsCMap;
+      /// Spheroidal taper values
+      casacore::Vector<double> itsCcfx;
+      casacore::Vector<double> itsCcfy;
     };
 
   }

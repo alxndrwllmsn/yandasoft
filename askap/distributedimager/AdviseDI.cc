@@ -169,6 +169,12 @@ void AdviseDI::prepare() {
     ASKAPLOG_DEBUG_STR(logger, "nWorkers " << nWorkers);
     ASKAPCHECK(nWorkers > 0, "This code is intended to be executed in parallel with at least two ranks available");
 
+    if (ImagerParallel::fillSelectionCache(itsComms.nProcs(), itsComms.rank(), itsParset, ms)) {
+        // cache is filled in distributed fashion, wait for all ranks to finish
+        ASKAPLOG_DEBUG_STR(logger,"Filled selection cache");
+        itsComms.barrier();
+    }
+
     const unsigned int nGroups = itsComms.nGroups();
     ASKAPLOG_DEBUG_STR(logger, "nGroups " << nGroups);
     ASKAPCHECK(nGroups > 0, "Expect at least one rank group to be available");

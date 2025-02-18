@@ -230,6 +230,11 @@ IVisGridder::ShPtr VisGridderFactory::make(const LOFAR::ParameterSet &parset)
           ASKAPLOG_INFO_STR(logger, "Will clear the grids each major cycle");
           tvg->doClearGrid(clearGrids);
         }
+        const bool rotateUVW = parset.getBool("gridder.rotateuvw",true);
+        if (tvg && !rotateUVW) {
+          ASKAPLOG_INFO_STR(logger, "Not rotating the uvw coordinates");
+          tvg->doRotateUVW(false);
+        }
     }
 
     // Initialize the Visibility Weights

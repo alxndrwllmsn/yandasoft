@@ -45,7 +45,9 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/askapparallel/AskapParallel.h>
 #include <askap/dataaccess/DataAccessError.h>
 #include <askap/dataaccess/TableDataSource.h>
+#include <askap/dataaccess/TableDataSelector.h>
 #include <askap/dataaccess/ParsetInterface.h>
+#include <askap/dataaccess/TableSelectionDiskCache.h>
 #include <askap/imageaccess/WeightsLog.h>
 
 
@@ -956,6 +958,7 @@ namespace askap
        // now get the builder (should already be setup by the time this method is called) and setup the weight gridder
        const boost::shared_ptr<GenericUVWeightBuilder> builder = getUVWeightBuilder();
        UVWeightGridder gridder(builder);
+       gridder.doRotateUVW(parset().getBool("gridder.rotateuvw",true));
 
        // setup additional parameters of the specialised gridder, more complex logic can be added here later on
        // we can also probably factor out the code configuring the gridder into a separate method to have better structure of the code
@@ -1438,4 +1441,70 @@ namespace askap
       }
     }
   }
+}
+
+/// @brief set up caching for the table selection if requested
+/// @details Table selection can be expensive, this provides a way to
+/// do the selection once, cache it to disk and reuse it.
+/// @param[in] sel The data selector handle
+/// @param[in] prefix The prefix for the table cache, if empty no caching is done
+void ImagerParallel::setSelectionCache(accessors::IDataSelectorPtr& sel, const string & prefix) {
+    // Check if we are caching the selection 
+    if (!prefix.empty()) {
+        //Caching is Table specific, so cast to TableDataSelector
+        const auto tsel = boost::dynamic_pointer_cast<accessors::TableDataSelector>(sel);
+        if (tsel) {
+            // set name for temporary selected table cached to disk
+            const std::string name = prefix+"_"+tsel->getTableName();
+            tsel->setSelectionCacheName(name);
+        }
+    }
+}
+
+/// @brief Fill the cache of selected tables
+/// @details Table selection can be expensive, this provides a way to
+/// do the selection once, cache it to disk and reuse it.
+/// @param[in] nRanks, the number of ranks
+/// @param[in] rank, this rank's number
+/// @param[in] parset, the ParameterSet supplying prefix, datacolumn and selection
+/// @param[in] mss the vector of MeasurementSet names
+/// @return true if cache was created
+bool ImagerParallel::fillSelectionCache(unsigned int nRanks, unsigned int rank, const LOFAR::ParameterSet& parset, 
+    const std::vector<string> & mss) 
+{
+    const string prefix = parset.getString("selectioncacheprefix","");
+    if (prefix.empty()) return false;
+
+    const string dataColumn = parset.getString("datacolumn", "DATA");
+    // Standard MPI distribution over ranks
+    const unsigned int div = mss.size() / nRanks;
+    const unsigned int rem = mss.size() % nRanks;
+    const unsigned int first = rank * div + (rank < rem ? rank : rem);
+    const unsigned int num = div + (rank < rem);
+    for (unsigned int i = first; i < first+num; i++) {
+        accessors::TableDataSource ds(mss[i], accessors::TableDataSource::MEMORY_BUFFERS, dataColumn);
+        accessors::IDataSelectorPtr sel=ds.createSelector();
+        ASKAPDEBUGASSERT(sel);
+        // use same selection & conversion as used for imaging (in CalcCore)
+        sel->chooseCrossCorrelations();
+        sel << parset;
+        auto conv = ds.createConverter();
+        conv->setFrequencyFrame(casacore::MFrequency::Ref(casacore::MFrequency::TOPO), "Hz");
+        conv->setDirectionFrame(casacore::MDirection::Ref(casacore::MDirection::J2000));
+        conv->setEpochFrame();
+
+        //Caching is Table specific, so cast to TableDataSelector
+        auto tsel = boost::dynamic_pointer_cast<TableDataSelector>(sel);
+        ASKAPDEBUGASSERT(tsel);
+        // set name for temporary selected table cached to disk
+        const std::string name = prefix+"_"+tsel->getTableName();
+        // need to cast converter to implementation class interface
+        auto implConv = boost::dynamic_pointer_cast<IDataConverterImpl const>(conv);
+        ASKAPDEBUGASSERT(implConv);
+        const casacore::TableExprNode &exprNode = tsel->getTableSelector(implConv);
+        if (!exprNode.isNull()) {
+            TableSelectionDiskCache::create(name, exprNode);
+        }
+    }
+    return true;
 }

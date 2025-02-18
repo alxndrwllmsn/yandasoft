@@ -27,12 +27,6 @@
 // Include own header file first
 #include "ContinuumMaster.h"
 
-// System includes
-#include <string>
-#include <sstream>
-#include <stdexcept>
-#include <vector>
-
 // ASKAPsoft includes
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
@@ -40,34 +34,11 @@
 #include <askap/askapparallel/AskapParallel.h>
 
 #include <Common/ParameterSet.h>
-#include <askap/scimath/fitting/Params.h>
-#include <askap/scimath/fitting/Axes.h>
-/*
-#include <askap/dataaccess/IConstDataSource.h>
-#include <askap/dataaccess/TableConstDataSource.h>
-#include <askap/dataaccess/IConstDataIterator.h>
-#include <askap/dataaccess/IDataConverter.h>
-#include <askap/dataaccess/IDataSelector.h>
-#include <askap/dataaccess/IDataIterator.h>
-#include <askap/dataaccess/SharedIter.h>
-#include <askap/dataaccess/TableInfoAccessor.h>
-*/
-#include <casacore/casa/Quanta.h>
-#include <askap/imageaccess/BeamLogger.h>
-#include <askap/parallel/ImagerParallel.h>
-#include <askap/measurementequation/SynthesisParamsHelper.h>
 
 // Local includes
 #include "askap/distributedimager/AdviseDI.h"
-#include "askap/distributedimager/CalcCore.h"
-#include "askap/distributedimager/CubeComms.h"
 #include "askap/messages/ContinuumWorkUnit.h"
 #include "askap/messages/ContinuumWorkRequest.h"
-
-
-//casacore includes
-#include "casacore/ms/MeasurementSets/MeasurementSet.h"
-#include "casacore/ms/MeasurementSets/MSColumns.h"
 
 using namespace std;
 using namespace askap::cp;
@@ -95,6 +66,7 @@ void ContinuumMaster::run(void)
     if (ms.size() == 0) {
         ASKAPTHROW(std::runtime_error, "No datasets specified in the parameter set file");
     }
+
     // Need to break these measurement sets into groups
     // there are three posibilties:
     // 1 - the different measurement sets have the same epoch - but different
@@ -159,6 +131,7 @@ void ContinuumMaster::run(void)
         }
 
     }
+
     // all the work units allocated - lets send the DONEs
     // now finish the advice for remaining parameters
     diadvise.addMissingParameters(true);

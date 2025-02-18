@@ -204,6 +204,15 @@ namespace askap
       /// @param[in] flag new value of the flag
       void inline doClearGrid(const bool flag) { itsClearGrid = flag;}
 
+      /// @brief set or reset flag telling gridder to enable rotation of uvw coordinates
+      /// @details Rotation of uvw coordinates is normally enabled, but if it is known it is
+      /// not required, some time can be saved by skipping that step
+      /// @param[in] flag new value of the flag
+      void inline doRotateUVW(const bool flag) { itsRotateUVW = flag;}
+
+      /// @brief are we rotating the uvw coordinates?
+      bool inline rotateUVW() { return itsRotateUVW;}
+
       /// @brief clear the grids if enabled
       /// @details the grid can usually be cleared after use to save memory, call this to
       /// clear the grid (but only if doClearGrid(true) has been called first)
@@ -680,6 +689,9 @@ protected:
 
       /// @brief release grid memory after finalise(De)Grid
       bool itsClearGrid;
+
+      /// @brief are we rotating uvw coordinates
+      bool itsRotateUVW;
     };
   }
 }

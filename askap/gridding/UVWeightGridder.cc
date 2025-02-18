@@ -47,7 +47,7 @@ namespace synthesis {
 /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
 UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.), 
        itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
-       itsPointingTolerance(0.0001), itsOversample(1)
+       itsPointingTolerance(0.0001), itsOversample(1), itsRotateUVW(true)
 {}
 
 /// @brief constructor setting the weight builder up front
@@ -56,7 +56,7 @@ UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), it
 UVWeightGridder::UVWeightGridder(const boost::shared_ptr<IUVWeightBuilder> &wtBuilder) : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), 
        itsUVWeightBuilder(wtBuilder), itsMaxPointingSeparation(-1.),
        itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
-       itsPointingTolerance(0.0001), itsOversample(1)
+       itsPointingTolerance(0.0001), itsOversample(1), itsRotateUVW(true)
 {}
 
 
@@ -125,7 +125,7 @@ void UVWeightGridder::accumulate(const accessors::IConstDataAccessor& acc) const
 
    // the following code is borrowed from gridder, but OpenMP sections are removed (less benefits for weight gridding as the
    // effective "CF" is small and builder interface as it is doesn't support multithreaded weight addition)
-   const casacore::Vector<casacore::RigidVector<double, 3> > &outUVW = acc.rotatedUVW(tangentPoint);
+   const casacore::Vector<casacore::RigidVector<double, 3> > &outUVW = itsRotateUVW ? acc.rotatedUVW(tangentPoint) : acc.uvw();
 
    const casacore::uInt nSamples = acc.nRow();
    const casacore::uInt nChan = acc.nChannel();

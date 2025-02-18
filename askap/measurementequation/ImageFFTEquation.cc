@@ -436,6 +436,10 @@ namespace askap
       // Set up initial gridders for model and for the residuals. This enables us to
       // do both at the same time.
 
+      boost::shared_ptr<TableVisGridder> tvg = boost::dynamic_pointer_cast<TableVisGridder>(itsGridder);
+      // check if we can use the no rotation shortcut
+      const bool rotateUVW = (tvg ? tvg->rotateUVW() : true);
+
       // we use the first flag to optionally change gridder after the first image
       string firstName;
       for (std::vector<std::string>::const_iterator it=completions.begin();it!=completions.end();it++)
@@ -478,9 +482,11 @@ namespace askap
         if(itsPSFGridders.count(imageName)==0) {
           if (itsBoxPSFGridder) {
              boost::shared_ptr<BoxVisGridder> psfGridder(new BoxVisGridder);
+             psfGridder->doRotateUVW(rotateUVW);
              itsPSFGridders[imageName] = psfGridder;
           } else if (itsSphFuncPSFGridder) {
              boost::shared_ptr<SphFuncVisGridder> psfGridder(new SphFuncVisGridder);
+             psfGridder->doRotateUVW(rotateUVW);
              itsPSFGridders[imageName] = psfGridder;
           } else if (!first && itsSphFuncOffsetFields) {
              itsPSFGridders[imageName] = itsAltGridder->clone();
@@ -599,6 +605,7 @@ namespace askap
 // I think these are regenerated each major cycles. Need to stop that.
 //
       boost::shared_ptr<BoxVisGridder> uvSamplingGridder(new BoxVisGridder);
+      uvSamplingGridder->doRotateUVW(rotateUVW);
       if (getRobustness()) {
           // do an initial pass over the entire dataset to generate the uv sampling function
           ASKAPLOG_INFO_STR(logger, "Traditional Briggs weighting with robustness = "<<*getRobustness());

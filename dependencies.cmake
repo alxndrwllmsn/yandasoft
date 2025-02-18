@@ -18,5 +18,5 @@ set ( BASE_LOGFILTERS_TAG          tags/1.5.0      CACHE  STRING    "base-logfil
 set ( BASE_IMAGEMATH_TAG           tags/1.15.0     CACHE  STRING    "base-imagemath version"           FORCE )
 set ( BASE_ASKAPPARALLEL_TAG       tags/1.10.0     CACHE  STRING    "base-askapparallel version"       FORCE )
 set ( BASE_SCIMATH_TAG             1bb91504a7a59a95aaa59a6000df9a95a803e46c    CACHE  STRING    "base-scimath version"             FORCE )
-set ( BASE_ACCESSORS_TAG           tags/1.17.0     CACHE  STRING    "base-accessors version"           FORCE )
+set ( BASE_ACCESSORS_TAG           b6e4a46e28186a9827f3323a0ab5423016aebed3 CACHE  STRING    "base-accessors version"           FORCE )
 set ( BASE_COMPONENTS_TAG          tags/1.14.0     CACHE  STRING    "base-components version"          FORCE )

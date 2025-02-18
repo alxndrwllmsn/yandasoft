@@ -111,8 +111,8 @@ void AWProjectVisGridder::initIndices(const accessors::IConstDataAccessor& acc)
     const int nPol = acc.nPol();
     itsCMap.resize(nSamples, nPol, nChan);
     itsCMap.set(0);
-
-    const casacore::Vector<casacore::RigidVector<double, 3> > &rotatedUVW = acc.rotatedUVW(getTangentPoint());
+    const casacore::Vector<casacore::RigidVector<double, 3> > &rotatedUVW = (rotateUVW() ? acc.rotatedUVW(getTangentPoint()) :
+        acc.uvw());
     const casacore::Vector<casacore::Double> & chanFreq = acc.frequency();
 
     for (int i = 0; i < nSamples; ++i) {
