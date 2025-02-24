@@ -48,7 +48,11 @@ ASKAP_LOGGER(logger, ".gridding.tablevisgridder");
 #include <askap/measurementequation/ImageParamsHelper.h>
 #include <askap/scimath/utils/ImageUtils.h>
 
+// MV: We need to check whether thread synchronisation is actually necessary here in our use cases
+// If so, boost includes should probably go into CasaSyncHelper - see AXA-3289
+#include <boost/thread/lock_guard.hpp>
 #include <askap/askap/CasaSyncHelper.h>
+
 #include <askap/profile/AskapProfiler.h>
 
 using namespace askap::scimath;
