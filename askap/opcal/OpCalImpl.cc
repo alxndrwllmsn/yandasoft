@@ -309,7 +309,7 @@ boost::shared_ptr<IMeasurementEquation> OpCalImpl::makePerfectME() const
        // have to create an image-specific equation
        boost::shared_ptr<ImagingEquationAdapter> ieAdapter(new ImagingEquationAdapter);
        ASKAPCHECK(gridder(), "Gridder not defined");
-       ieAdapter->assign<ImageFFTEquation>(*perfectModel, gridder());
+       ieAdapter->assign<ImageFFTEquation>(perfectModel, gridder());
        return ieAdapter;
    }
 

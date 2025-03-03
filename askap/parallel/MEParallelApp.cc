@@ -52,8 +52,9 @@ using namespace askap::synthesis;
 /// @param[in] comms communication object
 /// @param[in] parset parameter set
 MEParallelApp::MEParallelApp(askap::askapparallel::AskapParallel& comms, const LOFAR::ParameterSet& parset, bool useFloat) :
-   MEParallel(comms,parset,useFloat), itsDataColName(parset.getString("datacolumn", "DATA")),
-   itsUVWMachineCacheSize(1), itsUVWMachineCacheTolerance(1e-6), itsMasterDoesWork(parset.getBool("masterDoesWork",false))
+   MEParallel(comms,parset,useFloat), itsDataColName(parset.getString("datacolumn", "DATA")), itsMs(parset.getStringVector("dataset")),
+   itsUVWMachineCacheSize(1), itsUVWMachineCacheTolerance(1e-6), itsSerialMode(parset.getBool("serialmode",false)),
+   itsMasterDoesWork(itsSerialMode || parset.getBool("masterDoesWork",false))
 {
    // set up image handler, needed for both master and worker
    SynthesisParamsHelper::setUpImageHandler(parset);
@@ -70,9 +71,7 @@ MEParallelApp::MEParallelApp(askap::askapparallel::AskapParallel& comms, const L
    if (doWork()) {
        const int nProcs = nWorkers();
        const int rank = workerRank();
-       /// Get the list of measurement sets
-       itsMs = parset.getStringVector("dataset");
-//       ASKAPCHECK(itsMs.size()>0, "Need dataset specification");
+        //       ASKAPCHECK(itsMs.size()>0, "Need dataset specification");
 
        if (itsMs.size() == 0) {
            ASKAPLOG_WARN_STR(logger,"dataset not present or empty");

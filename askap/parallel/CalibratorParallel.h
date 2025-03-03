@@ -140,6 +140,12 @@ namespace askap
       /// @note To be called after all cycles completed in the major loop.
       void doPhaseReferencing();
 
+      /// @brief update the "perfect" model
+      /// @details when used for self calibration we need to update the model used for calibration
+      /// @params[in] model the model image from imager
+      void setPerfectModel(const askap::scimath::Params::ShPtr& model) 
+      { itsPerfectModel=model; itsPerfectME.reset(); itsEquation.reset();}
+
   protected:
       /// @brief initialise the class to iterate over next portion of data
       /// @details This method signals to the iterator adapter to switch to the

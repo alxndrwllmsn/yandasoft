@@ -77,6 +77,10 @@ extended: compare standard and pixellist clean on extended source
     [Tags]          pixellist   newimager
     [Template]      Run PythonTest ${thetest}
     testcleanextended
+selfcal: run selfcal between major cycles
+    [Tags]          selfcal   newimager
+    [Template]      Run PythonTest ${thetest}
+    selfcaltest
 *** Keywords ***
 Run PythonTest ${thetest}
     ${start_time} =    Get Current Date

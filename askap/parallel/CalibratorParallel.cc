@@ -57,7 +57,7 @@
 // logging stuff
 #include <askap/askap_synthesis.h>
 #include <askap/askap/AskapLogging.h>
-ASKAP_LOGGER(logger, ".parallel");
+ASKAP_LOGGER(logger, ".calibratorparallel");
 
 // own includes
 #include <askap/askap/AskapError.h>
@@ -134,11 +134,6 @@ CalibratorParallel::CalibratorParallel(askap::askapparallel::AskapParallel& comm
           ASKAPLOG_INFO_STR(logger, "Same gain values are assumed for all beams (i.e. antenna-based)");
           itsBeamIndependentGains = true;
       }
-      itsNormaliseGains = parset.getBool("normalisegains",false);
-      if (itsNormaliseGains) {
-          ASKAPLOG_INFO_STR(logger,
-              "Newly found gains will be normalised to have amplitudes of unity at output");
-      }
   }
   if (what2solve.find("leakages") != std::string::npos) {
       ASKAPLOG_INFO_STR(logger, "Leakages will be solved for (solve='"<<what2solve<<"')");
@@ -170,7 +165,7 @@ CalibratorParallel::CalibratorParallel(askap::askapparallel::AskapParallel& comm
 
   if (parset.getString("solver", "") == "LSQR"
       && parset.getString("solver.LSQR.parallelMatrix", "") == "true") {
-      ASKAPCHECK(itsComms.isParallel(), "Parallel matrix scheme is supported only in the parallel mode!");
+      ASKAPCHECK(itsComms.isParallel() && !serialMode(), "Parallel matrix scheme is supported only in parallel mode!");
       ASKAPCHECK(itsSolveBandpass||itsSolveBandpassLeakage, "Parallel matrix scheme is supported only for bandpass solutions!");
       itsMatrixIsParallel = true;
   }
@@ -275,7 +270,7 @@ CalibratorParallel::CalibratorParallel(askap::askapparallel::AskapParallel& comm
 #endif
 
   }
-  if (itsComms.isWorker()) {
+  if (itsComms.isWorker() || serialMode()) {
 
       // Todo: replace these with a single parameter: Channels(chanperworker,chunk) and move to init
       const int chunkSize = parset.getInt32("chanperworker",0);
@@ -289,7 +284,9 @@ CalibratorParallel::CalibratorParallel(askap::askapparallel::AskapParallel& comm
                                     " spectral channels starting from "<<itsStartChan<<" (chunk="<<chunk<<")");
       }
       // load sky model, populate itsPerfectModel
-      readModels();
+      if (parset.isDefined("sources.definition")||parset.isDefined("sources.names")) {
+        readModels();
+      }
       itsSolutionInterval = SynthesisParamsHelper::convertQuantity(parset.getString("interval","-1s"), "s");
       if (itsSolutionInterval < 0) {
           ASKAPLOG_INFO_STR(logger, "A single solution will be made for the whole duration of the dataset");
@@ -334,6 +331,11 @@ void CalibratorParallel::init(const LOFAR::ParameterSet& parset)
       // initial assumption of the parameters
       const casacore::uInt nAnt = parset.getInt32("nAnt",36);
       const casacore::uInt nBeam = parset.getInt32("nBeam",1);
+      itsNormaliseGains = parset.getBool("normalisegains",false);
+      if (itsNormaliseGains) {
+          ASKAPLOG_INFO_STR(logger, "Newly found gains will be normalised to have amplitudes of unity");
+      }
+
       if (itsSolveGains) {
           ASKAPLOG_INFO_STR(logger, "Initialise gains (unknowns) for "<<nAnt<<" antennas and "<<nBeam<<" beam(s).");
           if (itsBeamIndependentGains) {
@@ -405,7 +407,7 @@ void CalibratorParallel::init(const LOFAR::ParameterSet& parset)
           updatePreAvgBufferEstimates(nAnt, nBeam, nChan);
       }
   }
-  if (itsComms.isWorker()) {
+  if (itsComms.isWorker() || serialMode()) {
       // a greater reuse of the measurement equation could probably be achieved
       // at this stage we cache just the "perfect" ME, but recreate calibration ME.
       itsEquation.reset();
@@ -452,17 +454,17 @@ std::map<std::string, std::string> CalibratorParallel::getLSQRSolverParameters(c
 void CalibratorParallel::calcOne(const std::string& ms, bool discard)
 {
 try {
-  ASKAPLOG_INFO_STR(logger, "Calculating normal equations for " << ms );
+  ASKAPLOG_DEBUG_STR(logger, "Calculating normal equations for " << ms );
   // First time around we need to generate the equation
   if ((!itsEquation) || discard) {
-      ASKAPLOG_INFO_STR(logger, "Creating measurement equation" );
+      ASKAPLOG_DEBUG_STR(logger, "Creating measurement equation" );
       if (!itsIteratorAdapter) {
-          ASKAPLOG_INFO_STR(logger, "Creating iterator over data" );
+          ASKAPLOG_DEBUG_STR(logger, "Creating iterator over data" );
           TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS, dataColumn());
           ds.configureUVWMachineCache(uvwMachineCacheSize(),uvwMachineCacheTolerance());
           IDataSelectorPtr sel=ds.createSelector();
           if (itsChannelsPerWorker > 0) {
-              ASKAPLOG_INFO_STR(logger, "Setting up selector for "<<itsChannelsPerWorker<<" channels starting from "<<itsStartChan);
+              ASKAPLOG_DEBUG_STR(logger, "Setting up selector for "<<itsChannelsPerWorker<<" channels starting from "<<itsStartChan);
               sel->chooseChannels(itsChannelsPerWorker,itsStartChan);
           }
           sel << parset();
@@ -473,12 +475,12 @@ try {
           conv->setEpochFrame();
           itsIteratorAdapter.reset(new accessors::TimeChunkIteratorAdapter(ds.createConstIterator(sel, conv), itsSolutionInterval));
           if (itsSolutionInterval >= 0) {
-              ASKAPLOG_INFO_STR(logger, "Iterator has been created, solution interval = "<<itsSolutionInterval<<" s");
+              ASKAPLOG_DEBUG_STR(logger, "Iterator has been created, solution interval = "<<itsSolutionInterval<<" s");
           } else {
-              ASKAPLOG_INFO_STR(logger, "Iterator has been created, infinite solution interval");
+              ASKAPLOG_DEBUG_STR(logger, "Iterator has been created, infinite solution interval");
           }
       } else {
-          ASKAPLOG_INFO_STR(logger, "Reusing iterator adapter (this is a subsequent solution interval)");
+          ASKAPLOG_DEBUG_STR(logger, "Reusing iterator adapter (this is a subsequent solution interval)");
       }
       ASKAPDEBUGASSERT(itsIteratorAdapter);
       IDataSharedIter it(itsIteratorAdapter);
@@ -486,7 +488,7 @@ try {
       ASKAPCHECK(itsModel, "Initial assumption of parameters is not defined");
 
       if (!itsPerfectME) {
-          ASKAPLOG_INFO_STR(logger, "Constructing measurement equation corresponding to the uncorrupted model");
+          ASKAPLOG_DEBUG_STR(logger, "Constructing measurement equation corresponding to the uncorrupted model");
           ASKAPCHECK(itsPerfectModel, "Uncorrupted model not defined");
           if (SynthesisParamsHelper::hasImage(itsPerfectModel)) {
               ASKAPCHECK(!SynthesisParamsHelper::hasComponent(itsPerfectModel),
@@ -494,7 +496,7 @@ try {
               // have to create an image-specific equation
               boost::shared_ptr<ImagingEquationAdapter> ieAdapter(new ImagingEquationAdapter);
               ASKAPCHECK(gridder(), "Gridder not defined");
-              ieAdapter->assign<ImageFFTEquation>(*itsPerfectModel, gridder());
+              ieAdapter->assign<ImageFFTEquation>(itsPerfectModel, gridder());
               itsPerfectME = ieAdapter;
           } else {
               // model is a number of components, don't need an adapter here
@@ -509,7 +511,7 @@ try {
       createCalibrationME(it,itsPerfectME);
       ASKAPCHECK(itsEquation, "Equation is not defined");
   } else {
-      ASKAPLOG_INFO_STR(logger, "Reusing measurement equation" );
+      ASKAPLOG_DEBUG_STR(logger, "Reusing measurement equation" );
       // we need to update the model held by measurement equation
       // because it has been cloned at construction
       ASKAPCHECK(itsEquation, "Equation is not defined");
@@ -522,7 +524,7 @@ try {
 
   casacore::Timer timer;
   itsEquation->calcEquations(*itsNe);
-  ASKAPLOG_INFO_STR(logger, "Calculated normal equations for "<< ms << " in "<< timer.real()
+  ASKAPLOG_DEBUG_STR(logger, "Calculated normal equations for "<< ms << " in "<< timer.real()
                      << " seconds ");
 } catch (casacore::AipsError& aipsError) {
   ASKAPLOG_INFO_STR(logger,"CalibratorParallel::calcOne(...) caught casacore::AipsError - " << aipsError.what());
@@ -725,11 +727,11 @@ void CalibratorParallel::calcNE()
   }
   itsNe = gne;
 
-  if (itsComms.isWorker()) {
+  if (doWork()) {
 
       ASKAPDEBUGASSERT(itsNe);
 
-      if (itsComms.isParallel()) {
+      if (itsComms.isParallel() && !serialMode()) {
           calcOne(measurementSets()[itsComms.rank()-1], false);
           if (!itsMatrixIsParallel) {
               sendNE();
@@ -756,7 +758,6 @@ void CalibratorParallel::calcNE()
 
 void CalibratorParallel::solveNE()
 {
-  ASKAPLOG_INFO_STR(logger, "Started CalibratorParallel::solveNE()");
 
   itsMajorLoopIterationNumber++;
 
@@ -777,19 +778,19 @@ void CalibratorParallel::solveNE()
       ASKAPDEBUGASSERT(itsModel);
 
       // Receive the normal equations
-      if (itsComms.isParallel()) {
+      if (itsComms.isParallel() && !serialMode()) {
           receiveNE();
       }
 
-      ASKAPLOG_INFO_STR(logger, "Solving normal equations (serial matrix)");
+      ASKAPLOG_DEBUG_STR(logger, "Solving normal equations (serial matrix)");
       casa::Timer timer;
       timer.mark();
       Quality q;
 
       itsSolver->solveNormalEquations(*itsModel, q);
 
-      ASKAPLOG_INFO_STR(logger, "Solved normal equations in " << timer.real() << " seconds");
-      ASKAPLOG_INFO_STR(logger, "Solution quality: " << q);
+      ASKAPLOG_DEBUG_STR(logger, "Solved normal equations in " << timer.real() << " seconds");
+      ASKAPLOG_DEBUG_STR(logger, "Solution quality: " << q);
   }
 
   if (itsMatrixIsParallel) {
@@ -800,7 +801,7 @@ void CalibratorParallel::solveNE()
           ASKAPDEBUGASSERT(itsSolver);
           ASKAPDEBUGASSERT(itsModel);
 
-          ASKAPLOG_INFO_STR(logger, "Building a local model on worker " << itsComms.rank());
+          ASKAPLOG_DEBUG_STR(logger, "Building a local model on worker " << itsComms.rank());
           // TODO: Perhaps we could overload parametersToBroadcast() to send only local parts of the full model to workers,
           //       but when the broadcast is performed (in ccalibrator.cc) the equation is not yet built,
           //       so no direct access to the list of local parameters.
@@ -816,24 +817,24 @@ void CalibratorParallel::solveNE()
               //       and thus will be solving for all unknowns (including the flagged data!).
           }
           ASKAPDEBUGASSERT(namesEq.size() == localModel.size());
-          ASKAPLOG_INFO_STR(logger, "Added " << namesEq.size() << " local model parameters on worker " << itsComms.rank());
+          ASKAPLOG_DEBUG_STR(logger, "Added " << namesEq.size() << " local model parameters on worker " << itsComms.rank());
 
-          ASKAPLOG_INFO_STR(logger, "Solving normal equations (parallel matrix)");
+          ASKAPLOG_DEBUG_STR(logger, "Solving normal equations (parallel matrix)");
           casa::Timer timer;
           timer.mark();
           Quality q;
 
           itsSolver->solveNormalEquations(localModel, q);
 
-          ASKAPLOG_INFO_STR(logger, "Solved normal equations in " << timer.real() << " seconds");
-          ASKAPLOG_INFO_STR(logger, "Solution quality: " << q);
+          ASKAPLOG_DEBUG_STR(logger, "Solved normal equations in " << timer.real() << " seconds");
+          ASKAPLOG_DEBUG_STR(logger, "Solution quality: " << q);
 
           sendModelToMaster(localModel);
       }
       if (itsComms.isMaster()) {
           ASKAPDEBUGASSERT(itsModel);
 
-          ASKAPLOG_INFO_STR(logger, "Receiving model parts on master");
+          ASKAPLOG_DEBUG_STR(logger, "Receiving model parts on master");
 
           // Receive the local models from workers, and update the full model.
           size_t nParametersUpdated = 0;
@@ -851,7 +852,7 @@ void CalibratorParallel::solveNE()
               }
           }
           ASKAPDEBUGASSERT(itsModel->size() == nParametersUpdated);
-          ASKAPLOG_INFO_STR(logger, "Updated " << nParametersUpdated << " parameters of the full model on master");
+          ASKAPLOG_DEBUG_STR(logger, "Updated " << nParametersUpdated << " parameters of the full model on master");
       }
   }
 }
@@ -861,10 +862,10 @@ void CalibratorParallel::doPhaseReferencing()
     if (itsComms.isMaster()) {
         if (itsRefGainXX != "") {
             if (itsRefGainXX == itsRefGainYY) {
-                ASKAPLOG_INFO_STR(logger, "Rotating phases to have that of "<<
+                ASKAPLOG_DEBUG_STR(logger, "Rotating phases to have that of "<<
                     itsRefGainXX<<" equal to 0");
             } else {
-                ASKAPLOG_INFO_STR(logger, "Rotating XX phases to have that of "<<
+                ASKAPLOG_DEBUG_STR(logger, "Rotating XX phases to have that of "<<
                     itsRefGainXX<<" equal to 0 and YY phases to have that of "<<
                     itsRefGainYY<<" equal to 0");
             }
@@ -989,7 +990,7 @@ double CalibratorParallel::solutionTime() const
 /// @param[in] flag flag value to set
 void CalibratorParallel::setNextChunkFlag(const bool flag)
 {
-  ASKAPCHECK(itsComms.isWorker(), "setNextChunkFlag is supposed to be used in workers");
+  //ASKAPCHECK(itsComms.isWorker(), "setNextChunkFlag is supposed to be used in workers");
   if (itsNe) {
       const boost::shared_ptr<scimath::GenericNormalEquations> gne = boost::dynamic_pointer_cast<scimath::GenericNormalEquations>(itsNe);
       if (gne) {

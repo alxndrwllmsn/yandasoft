@@ -90,8 +90,6 @@ protected:
    /// @return shared pointer to the gridder template
    inline IVisGridder::ShPtr gridder() const { return itsGridder; }
 
-
-protected:
    /// @brief set the list of measurement sets
    /// @details For bandpass calibration we need a different logic - number of measurement sets
    /// is not 1, but less than the number of workers. Using this method allows to bypass
@@ -102,15 +100,20 @@ protected:
 
    /// @brief does this rank (which may be rank 0) do distributed work?
    /// @return bool true if this rank does work
-   inline bool doWork() { return (itsComms.isWorker() || itsMasterDoesWork);}
+   inline bool doWork() const { return (itsComms.isWorker() || itsMasterDoesWork);}
 
    /// @brief number of ranks doing work (may include master)
    /// @return uint number of ranks doing work
-   inline uint nWorkers() { return itsComms.nProcs() - (itsMasterDoesWork ? 0 : 1);}
+   inline uint nWorkers() const { return itsSerialMode ? 1 : (itsComms.nProcs() - (itsMasterDoesWork ? 0 : 1));}
 
    /// @brief rank of worker (always starts at zero)
    /// @return uint sequence number of worker (could include master with number 0)
-   inline uint workerRank() { return itsComms.rank() - (itsMasterDoesWork ? 0 : 1);}
+   inline uint workerRank() const { return itsComms.rank() - (itsMasterDoesWork ? 0 : 1);}
+
+   /// @brief are we running in serial model (only master is active)
+   /// @details Sometimes we want to use the code in serial mode with only a single rank active
+   /// @return bool return true if in serial mode, false otherwise
+   inline bool serialMode() const { return itsSerialMode;}
 private:
 
    /// @brief name of the data column to use.
@@ -127,6 +130,9 @@ private:
 
    /// @brief gridder to be used
    IVisGridder::ShPtr itsGridder;
+
+   /// @brief are we in serial mode? (only master does work)
+   bool itsSerialMode;
 
    /// @brief does the master participate in the the work?
    bool itsMasterDoesWork;

@@ -439,7 +439,7 @@ void DDCalibratorParallel::calcOne(const std::string& ms, bool discard)
               // have to create an image-specific equation
               boost::shared_ptr<ImagingEquationAdapter> ieAdapter(new ImagingEquationAdapter);
               ASKAPCHECK(gridder(), "Gridder not defined");
-              ieAdapter->assign<ImageFFTEquation>(*itsPerfectModel, gridder());
+              ieAdapter->assign<ImageFFTEquation>(itsPerfectModel, gridder());
               itsPerfectME = ieAdapter;
           } else {
               // model is a number of components, don't need an adapter here

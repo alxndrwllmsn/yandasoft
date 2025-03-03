@@ -65,6 +65,8 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/measurementequation/ImageSolverFactory.h>
 #include <askap/measurementequation/ImageCleaningSolver.h>
 #include <askap/calibaccess/CalibAccessFactory.h>
+#include <askap/calibaccess/CalSolutionConstSourceStub.h>
+#include <askap/calibaccess/CachedCalSolutionAccessor.h>
 #include <askap/measurementequation/CalibrationApplicatorME.h>
 #include <askap/profile/AskapProfiler.h>
 #include <askap/parallel/GroupVisAggregator.h>
@@ -206,6 +208,22 @@ namespace askap
         }
       }
     }
+
+    /// @brief check if we are doing on the fly calibration and initialise it if needed
+    void ImagerParallel::initSelfCalibration() {
+        if (params()->completions("gain.",true).size()) {
+            if (itsSolutionSource) {
+                ASKAPLOG_WARN_STR(logger,"Calibration specification ignored because self calibration parameters were found");
+            }
+            const boost::shared_ptr<ICalSolutionConstAccessor> csap(new CachedCalSolutionAccessor(params()));
+            itsSolutionSource.reset(new CalSolutionConstSourceStub(csap));
+            // override the parset with what was requested for selfcal
+            LOFAR::ParameterSet newParset(parset());
+            newParset.replace(LOFAR::KVpair("calibrate.normalise",params()->has("gain.normalise"))); 
+            setParset(newParset);
+        }
+    }
+
 
     /// Estimate any appropriate parameters that were not specified in the parset
     LOFAR::ParameterSet ImagerParallel::autoSetParameters(askap::askapparallel::AskapParallel& comms,
@@ -533,6 +551,7 @@ namespace askap
             calME->allowFlag(parset().getBool("calibrate.allowflag",false));
             calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
             calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+            calME->normalise(parset().getBool("calibrate.normalise",false));
 
             // calibration iterator to replace the original one for the purpose of measurement equation creation
             const IDataSharedIter calIter(new CalibrationIterator(origIt,calME,itsCalDirMap.size()>0));
@@ -642,14 +661,14 @@ namespace askap
       }
     }
 
-    /// @brief helper method to indentify model parameters to broadcast
+    /// @brief helper method to identify model parameters to broadcast
     /// @details We use itsModel to buffer some derived images like psf, weights, etc
     /// which are not required for prediffers. It just wastes memory and CPU time if
     /// we broadcast them. At the same time, some auxilliary parameters like peak
     /// residual value need to be broadcast (so the major cycle can terminate in workers).
     /// This method returns the vector with all parameters to be broadcast. By default
     /// it returns all parameter names, so it is overridden here to broadcast only
-    /// model images and the peak_residual metadata.
+    /// model images and the peak_residual metadata. Added gain for selfcal.
     /// @return a vector with parameters to broadcast
     std::vector<std::string> ImagerParallel::parametersToBroadcast() const
     {
@@ -659,7 +678,8 @@ namespace askap
        result.reserve(names.size());
        for (std::vector<std::string>::const_iterator ci=names.begin(); ci!=names.end(); ++ci) {
             if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) ||
-                (ci->find("uvweight") == 0) || (ci->find("noise_threshold_reached") == 0)) {
+                (ci->find("uvweight") == 0) || (ci->find("noise_threshold_reached") == 0) ||
+                (ci->find("gain") == 0 )) {
                 result.push_back(*ci);
             }
        }
