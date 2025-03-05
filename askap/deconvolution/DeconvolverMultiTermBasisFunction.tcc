@@ -369,10 +369,6 @@ namespace askap {
             ASKAPTRACE("DeconvolverMultiTermBasisFunction::initialiseMask");
             ASKAPLOG_DEBUG_STR(decmtbflogger, "initialiseMask called");
 
-            // check if we need the masks
-            if (this->control()->targetObjectiveFunction2()==0) {
-                return;
-            }
             // check if we've already done this
             if (itsScalePixels.size()>0) {
                 return;
