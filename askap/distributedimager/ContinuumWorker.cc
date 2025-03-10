@@ -464,6 +464,7 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 
        LOFAR::ParameterSet gridParset = itsParset.makeSubset("");
        gridParset.remove("Images.extraoversampling");
+       size_t comm_index = -1;
 
        if ( itsComms.isCubeCreator() ) {
 
@@ -482,7 +483,14 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
             if (itsReadStartingModelCube) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));             
             } else if (itsWriteModelImage) {
-                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
+                if ((itsGridType == "adios") && (itsParset.getString("imageaccess", "individual") == "collective")) {
+                    if (comm_index == -1) {
+                        comm_index = itsComms.theWriters();
+                    }
+                    itsImageCube.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, itsParset, itsNChanCube, f0, freqinc, img_name));
+                } else {
+                    itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
+                }
             }
             if (itsWritePsfRaw) {
                 itsPSFCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, psf_name));
@@ -506,7 +514,9 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
                         itsPCFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, pcfgrid_name, true));
                         itsPSFGridCube.reset(new CubeBuilder<casacore::Complex>(gridParset, itsNChanCube, f0, freqinc, psfgrid_name, true));
                     } else if ((itsGridType == "adios") && (itsParset.getString("imageaccess", "individual") == "collective")) {
-                        size_t comm_index = itsComms.theWriters();
+                        if (comm_index == -1) {
+                            comm_index = itsComms.theWriters();
+                        }
                         itsVisGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, itsNChanCube, f0, freqinc, visgrid_name+".real", itsGridCoordUV));
                         itsPCFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, itsNChanCube, f0, freqinc, pcfgrid_name+".real", itsGridCoordUV));
                         itsPSFGridCubeReal.reset(new CubeBuilder<casacore::Float>(itsComms, comm_index, gridParset, itsNChanCube, f0, freqinc, psfgrid_name+".real", itsGridCoordUV));
@@ -863,7 +873,9 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
         ASKAPLOG_DEBUG_STR(logger,"Merged");
 
         ASKAPDEBUGASSERT(rootImagerPtr);
-        lastcycle = checkStoppingThresholds(rootImagerPtr->params());
+        if (lastcycle == false) {
+            lastcycle = checkStoppingThresholds(rootImagerPtr->params());
+        }
         if (itsWriteGrids && lastcycle && itsLocalSolver) {
             ASKAPLOG_INFO_STR(logger, "Extracting grids and summing them in the root imager");
             // the following would work regarless whether root imager and working imager are the same object or not
