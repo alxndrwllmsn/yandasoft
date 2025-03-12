@@ -59,7 +59,7 @@ namespace synthesis {
 /// @param[in] src calibration solution source to work with
 CalibrationApplicatorME::CalibrationApplicatorME(const boost::shared_ptr<accessors::ICalSolutionConstSource> &src) :
      CalibrationSolutionHandler(src), itsScaleNoise(false), itsFlagAllowed(false), itsBeamIndependent(false),
-     itsChannelIndependent(false)
+     itsChannelIndependent(false),itsNormalise(false)
 {}
 
 void CalibrationApplicatorME::correct(accessors::IDataAccessor &chunk) const
@@ -117,9 +117,7 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
   const casacore::Cube<casacore::Bool> &flag = noiseAndFlagDA ? noiseAndFlagDA->rwFlag() : chunk.flag();
 
   for (casacore::uInt row = 0; row < chunk.nRow(); ++row) {
-       //casacore::Matrix<casacore::Complex> thisRow = rwVis.yzPlane(row);
        casacore::Matrix<casacore::Complex> thisRow = rwVis.xyPlane(row);
-       //casacore::Matrix<casacore::Bool> thisRowFlag = flag.yzPlane(row);
        casacore::Matrix<casacore::Bool> thisRowFlag = flag.xyPlane(row);
        for (casacore::uInt chan = 0; chan < chunk.nChannel(); ++chan) {
             bool allFlagged = true;
@@ -156,6 +154,15 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
                                   itsBeamIndependent ? 0 : beam1[row], chan);
                 casacore::SquareMatrix<casacore::Complex, 2> jones2 = calSolution().jones(antenna2[row],
                                   itsBeamIndependent ? 0 : beam2[row], chan);
+                // parallel hand gains are normalised to get phase only correction
+                if (itsNormalise) {
+                    for (casacore::uInt i = 0; i<2; i++) {
+                        float amp = casacore::fabs(jones1(i,i));
+                        if (amp>0) jones1(i,i) /= amp;
+                        amp = casacore::fabs(jones2(i,i));
+                        if (amp>0) jones2(i,i) /= amp;
+                    }
+                }
                 for (casacore::uInt i = 0; i < nPol; ++i) {
                      for (casacore::uInt j = 0; j < nPol; ++j) {
                           const casacore::uInt index1 = indices(i);
@@ -344,6 +351,16 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                     }
                     const casa::SquareMatrix<casa::Complex, 2>& j1 = jv1.first;
                     const casa::SquareMatrix<casa::Complex, 2>& j2 = jv2.first;
+                    // parallel hand gains are normalised to get phase only correction
+                    if (itsNormalise) {
+                        for (casacore::uInt i = 0; i<2; i++) {
+                            float amp = casacore::fabs(j1(i,i));
+                            if (amp>0 && amp!=1) jv1.first(i,i) /= amp;
+                            amp = casacore::fabs(j2(i,i));
+                            if (amp>0 && amp!=1) jv2.first(i,i) /= amp;
+                        }
+                    }
+
                     const casa::Complex det1 = j1(0,0)*j1(1,1)-j1(0,1)*j1(1,0);
                     const casa::Complex det2 = j2(0,0)*j2(1,1)-j2(0,1)*j2(1,0);
                     det = casa::real(det1*conj(det1))*casa::real(det2*conj(det2));
@@ -487,6 +504,23 @@ void CalibrationApplicatorME::interpolateTime(bool flag)
       ASKAPLOG_INFO_STR(logger, "CalibrationApplicatorME will not interpolate the gains in time");
   }
 }
+
+/// @brief normalise gains before application, i.e., do phase-only
+/// @details Doing phase only gain correction is often useful when the
+/// model is not very good (yet), this option normalises the gains to have
+/// unit amplitude
+/// @param flag, if true normalise gains, apply phase correction only
+void CalibrationApplicatorME::normalise(bool flag)
+{
+  // make sure the parent CalibrationSolutionHandler knows about this too
+  itsNormalise = flag;
+  if (itsNormalise) {
+      ASKAPLOG_INFO_STR(logger, "CalibrationApplicatorME will apply phase corrections only");
+  } else {
+      ASKAPLOG_INFO_STR(logger, "CalibrationApplicatorME will apply complex gain corrections");
+  }
+}
+
 
 } // namespace synthesis
 

@@ -207,6 +207,46 @@ namespace askap
       }
     }
 
+    /// @brief check if we are doing on the fly calibration and initialise it if needed
+    void ImagerParallel::initSelfCalibration() {
+        std::vector<std::string> completions = params()->completions("selfcal.",true);
+        if (completions.size()) {
+            if (itsSolutionSource) {
+                ASKAPLOG_INFO_STR(logger,"Calibration updated with latest self calibration");
+            } else {
+                ASKAPLOG_INFO_STR(logger,"Self calibration parameters found");
+            }
+            LOFAR::ParameterSet newParset(parset());
+
+            // find name of calibration table (or parset)
+            for (auto item : completions) {
+                size_t pos = item.find("table.");
+                if (pos!=std::string::npos) {
+                    std::string name = item.substr(pos+6);
+                    newParset.replace("calibaccess", "table");
+                    newParset.replace("calibaccess.table", name);
+                    ASKAPCHECK(name.size(), "Empty table name in selfcal parameters: "<<completions);
+                    break;
+                }
+                pos = item.find("parset.");
+                if (pos!=std::string::npos) {
+                    std::string name = item.substr(pos+7);
+                    newParset.replace("calibaccess", "parset");
+                    newParset.replace("calibaccess.parset", name);
+                    ASKAPCHECK(name.size(), "Empty parset name in selfcal parameters: "<<completions);
+                    break;
+                }
+            }
+            newParset.replace(LOFAR::KVpair("calibrate.normalise", params()->has("selfcal.normalise"))); 
+
+            // setup solution source from the new parset
+            itsSolutionSource = CalibAccessFactory::roCalSolutionSource(newParset);
+            ASKAPASSERT(itsSolutionSource);
+            // this may not be needed since parsets are copied by reference
+            setParset(newParset);
+        }
+    }
+
     /// Estimate any appropriate parameters that were not specified in the parset
     LOFAR::ParameterSet ImagerParallel::autoSetParameters(askap::askapparallel::AskapParallel& comms,
         const LOFAR::ParameterSet &parset) {
@@ -533,6 +573,7 @@ namespace askap
             calME->allowFlag(parset().getBool("calibrate.allowflag",false));
             calME->beamIndependent(parset().getBool("calibrate.ignorebeam", false));
             calME->interpolateTime(parset().getBool("calibrate.interpolatetime",false));
+            calME->normalise(parset().getBool("calibrate.normalise",false));
 
             // calibration iterator to replace the original one for the purpose of measurement equation creation
             const IDataSharedIter calIter(new CalibrationIterator(origIt,calME,itsCalDirMap.size()>0));
@@ -642,14 +683,14 @@ namespace askap
       }
     }
 
-    /// @brief helper method to indentify model parameters to broadcast
+    /// @brief helper method to identify model parameters to broadcast
     /// @details We use itsModel to buffer some derived images like psf, weights, etc
     /// which are not required for prediffers. It just wastes memory and CPU time if
     /// we broadcast them. At the same time, some auxilliary parameters like peak
     /// residual value need to be broadcast (so the major cycle can terminate in workers).
     /// This method returns the vector with all parameters to be broadcast. By default
     /// it returns all parameter names, so it is overridden here to broadcast only
-    /// model images and the peak_residual metadata.
+    /// model images and the peak_residual metadata. Added gain for selfcal.
     /// @return a vector with parameters to broadcast
     std::vector<std::string> ImagerParallel::parametersToBroadcast() const
     {
@@ -659,7 +700,8 @@ namespace askap
        result.reserve(names.size());
        for (std::vector<std::string>::const_iterator ci=names.begin(); ci!=names.end(); ++ci) {
             if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) ||
-                (ci->find("uvweight") == 0) || (ci->find("noise_threshold_reached") == 0)) {
+                (ci->find("uvweight") == 0) || (ci->find("noise_threshold_reached") == 0) ||
+                (ci->find("selfcal") == 0 )) {
                 result.push_back(*ci);
             }
        }

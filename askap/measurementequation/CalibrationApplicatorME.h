@@ -117,6 +117,13 @@ public:
   /// @param[in] flag, if true interpolate between solutions
   virtual void interpolateTime(bool flag);
 
+  /// @brief normalise gains before application, i.e., do phase-only
+  /// @details Doing phase only gain correction is often useful when the
+  /// model is not very good (yet), this option normalises the gains to have
+  /// unit amplitude
+  /// @param flag, if true normalise gains, apply phase correction only
+  virtual void normalise(bool flag);
+
 private:
   /// @brief correct or corrupt visibilities for one accessor
   /// @details This method corrects or corrupts the data in the given accessor
@@ -147,6 +154,8 @@ private:
   bool itsBeamIndependent;
   /// @brief true, if channel index can be ignored and channel=0 corrections applied to all channels
   bool itsChannelIndependent;
+  /// @brief true if we want to apply phase corrections only
+  bool itsNormalise;
 };
 
 } // namespace synthesis

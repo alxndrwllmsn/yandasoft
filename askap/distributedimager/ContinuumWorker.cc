@@ -707,6 +707,8 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
    } else {
        if (rootImagerPtr) {
            workingImager.replaceModelByReference(rootImagerPtr->params());
+           // setup self-calibration if required
+           workingImager.initSelfCalibration();
        } else {
            if (itsLocalSolver) {
               // load starting model or setup empty model image

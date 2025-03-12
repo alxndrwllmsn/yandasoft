@@ -82,7 +82,7 @@ struct ImagingEquationAdapter : virtual public IMeasurementEquation,
    /// @param[in] par input parameters
    /// @param[in] gridder input gridder (passed as shared pointer)
    template<typename ME>
-   void assign(const scimath::Params &par, const IVisGridder::ShPtr &gridder) 
+   void assign(const askap::scimath::Params::ShPtr& par, const IVisGridder::ShPtr &gridder) 
    { itsActualEquation.reset(new ME(par, itsIterAdapter, gridder)); }
    
    /// @brief assign the actual measurement equation to an adapter

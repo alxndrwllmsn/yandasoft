@@ -95,7 +95,7 @@ int main(int argc, const char** argv) {
          ASKAPASSERT(dc.toWorld(res,pixel));
 
          // print peak in the image and position of the peak
-         std::cout<<tmax<<" ";
+         std::cout<<std::setprecision(15)<<tmax<<" ";
          printDirection(std::cout,res);
          std::cout<<" # Max RA Dec (Epoch)"<<std::endl;
 

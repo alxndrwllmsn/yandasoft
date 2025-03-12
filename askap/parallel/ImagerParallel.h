@@ -233,6 +233,9 @@ namespace askap
       /// state similar to that before the first major cycle if no traditional weighting is done.
       void recreateNormalEquations();
 
+      /// @brief check if we are doing selfcalibration and initialise it if needed
+      void initSelfCalibration();
+
       /// @brief set up caching for the table selection if requested
       /// @details Table selection can be expensive, this provides a way to
       /// do the selection once, cache it to disk and reuse it.
