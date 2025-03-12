@@ -31,7 +31,6 @@
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
 #include <askap/parallel/CalibratorParallel.h>
-
 #include <Common/ParameterSet.h>
 
 // Local includes
@@ -223,14 +222,20 @@ void ContinuumMaster::run(void)
             if (doSelfcal && cycle >= calCycle[0] && (cycle - calCycle[0]) % calCycle[1] == 0) {
                 const bool normalise = calCycle[2]==0 || cycle <= calCycle[2];
                 ASKAPLOG_INFO_STR(logger,"Running "<< (normalise ? "phase-only " : "")<<"selfcal");
-                scimath::Params::ShPtr calParams = selfCalibration(imager.params(), calSubset);
+                selfCalibration(imager.params(), calSubset);
                 // keep track of existing params
                 keep = imager.params()->names();
-                // merge in the selfcal gain params
-                imager.params()->merge(*calParams);
+                // add the selfcal params
+                const std::string mode = calSubset.getString("calibaccess","parset");
+                ASKAPCHECK(mode=="parset"||mode=="table","Only parset or table access are supported for selfcal");
+                if (mode == "parset") {
+                    imager.params()->add("selfcal.parset."+calSubset.getString("calibaccess.parset","caldata.dat"));
+                } else {
+                    imager.params()->add("selfcal.table."+calSubset.getString("calibaccess.table","caldata.tab"));
+                }
                 // add phase only flag
                 if (normalise) {
-                    imager.params()->add("gain.normalise");
+                    imager.params()->add("selfcal.normalise");
                 }
                 selfcal = true;
             }
@@ -270,7 +275,7 @@ void ContinuumMaster::run(void)
                 }
             }
 
-            ASKAPLOG_INFO_STR(logger, "Broadcasting " << (final ? "final" : "latest") <<" model" << (selfcal ? " including selfcal gains":""));
+            ASKAPLOG_INFO_STR(logger, "Broadcasting " << (final ? "final" : "latest") <<" model" << (selfcal ? " including selfcal params":""));
             imager.broadcastModel();
             ASKAPLOG_INFO_STR(logger, "Broadcasting " << (final ? "final" : "latest") <<" model - done");
             if (selfcal) {
@@ -348,34 +353,34 @@ std::vector<int> ContinuumMaster::getBeams()
     return bs;
 }
 
-scimath::Params::ShPtr ContinuumMaster::selfCalibration(askap::scimath::Params::ShPtr& model, const LOFAR::ParameterSet & parset) {
+void ContinuumMaster::selfCalibration(askap::scimath::Params::ShPtr& model, const LOFAR::ParameterSet & parset) {
     ASKAPLOG_DEBUG_STR(logger,"Creating calibrator");
-    std::shared_ptr<synthesis::CalibratorParallel> calib(new synthesis::CalibratorParallel(itsComms, parset));
+    synthesis::CalibratorParallel calib(itsComms, parset);
 
     const int nCycles = parset.getInt32("ncycles", 1);
     ASKAPCHECK(nCycles >= 0, " Number of calibration iterations should be a non-negative number, you have " <<
             nCycles);
 
     // update the calibrator model with the latest imager model
-    calib->setPerfectModel(model);
+    calib.setPerfectModel(model);
     size_t solution = 0;
     for (bool continueFlag = true; continueFlag; ++solution) {
         ASKAPLOG_DEBUG_STR(logger, "Calibration solution interval "<<solution + 1);
         for (int cycle = 0; cycle < nCycles; ++cycle) {
             ASKAPLOG_DEBUG_STR(logger, "*** Starting calibration iteration " << cycle + 1 << " ***");
-            calib->calcNE();
-            calib->solveNE();
+            calib.calcNE();
+            calib.solveNE();
         }
-        calib->doPhaseReferencing();
+        calib.doPhaseReferencing();
 
         ASKAPLOG_DEBUG_STR(logger,  "*** Finished calibration cycles ***");
-        calib->writeModel();
+        calib.writeModel();
 
-        continueFlag = calib->getNextChunkFlag();
+        continueFlag = calib.getNextChunkFlag();
         if (continueFlag) {
             ASKAPLOG_DEBUG_STR(logger, "More data are available, continue to make solution for the next interval");
             // initialise the model and measurement equation
-            calib->init(parset);
+            calib.init(parset);
         } else {
             ASKAPLOG_DEBUG_STR(logger, "No more data are available, this was the last solution interval");
         }
@@ -384,8 +389,7 @@ scimath::Params::ShPtr ContinuumMaster::selfCalibration(askap::scimath::Params::
         // value if it already exists. This is important for the graph
         // reduction of normal equations. This is really only needed for
         // the master, but doesn't hurt at the worker.
-        calib->removeNextChunkFlag();
+        calib.removeNextChunkFlag();
     }
-    return calib->params();
 }
 

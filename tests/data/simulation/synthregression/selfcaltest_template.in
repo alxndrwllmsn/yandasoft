@@ -118,19 +118,14 @@ Cimager.write.psfrawimage                       = true
 Cimager.write.weightsimage                      = true
 Cimager.write.residualimage                     = true
 # parameters for calibrator
-#Cimager.selfcal.dataset                              = field1.ms
-Cimager.selfcal.nAnt                                 = 36
-Cimager.selfcal.nBeam                                = 1
+Cimager.selfcal.nAnt                            = 36
+Cimager.selfcal.nBeam                           = 1
 Cimager.selfcal                                 = true
-#Cimager.selfcal.refgain                              = gain.g11.0.0
+#Cimager.selfcal.refgain                         = gain.g11.0.0
 Cimager.selfcal.refantenna  = 0
-Cimager.selfcal.calibaccess                         = parset
-Cimager.selfcal.calibaccess.parset                  = result.dat
-#Cimager.selfcal.calibaccess.table                   = "caldata.tab"
-#Cimager.selfcal.calibaccess.table.maxant            = 36
-#Cimager.selfcal.calibaccess.table.maxbeam           = 1
-#Cimager.selfcal.calibaccess.table.maxchan           = 1
-#Cimager.selfcal.calibaccess.table.reuse           = false
+Cimager.selfcal.calibaccess.table.maxant        = 36
+Cimager.selfcal.calibaccess.table.maxbeam       = 1
+Cimager.selfcal.calibaccess.table.maxchan       = 1
+Cimager.selfcal.calibaccess.table.reuse         = true
 
-
-Cimager.selfcal.ncycles                                 = 25
+Cimager.selfcal.ncycles                         = 25

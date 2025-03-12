@@ -107,7 +107,8 @@ def runTestsSelfcal(solverType):
 
     print("First run of selfcal, should get gains close to (1.,0.)")
     spr.initParset()
-    #spr.addToParset("Cimager.selfcal.calibaccess = parset")
+    spr.addToParset("Cimager.selfcal.calibaccess = parset")
+    spr.addToParset("Cimager.selfcal.calibaccess.parset = result.dat")
     spr.addToParset("Cimager.selfcal.solver = " + solverType)
     spr.addToParset("Cimager.selfcal.calcycle = [1,1,4]")
 
@@ -130,6 +131,8 @@ def runTestsSelfcal(solverType):
 
     print("Second run of selfcal, gains should be close to selfcalgains.in")
     # calibrate again
+    spr.addToParset("Cimager.selfcal.calibaccess = parset")
+    spr.addToParset("Cimager.selfcal.calibaccess.parset = result.dat")
     spr.addToParset("Cimager.selfcal.solver = " + solverType)
     spr.addToParset("Cimager.selfcal.calcycle = [1,1,5]")
     spr.addToParset("Cimager.ncycles = 8")
@@ -152,19 +155,12 @@ def runTestsSelfcal(solverType):
     spr.initParset()
     spr.addToParset("Cimager.selfcal.solver = " + solverType)
     spr.addToParset("Cimager.selfcal.calibaccess = table")
+    spr.addToParset("Cimager.selfcal.calibaccess.table = scgains.tab")
     spr.addToParset("Cimager.selfcal.interval = 600s")
     spr.addToParset("Cimager.selfcal.calcycle = [1,1,5]")
     spr.addToParset("Cimager.ncycles = 8")
     os.system("rm -rf caldata.tab")
     spr.runNewImager()
-
-    # print("Testing calibration application.")
-    # # run cimager applying time-dependent calibration
-    # spr.addToParset("Cimager.calibrate = true")
-    # spr.addToParset("Cimager.calibaccess = table")
-    # spr.addToParset("Cimager.calibaccess.table = \"caldata.tab\"")
-    # spr.addToParset("Cimager.calibrate.ignorebeam = true")
-    # spr.runImager()
     analyseResult(spr)
 
 
@@ -201,4 +197,4 @@ if __name__ == '__main__':
 
     #clean up
     import os
-    os.system("rm -rf *field1* temp_parset.in caldata.tab result.dat")
+    os.system("rm -rf *field1* temp_parset.in result.dat selfcalgains.in scgains.tab")

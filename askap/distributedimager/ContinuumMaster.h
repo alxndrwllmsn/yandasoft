@@ -88,8 +88,7 @@ class ContinuumMaster {
         /// a gain calibration solution
         /// @param[in] model, the latest model from the deconvolution
         /// @param[in] parset, the calibration parameters to use
-        /// @return the calibration solution (gain parameters)
-        scimath::Params::ShPtr selfCalibration(askap::scimath::Params::ShPtr& model, const LOFAR::ParameterSet & parset);
+        void selfCalibration(askap::scimath::Params::ShPtr& model, const LOFAR::ParameterSet & parset);
 
         /// Parameter set
         LOFAR::ParameterSet& itsParset;

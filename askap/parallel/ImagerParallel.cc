@@ -65,8 +65,6 @@ ASKAP_LOGGER(logger, ".parallel");
 #include <askap/measurementequation/ImageSolverFactory.h>
 #include <askap/measurementequation/ImageCleaningSolver.h>
 #include <askap/calibaccess/CalibAccessFactory.h>
-#include <askap/calibaccess/CalSolutionConstSourceStub.h>
-#include <askap/calibaccess/CachedCalSolutionAccessor.h>
 #include <askap/measurementequation/CalibrationApplicatorME.h>
 #include <askap/profile/AskapProfiler.h>
 #include <askap/parallel/GroupVisAggregator.h>
@@ -211,19 +209,43 @@ namespace askap
 
     /// @brief check if we are doing on the fly calibration and initialise it if needed
     void ImagerParallel::initSelfCalibration() {
-        if (params()->completions("gain.",true).size()) {
+        std::vector<std::string> completions = params()->completions("selfcal.",true);
+        if (completions.size()) {
             if (itsSolutionSource) {
-                ASKAPLOG_WARN_STR(logger,"Calibration specification ignored because self calibration parameters were found");
+                ASKAPLOG_INFO_STR(logger,"Calibration updated with latest self calibration");
+            } else {
+                ASKAPLOG_INFO_STR(logger,"Self calibration parameters found");
             }
-            const boost::shared_ptr<ICalSolutionConstAccessor> csap(new CachedCalSolutionAccessor(params()));
-            itsSolutionSource.reset(new CalSolutionConstSourceStub(csap));
-            // override the parset with what was requested for selfcal
             LOFAR::ParameterSet newParset(parset());
-            newParset.replace(LOFAR::KVpair("calibrate.normalise",params()->has("gain.normalise"))); 
+
+            // find name of calibration table (or parset)
+            for (auto item : completions) {
+                size_t pos = item.find("table.");
+                if (pos!=std::string::npos) {
+                    std::string name = item.substr(pos+6);
+                    newParset.replace("calibaccess", "table");
+                    newParset.replace("calibaccess.table", name);
+                    ASKAPCHECK(name.size(), "Empty table name in selfcal parameters: "<<completions);
+                    break;
+                }
+                pos = item.find("parset.");
+                if (pos!=std::string::npos) {
+                    std::string name = item.substr(pos+7);
+                    newParset.replace("calibaccess", "parset");
+                    newParset.replace("calibaccess.parset", name);
+                    ASKAPCHECK(name.size(), "Empty parset name in selfcal parameters: "<<completions);
+                    break;
+                }
+            }
+            newParset.replace(LOFAR::KVpair("calibrate.normalise", params()->has("selfcal.normalise"))); 
+
+            // setup solution source from the new parset
+            itsSolutionSource = CalibAccessFactory::roCalSolutionSource(newParset);
+            ASKAPASSERT(itsSolutionSource);
+            // this may not be needed since parsets are copied by reference
             setParset(newParset);
         }
     }
-
 
     /// Estimate any appropriate parameters that were not specified in the parset
     LOFAR::ParameterSet ImagerParallel::autoSetParameters(askap::askapparallel::AskapParallel& comms,
@@ -679,7 +701,7 @@ namespace askap
        for (std::vector<std::string>::const_iterator ci=names.begin(); ci!=names.end(); ++ci) {
             if ((ci->find("image") == 0) || (ci->find("peak_residual") == 0) ||
                 (ci->find("uvweight") == 0) || (ci->find("noise_threshold_reached") == 0) ||
-                (ci->find("gain") == 0 )) {
+                (ci->find("selfcal") == 0 )) {
                 result.push_back(*ci);
             }
        }
