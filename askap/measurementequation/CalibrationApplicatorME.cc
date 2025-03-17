@@ -188,7 +188,6 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
                 if (casacore::abs(det)<detThreshold || !validSolution || needFlag) {
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
                     noiseAndFlagDA->rwFlag().xyPlane(row).column(chan).set(true);
-                    thisChan.set(0.);
                     continue;
                 }
             } else {
@@ -376,7 +375,6 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
             }
             if (validSolution) {
                 for (casa::uInt pol = 0; pol < nPol; ++pol) {
-                    //vis(pol) = rwVis(row,chan,pol);
                     vis(pol) = rwVis(pol,chan,visRow);
                 }
             }
@@ -386,7 +384,6 @@ void CalibrationApplicatorME::generic4(accessors::IDataAccessor &chunk, bool cor
                     ASKAPCHECK(noiseAndFlagDA, "Accessor type passed to CalibrationApplicatorME does not support change of flags");
                     for (casa::uInt pol = 0; pol < nPol; ++pol) {
                         rwFlag(pol,chan,row)=true;
-                        rwVis(pol,chan,visRow)=0.;
                     }
                     // go to next channel
                     continue;
