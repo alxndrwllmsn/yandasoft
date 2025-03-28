@@ -96,8 +96,8 @@ namespace askap
 
       // Find all the free parameters beginning with image
       vector<string> names(ip.completions("image"));
-      for (vector<string>::iterator it = names.begin(); it!=names.end(); ++it) {
-          *it = "image" + *it;
+      for (string& name : names) {
+          name = "image" + name;
       }
       // this should work for faceting as well, taylorMap would contain one element
       // per facet in this case
@@ -106,8 +106,6 @@ namespace askap
 
       // Work out overlap of offset fields with main field and create mask
       // Main field is expected to be the first and largest encountered
-      //Matrix<imtype> extraMask = (itsUseOverlapMask ?
-      //    utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<imtype>());
       Matrix<casacore::Float> extraMask = (itsUseOverlapMask ?
           utils::overlapMask(ip,taylorMap,itsExtraOversamplingFactor) : Matrix<casacore::Float>());
 
@@ -574,6 +572,22 @@ namespace askap
                         extraMask.nelements()== maskArray.nelements()) {
                         maskArray *= extraMask.addDegenerate(2);
                     }
+                    if(itsUseCleanMask) {
+                        string cleanMaskName = tmIt->first;
+                        const size_t index = cleanMaskName.find("image");
+                        ASKAPCHECK(index == 0, "Looking for image param name but something is wrong");
+                        cleanMaskName.replace(index,5,"cleanmask");
+                        // Read user supplied clean mask if it exists
+                        try {
+                            const Array<casacore::Float> cleanMask = SynthesisParamsHelper::imageHandler().read(cleanMaskName);
+                            if (cleanMask.nelements()==maskArray.nelements()) {
+                                maskArray *= cleanMask;
+                            }
+                        } catch (const AipsError& x) {
+                            // ok if mask file doesn't exist for offset images
+                            ASKAPCHECK(imageTag != firstImage, "Use of clean mask specified, but mask file "<<cleanMaskName<<" not found");
+                        }
+                    }
                     ASKAPLOG_INFO_STR(logger, "Defining mask as weight image");
                     itsCleaners[imageTag]->setWeight(maskArray);
                 }
@@ -838,6 +852,7 @@ namespace askap
     };
 
     void ImageAMSMFSolver::configure(const LOFAR::ParameterSet &parset) {
+      ASKAPLOG_INFO_STR(logger,"Configuring the AMSMF solver");
       ImageSolver::configure(parset);
 
       ASKAPASSERT(this->itsMonitor);
@@ -853,7 +868,11 @@ namespace askap
           ASKAPLOG_INFO_STR(logger, "Will write scale mask image");
       }
       itsUseOverlapMask = parset.getBool("useoverlapmask", true);
-
-     }
+      itsUseCleanMask = parset.getBool("usecleanmask",false);
+      if (itsUseCleanMask) {
+          ASKAPLOG_INFO_STR(logger, "Will look for and use clean mask image(s)");
+          setUseMask(true);
+      }
+    }
   }
 }

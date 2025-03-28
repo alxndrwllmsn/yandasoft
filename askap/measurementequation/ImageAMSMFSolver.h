@@ -97,6 +97,7 @@ namespace askap
 
       bool itsWriteScaleMask;
       bool itsUseOverlapMask;
+      bool itsUseCleanMask;
 
       casacore::Array<float> itsPSFZeroArray;
 
