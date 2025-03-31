@@ -357,6 +357,11 @@ namespace askap {
                 /// subsequent scale. When using pixellists, this avoids putting lots of closely
                 /// spaced, correlated pixels in the list for large scales.
                 bool itsUseIncrements;
+
+                /// @brief Constrain some scales to positive components
+                /// @details For each scale, specify if components can take any value or are
+                /// constrained to be positive
+                vector<bool> itsPositivityConstraint;
         };
 
     } // namespace synthesis
