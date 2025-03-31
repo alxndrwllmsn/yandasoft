@@ -56,9 +56,25 @@ namespace askap {
         /// e.g. DeconvolverMultiTermBasisFunction<double, DComplex>
         /// @ingroup Deconvolver
 
+        /// @brief find the maximum in the given image
+        /// @details find maximum and position of maximum in the given image or list of pixels
+        /// taking into account optional mask, noise scaling, increments or positivity constraints
+        /// @param[out] maxVal, the maximum value found
+        /// @param[out] maxValScaled, the maximum value found scaled with local noise value
+        /// @param[out] maxPos, the position of the maximum
+        /// @param[in] im, the image to search for a peak
+        /// @param[in] mask, optional mask to apply to the image
+        /// @param[in] pixels, if filled, use this vector of pixel indices to do the search instead
+        ///  of searching the whole image
+        /// @param[in] noise, a noise image to use for S/N scaled peak searching, smaller than input
+        ///  image by about a factor boxSize in each dimension, or empty for no scaling
+        /// @param[in] boxSize, the size of the box used to calculate the noise, default of 0 means no
+        ///  noise scaling
+        /// @param[in] increment, pixel increment to use
+        /// @param[in] positive, constrain search to positive image values if true
         template<class T> 
         void absMaxPos(T& maxVal, T& maxValScaled, IPosition& maxPos, const Matrix<T>& im,
-            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize, uInt increment) 
+            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize = 0, uInt increment = 1, bool positive = false) 
         {
             // Set Shared Values
             maxVal = T(0.0);
@@ -83,7 +99,14 @@ namespace askap {
                 // skip pixels (for larger scales)
                 if (increment == 1|| ((pixel % nrow)%increment == 0 &&
                          (pixel / nrow)%increment == 0)) {
-                    T val = abs(pIm[pixel]);
+                    T val = pIm[pixel];
+                    if (val < 0) {
+                        if (positive) {
+                            val = 0;
+                        } else {
+                            val = -val;
+                        }
+                    }
                     if (useMask) val *= pMask[pixel];
                     T testVal = val;
                     if (useNoise) {
@@ -160,6 +183,7 @@ namespace askap {
         {
             itsBasisFunction = bf;
             itsBasisFunctionChanged = True;
+            itsPositivityConstraint = std::vector<bool>(bf->numberBases(),false);
         }
 
         template<class T, class FT>
@@ -202,7 +226,13 @@ namespace askap {
             if (orthogonal) {
                 ASKAPLOG_DEBUG_STR(decmtbflogger, "Multiscale basis functions will be orthogonalised");
             }
-
+            itsPositivityConstraint = std::vector<bool>(scales.size(), false);
+            if (parset.isDefined("positivity")) {
+                std::vector<bool> positivity = parset.getBoolVector("positivity");
+                for (uInt i; i<min(scales.size(),positivity.size()); i++) {
+                    itsPositivityConstraint[i] = positivity[i];
+                }
+            }
             // MV: a bit of technical debt highlighted by casacore's interface change. In principle, we could've
             // had scales as std::vector in the interface to avoid the explicit construction (in this particular case,
             // there is no benefit of using Vector)
@@ -245,6 +275,8 @@ namespace askap {
             if (itsUseIncrements) {
                 ASKAPLOG_INFO_STR(decmtbflogger, "Using larger pixel increments for larger scales");
             }
+
+
         }
 
         template<class T, class FT>
@@ -843,7 +875,7 @@ namespace askap {
                         ( useHighPixels ? highPixels[base] : std::vector<uInt>()));
                     const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                     if (!(deepClean||useHighPixels) || pixels.size()>0) {
-                        absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize,increment);
+                        absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize,increment,itsPositivityConstraint[base]);
                     }
                     // In performing the search for the peak across bases, we want to take into account
                     // the SNR so we normalise out the coupling matrix for term=0 to term=0.
@@ -905,7 +937,7 @@ namespace askap {
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         std::vector<uInt>());
 
-                    absMaxPos(maxVal,maxValScaled,maxPos,negchisq,weights,pixels,itsNoiseMap,itsNoiseBoxSize,1);
+                    absMaxPos(maxVal,maxValScaled,maxPos,negchisq,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
 
                     // End of section 3
                     sectionTimer.stop(3);
