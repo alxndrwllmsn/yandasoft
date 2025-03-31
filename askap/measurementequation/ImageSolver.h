@@ -268,6 +268,11 @@ namespace synthesis
             itsPreconditioners = is.itsPreconditioners;
         }
 
+        /// @brief specify we need to use the mask
+        /// @details sometimes we can avoid using the mask if it is all 1.
+        /// This lets derived solvers specify they need the mask to be present.
+        void setUseMask(bool useMask) { itsUseMask = useMask; }
+
     private:
         /// Instance of a preconditioner
         // IImagePreconditioner::ShPtr itsPreconditioner;
@@ -292,6 +297,9 @@ namespace synthesis
         /// @brief
         /// @details
         bool itsIsRestoreSolver;
+
+        /// @brief Flag to specify we need the mask even if it is all 1
+        bool itsUseMask;
 
         /// @brief Store the MFS inverse coupling matrix
         /// @details needed by the restore solver, but it doesn't have all 2N-1 PSFs needed for generation. So store.
