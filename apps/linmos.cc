@@ -258,7 +258,7 @@ static void merge(const LOFAR::ParameterSet &parset) {
 
                 casa::IPosition thispos(taylor0.shape().nelements(),0);
                 ASKAPLOG_INFO_STR(logger, " removing Beam for Taylor terms - slice " << thispos);
-                accumulator.removeBeamFromTaylorTerms(taylor0,taylor1,taylor2,thispos,iacc.coordSys(inImgName));
+                accumulator.removeBeamFromTaylorTerms(taylor0,taylor1,taylor2,thispos);
 
 
                 // now we need to set the inPix to be the scaled version
@@ -324,7 +324,7 @@ static void merge(const LOFAR::ParameterSet &parset) {
                         // removeLeakage works on single frequency planes
                         Array<float> inPlane = planeIter.getPlane(inPix);
                         Array<float> stokesIplane = planeIter.getPlane(stokesI);
-                        accumulator.removeLeakage(inPlane,stokesIplane,pol,curpos,iacc.coordSys(inImgName));
+                        accumulator.removeLeakage(inPlane,stokesIplane,pol,curpos);
                     }
                 } else {
                     ASKAPLOG_WARN_STR(logger,"Skipping removeLeakage - cannot determine polarisation of input");
