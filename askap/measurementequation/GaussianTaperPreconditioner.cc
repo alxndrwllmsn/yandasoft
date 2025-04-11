@@ -124,7 +124,7 @@ bool GaussianTaperPreconditioner::doPreconditioning(casacore::Array<float>& psf,
 
       while (status == NOTCONVERGED && count++ < 20) {
           ASKAPLOG_DEBUG_STR(logger, "Taper tuning iteration: "<<count);
-          casacore::Vector<double> beam = fitPsf(psf);
+          casacore::Vector<double> beam =  SynthesisParamsHelper::fitBeam(psf,itsCutoff,itsMaxSupport);
           float tolerance = itsTolerance;
           status = tuneTaper(beam, tolerance, count);
           if (status == GaussianTaperCache::NOTCONVERGED) {
@@ -151,16 +151,6 @@ bool GaussianTaperPreconditioner::doPreconditioning(casacore::Array<float>& psf,
   return true;
 }
 
-casacore::Vector<double> GaussianTaperPreconditioner::fitPsf(casacore::Array<float>& psfArray) const {
-    ASKAPTRACE("GaussianTaperPreconditioner::fitPsf");
-    #ifdef ASKAP_FLOAT_IMAGE_PARAMS
-    return SynthesisParamsHelper::fitBeam(psfArray,itsCutoff,itsMaxSupport);
-    #else
-    casa::Array<double> psfDArray(psfArray.shape());
-    casa::convertArray<double, float>(psfDArray, psfArray);
-    return SynthesisParamsHelper::fitBeam(psfDArray,itsCutoff,itsMaxSupport);
-    #endif
-}
 /// @brief a helper method to apply the taper to one given array
 /// @details We need exactly the same operation for psf and dirty image. This method
 /// encapsulates the code which is actually doing the job. It is called twice from

@@ -46,7 +46,7 @@ namespace askap
   namespace synthesis
   {
     template<typename T>
-    inline casacore::Vector<casacore::Quantum<double> > SynthesisParamsHelper::fitBeam(casacore::Array<T> &psfArray,
+    inline casacore::Vector<casacore::Quantum<double> > SynthesisParamsHelper::fitBeam(const casacore::Array<T> &psfArray,
        const scimath::Axes &axes, const double cutoff, const int maxsupport)
     {
         ASKAPCHECK(axes.hasDirection(), "Direction axes are missing from the PSF parameter, unable to convert pixels to angular units");
@@ -75,7 +75,7 @@ namespace askap
     }
 
     template<typename T>
-    inline casacore::Vector<double> SynthesisParamsHelper::fitBeam(casacore::Array<T> &psfArray,
+    inline casacore::Vector<double> SynthesisParamsHelper::fitBeam(const casacore::Array<T> &psfArray,
         const double cutoff, const int maxsupport) {
 
        const casacore::IPosition shape = psfArray.shape();
@@ -94,7 +94,9 @@ namespace askap
        }
        ASKAPCHECK(shape[0] >= 3 && shape[1] >= 3, "Expect at least 3x3 pixel images, you have shape = "<<shape);
 
-       casacore::Matrix<T> psfSlice = imagemath::MultiDimArrayPlaneIter::getFirstPlane(psfArray).nonDegenerate();
+       // we need a non-const reference to use the plane iterator but make sure we don't change it
+       casacore::Array<T> localPSF(psfArray);
+       casacore::Matrix<T> psfSlice = imagemath::MultiDimArrayPlaneIter::getFirstPlane(localPSF).nonDegenerate();
 
        // search for support to speed up beam fitting
        //ASKAPLOG_INFO_STR(logger, "Searching for support with the relative cutoff of "<<cutoff<<" to speed fitting up");
@@ -128,28 +130,16 @@ namespace askap
             ASKAPCHECK(psfSlice.shape()[dim] >= int(support), "Support is greater than the original size, shape="<<
                        psfSlice.shape());
        }
-       //
-//       #ifdef ASKAP_FLOAT_IMAGE_PARAMS
-       // avoid making a reference copy since we rescale in next step
-//       casa::Array<float> floatPSFSlice;
-//       floatPSFSlice = scimath::PaddingUtils::centeredSubArray(psfSlice,newShape);
-//       #else
-//       casa::Array<float> floatPSFSlice(newShape);
-//       casa::convertArray<float, imtype>(floatPSFSlice, scimath::PaddingUtils::centeredSubArray(psfSlice,newShape));
-//       #endif
 
-       casa::Array<float> floatPSFSlice = pad(psfSlice,newShape);
-        
-       // hack for debugging only
-       //floatPSFSlice = imageHandler().read("tmp.img").nonDegenerate();
-       //
+       // make a copy since we rescale in next step and we're not allowed to change the psfArray argument
+       casa::Array<T> tempPSFSlice;
+       tempPSFSlice = scimath::PaddingUtils::centeredSubArray(psfSlice,newShape); 
+
        // normalise to 1 - technically unnecessary as we should have it already normalised
-       const float maxPSF = casa::max(floatPSFSlice);
-       //ASKAPLOG_DEBUG_STR(logger," cutoff: "<<cutoff<<" maxPSF="<<maxPSF<<" newShape: "<<newShape);
+       const T maxPSF = casa::max(tempPSFSlice);
        if (fabs(maxPSF-1.)>1e-6) {
-            floatPSFSlice /= maxPSF;
+            tempPSFSlice /= maxPSF;
        }
-       //
 
        // actual fitting
        // the beam fitter fails at times - producing no or a bad solution
@@ -168,7 +158,7 @@ namespace askap
            for (int pix = 0; pix < 4; ++pix) {
                 // this gives +/- 1 pixel from centre on each axis and all combinations, assumes integer math.
                 const IPosition cursor(2, centrePixel + (pix % 2) * 2 - 1, centrePixel + (pix / 2) * 2 - 1);
-                const float curVal = floatPSFSlice(cursor);
+                const float curVal = tempPSFSlice(cursor);
                 if (curVal < newCutoff) {
                     newCutoff = curVal;
                 }
@@ -180,7 +170,7 @@ namespace askap
            fitter.setIncludeRange(newCutoff,1.0);
        }
        // Using estimate to set the initial guess seems to make the fit more robust
-       casa::Vector<casa::Double> initialEstimate = fitter.estimate(casa::Fit2D::GAUSSIAN,floatPSFSlice);
+       casa::Vector<casa::Double> initialEstimate = fitter.estimate(casa::Fit2D::GAUSSIAN,tempPSFSlice);
        //ASKAPLOG_DEBUG_STR(logger,"Initial beam fit: "<<initialEstimate);
        initialEstimate[0]=1.; // PSF peak is always 1
        initialEstimate[1]=newShape[0]/2; // centre
@@ -191,8 +181,8 @@ namespace askap
        parameterMask[5] = casa::True; // fit pa
 
        fitter.addModel(casa::Fit2D::GAUSSIAN,initialEstimate,parameterMask);
-       const casa::Array<casa::Float> sigma(floatPSFSlice.shape(),1.f);
-       const casa::Fit2D::ErrorTypes fitError = fitter.fit(floatPSFSlice,sigma);
+       const casa::Array<T> sigma(tempPSFSlice.shape(),T(1.0));
+       const casa::Fit2D::ErrorTypes fitError = fitter.fit(tempPSFSlice,sigma);
        ASKAPCHECK(fitError == casa::Fit2D::OK, "Error fitting the beam. fitError="<<fitError<<
                   " message: "<<fitter.errorMessage());
        ASKAPCHECK(fitter.numberPoints() > 4, "The number of points available for fitting the beam ("<<fitter.numberPoints()<<
@@ -221,24 +211,6 @@ namespace askap
        }
        beam[2] = pa;
        return beam;
-    }
-
-    template<>
-    inline casa::Array<float> 
-    SynthesisParamsHelper::pad(casacore::Array<float>& psfSlice,const casa::IPosition& newShape)
-    {
-       casa::Array<float> floatPSFSlice = scimath::PaddingUtils::centeredSubArray(psfSlice,newShape); 
-       return floatPSFSlice;
-    }
-
-    template<>
-    inline casa::Array<float>
-    SynthesisParamsHelper::pad(casacore::Array<double>& psfSlice,const casa::IPosition& newShape)
-    {
-        casa::Array<float> floatPSFSlice;
-        floatPSFSlice.resize(newShape);
-        casa::convertArray<float, double>(floatPSFSlice, scimath::PaddingUtils::centeredSubArray(psfSlice,newShape));
-        return floatPSFSlice;
     }
   }
 }
