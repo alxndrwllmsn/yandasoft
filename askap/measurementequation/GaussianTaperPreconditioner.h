@@ -101,9 +101,6 @@ public:
    /// @param[in] image an image to apply the taper to
    void applyTaper(casacore::Array<float> &image) const;
 
-   /// @ brief fit the psf with a gaussian and return size and pa
-   casacore::Vector<double> fitPsf(casacore::Array<float>& psf) const;
-
 private:
     mutable bool itsFitBeam;
     double itsCutoff;

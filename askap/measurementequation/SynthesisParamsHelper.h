@@ -263,7 +263,7 @@ namespace askap
         /// @param[in] cutoff cutoff defining the support size where the fitting is done
         /// @param[in] name full name of the parameter representing the PSF (default is to figure this out)
         template <typename T>
-        static casacore::Vector<casacore::Quantum<double> > fitBeam(casacore::Array<T> &psfArray,
+        static casacore::Vector<casacore::Quantum<double> > fitBeam(const casacore::Array<T> &psfArray,
                                                             const scimath::Axes &axes,
                                                             const double cutoff = 0.5,
                                                             const int maxsupport = 101);
@@ -278,11 +278,8 @@ namespace askap
         ///            defined by 50% cutoff from the peak)
         /// @param[in] maxsupport Max support size of beam above cutoff level
         /// @return beam size in pixels, beam PA in radians
-        //static casacore::Vector<double> fitBeam(casacore::Array<imtype> &psfArray,
-        //                                        const double cutoff = 0.5,
-        //                                        const int maxsupport = 101);
         template <typename T>
-        static casacore::Vector<double> fitBeam(casacore::Array<T> &psfArray,
+        static casacore::Vector<double> fitBeam(const casacore::Array<T> &psfArray,
                                                 const double cutoff = 0.5,
                                                 const int maxsupport = 101);
 
@@ -526,8 +523,6 @@ namespace askap
         static casacore::Projection getProjection(const bool ewprojection, const double dec = 0.);
 
     private:
-        template <typename T>
-        static casa::Array<float> pad(casacore::Array<T>& psfSlice,const casa::IPosition& newShape);
         /// @brief image accessor
         static boost::shared_ptr<accessors::IImageAccess<>> theirImageAccessor;
 
