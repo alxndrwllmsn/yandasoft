@@ -286,7 +286,11 @@ namespace askap
            inArr(1,3) = 0.065686;
            inArr(2,3) = 0.356781;
            inArr(3,3) = 0.127835;
+           inArr*=static_cast<imtype>(2.0);
+           casacore::Matrix<imtype> copiedArr(inArr.copy());
            const casacore::Vector<double> result = SynthesisParamsHelper::fitBeam(inArr, 0.5, 101);
+           // Check the input array has not been changed by the fit routine
+           CPPUNIT_ASSERT(casacore::allEQ(inArr,copiedArr));
            CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(3u), result.nelements());
            for (casacore::uInt i = 0; i < result.nelements(); ++i) {
                 CPPUNIT_ASSERT(!isnan(result[i]));
