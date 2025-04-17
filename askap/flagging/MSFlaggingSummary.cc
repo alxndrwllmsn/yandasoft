@@ -141,9 +141,9 @@ casacore::uInt MSFlaggingSummary::summariseChunk(const casacore::MSColumns& msc,
     return row;
 }
 
-void MSFlaggingSummary::printToLog(const casacore::MSColumns& msc)
+void MSFlaggingSummary::printToLog(const casacore::MSColumns& msc, const std::string& prefix)
 {
-        ASKAPLOG_INFO_STR(logger, "Pre-flagging Measurement Set Summary:");
+        ASKAPLOG_INFO_STR(logger, prefix << "-flagging Measurement Set Summary:");
 
         const casacore::uInt nrow = msc.nrow();
         if (nrow == 0) {

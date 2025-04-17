@@ -62,6 +62,9 @@ vector<shared_ptr<IFlagger> > StokesVFlagger::build(
         const bool integrateTimes = subset.getBool("integrateTimes", false);
         const float timesThreshold = subset.getFloat("integrateTimes.threshold", 5.0);
         const float highLimit = subset.getFloat("high", 0.0);
+        // using main parset for this parameter
+        const bool doNoiseScaling = parset.getBool("noiseScaling",false);
+        shared_ptr<NoiseScaler> noiseScaler;
 
         ASKAPLOG_INFO_STR(logger, "Parameter Summary:");
         if (highLimit > 0) {
@@ -81,11 +84,16 @@ vector<shared_ptr<IFlagger> > StokesVFlagger::build(
                 "Searching for outliers in integrated time series with a "
                 <<timesThreshold<<"-sigma cutoff");
         }
+        if (doNoiseScaling) {
+            ASKAPLOG_INFO_STR(logger, "Scaling noise for dynamic flagging with spectral sensitivity");
+            noiseScaler.reset(new NoiseScaler(parset));
+        }
+    
 
         flaggers.push_back(shared_ptr<IFlagger>
             (new StokesVFlagger(threshold,robustStatistics,integrateSpectra,
                                 spectraThreshold,integrateTimes,timesThreshold,
-                                highLimit)));
+                                highLimit,noiseScaler)));
     }
     return flaggers;
 }
@@ -93,12 +101,12 @@ vector<shared_ptr<IFlagger> > StokesVFlagger::build(
 StokesVFlagger::StokesVFlagger(float threshold, bool robustStatistics,
                                 bool integrateSpectra, float spectraThreshold,
                                 bool integrateTimes, float timesThreshold,
-                                float highLimit)
+                                float highLimit,shared_ptr<NoiseScaler> noiseScaler)
     : itsStats("StokesVFlagger"),
       itsThreshold(threshold), itsRobustStatistics(robustStatistics),
       itsIntegrateSpectra(integrateSpectra), itsSpectraThreshold(spectraThreshold),
       itsIntegrateTimes(integrateTimes), itsTimesThreshold(timesThreshold),
-      itsAverageFlagsAreReady(true), itsHighLimit(highLimit)
+      itsAverageFlagsAreReady(true), itsHighLimit(highLimit), itsNoiseScaler(noiseScaler)
 {
     ASKAPCHECK(itsThreshold > 0.0, "Threshold must be greater than zero");
 }
@@ -137,8 +145,13 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
     // Only need to write out the flag matrix if it was updated
     bool wasUpdated = false;
 
-    for (casacore::uInt row = 0; row < nRow;  row++) {
+    // initialise noise scaling
+    if (itsNoiseScaler) {
+        // convert to GHz before sending to noise scaler
+        itsNoiseScaler->setFrequencies(di->frequency()/1.e9);
+    }
 
+    for (casacore::uInt row = 0; row < nRow;  row++) {
         //do the conversion to Stokes V using PolConverter
         bool allFlagged = true;
         std::vector<casacore::Float> tmpamps;
@@ -229,7 +242,7 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                 // so skip if there is no other reason to loop over frequencies
                 if ((statsVector[2] >= (avg - (sigma * itsThreshold))) &&
                     (statsVector[3] <= (avg + (sigma * itsThreshold))) &&
-                    !itsIntegrateSpectra && !itsIntegrateTimes) {
+                    !itsIntegrateSpectra && !itsIntegrateTimes && !itsNoiseScaler) {
                     continue;
                 }
             }
@@ -251,8 +264,12 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
             casacore::uInt countTime = 0;
             for (size_t chan = 0; chan < nChan; ++chan) {
                 const casacore::Float amp = abs(vdata(chan, row));
+                float limit = sigma * itsThreshold;
+                if (itsNoiseScaler) {
+                    limit *= itsNoiseScaler->scale()(chan);
+                }
                 // Apply threshold based flagging
-                if (amp > (avg + (sigma * itsThreshold))) {
+                if (amp > avg + limit) {
                     for (casacore::uInt pol = 0; pol < nPol; ++pol) {
                         if (flags(pol, chan, row)) {
                             // no double counting
@@ -261,7 +278,7 @@ void StokesVFlagger::processRows(const IDataSharedIter& di,
                             }
                             continue;
                         }
-                        flags(row, chan, pol) = true;
+                        flags(pol, chan, row) = true;
                         wasUpdatedRow = true;
                         itsStats.visFlagged++;
                     }

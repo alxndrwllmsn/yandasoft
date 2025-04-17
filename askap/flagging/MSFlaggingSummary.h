@@ -39,7 +39,8 @@ class MSFlaggingSummary {
 
         /// @brief Prints a summary of the measurement set to the log
         /// @param[in] msc  Measurement set columns
-        static void printToLog(const casacore::MSColumns& msc);
+        /// @param[in] prefix Specify "Pre" or "Post" for initial summary or final summary
+        static void printToLog(const casacore::MSColumns& msc, const std::string& prefix);
 
         /// @brief Print summary for a single chunk of data.
         /// This is a utility function used by printToLog()
