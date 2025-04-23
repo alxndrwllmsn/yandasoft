@@ -49,23 +49,29 @@ using namespace askap::accessors;
 
 vector<std::shared_ptr<IFlagger> > AmplitudeFlagger::build(const LOFAR::ParameterSet& parset)
 {
+    // using full parset for noise parameter
+    std::shared_ptr<NoiseScaler> noiseScaler;
+    if (parset.getBool("noiseScaling",false)) {
+        ASKAPLOG_INFO_STR(logger, "Scaling noise for dynamic flagging with spectral sensitivity");
+        noiseScaler.reset(new NoiseScaler(parset));
+    }
     vector<std::shared_ptr<IFlagger> > flaggers;
     const string key = "amplitude_flagger.enable";
     if (parset.isDefined(key) && parset.getBool(key)) {
         const LOFAR::ParameterSet subset = parset.makeSubset("amplitude_flagger.");
-        flaggers.push_back(std::shared_ptr<IFlagger>(new AmplitudeFlagger(subset)));
+        flaggers.push_back(std::shared_ptr<IFlagger>(new AmplitudeFlagger(subset, noiseScaler)));
     }
     return flaggers;
 }
 
-AmplitudeFlagger::AmplitudeFlagger(const LOFAR::ParameterSet& parset)
+AmplitudeFlagger::AmplitudeFlagger(const LOFAR::ParameterSet& parset, std::shared_ptr<NoiseScaler> noiseScaler)
         : itsStats("AmplitudeFlagger"),
           itsHasHighLimit(false), itsHasLowLimit(false),
           itsAutoThresholds(false), itsThresholdFactor(5.0),
           itsIntegrateSpectra(false), itsSpectraFactor(5.0),
           itsIntegrateTimes(false), itsTimesFactor(5.0),
           itsAveAll(false), itsAveAllButPol(false), itsAveAllButBeam(false),
-          itsAverageFlagsAreReady(true)
+          itsAverageFlagsAreReady(true), itsNoiseScaler(noiseScaler)
 {
     // check parset
     AmplitudeFlagger::loadParset(parset);
@@ -100,8 +106,13 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
 
     // Only need to write out the flag matrix if it was updated
     bool wasUpdated = false;
+    // initialise noise scaling
+    if (itsNoiseScaler) {
+        // convert to GHz before sending to noise scaler
+        itsNoiseScaler->setFrequencies(di->frequency()/1.e9);
+    }
 
-    for (casacore::uInt k = 0; k < nRow; k++) {
+    for (casacore::uInt row = 0; row < nRow; row++) {
 
         // Only set flagRow if all corr are flagged
         // Only looking for row flags in "itsAveTimes" data. Could generalise.
@@ -123,7 +134,7 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                 continue;
             }
             // return a tuple that indicate which integration this row is in
-            const rowKey key = getRowKey(di, k, corr);
+            const rowKey key = getRowKey(di, row, corr);
 
             // update a counter for this row and the storage vectors
             // do it before any processing that is dependent on "pass"
@@ -146,8 +157,7 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
             casacore::Vector<casacore::Bool> unflaggedMask(nChan,casacore::False);
             bool allFlagged = true;
             for (uInt chan = 0; chan < nChan; chan++) {
-                //if (!flags(k,chan,corr)) {
-                if (!flags(corr,chan,k)) {
+                if (!flags(corr,chan,row)) {
                     unflaggedMask(chan) = casacore::True;
                     allFlagged = false;
                 }
@@ -169,9 +179,10 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                 // get the spectrum
                 casacore::Vector<casacore::Float> spectrumAmplitudes(nChan);
                 for (uInt chan = 0; chan < nChan; chan++) {
-                    //spectrumAmplitudes(chan) = abs(data(k,chan,corr));
-                    spectrumAmplitudes(chan) = abs(data(corr,chan,k));
+                    spectrumAmplitudes(chan) = abs(data(corr,chan,row));
                 }
+                casacore::Float median;
+                casacore::Float sigma_IQR;
                 if ( itsAutoThresholds ) {
 
                     // combine amplitudes with mask and get the median-based statistics
@@ -179,8 +190,8 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                         maskedAmplitudes(spectrumAmplitudes, unflaggedMask);
                     const casacore::Vector<casacore::Float>
                         statsVector = getRobustStats(maskedAmplitudes);
-                    const casacore::Float median = statsVector[0];
-                    const casacore::Float sigma_IQR = statsVector[1];
+                    median = statsVector[0];
+                    sigma_IQR = statsVector[1];
 
                     // set cutoffs
                     if ( !hasLowLimit ) {
@@ -196,7 +207,7 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                     // data again if they are good. If indicies were also sorted, could
                     // just test where the sorted amplitudes break the threshold...
                     // ** cannot do this when averages are needed, or they'll be skipped **
-                    if (!itsIntegrateSpectra && !itsIntegrateTimes &&
+                    if (!itsIntegrateSpectra && !itsIntegrateTimes && !itsNoiseScaler &&
                             (statsVector[2] >= itsLowLimit) &&
                             (statsVector[3] <= itsHighLimit)) {
                         continue;
@@ -210,18 +221,23 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
 
                 // look for individual peaks and do any integrations
                 for (size_t chan = 0; chan < nChan; ++chan) {
-                    //if (flags(k, chan, corr)) {
-                    if (flags(corr, chan, k)) {
+                    if (flags(corr, chan, row)) {
                         itsStats.visAlreadyFlagged++;
                         continue;
                     }
-
+                    float lowLimit = itsLowLimit;
+                    float highLimit = itsHighLimit;
+                    // if we have dynamic limits, adjust them for noise variation across channels here
+                    if (itsNoiseScaler) {
+                        const float limit = sigma_IQR * itsThresholdFactor * itsNoiseScaler->scale()(chan);
+                        if (!itsHasLowLimit && hasLowLimit) lowLimit = median - limit;
+                        if (!itsHasHighLimit && hasHighLimit) highLimit = median + limit;
+                    }
                     // look for individual peaks
                     const float amp = spectrumAmplitudes(chan);
-                    if ((hasLowLimit && (amp < itsLowLimit)) ||
-                        (hasHighLimit && (amp > itsHighLimit))) {
-                        //flags(k, chan, corr) = true;
-                        flags(corr, chan, k) = true;
+                    if ((hasLowLimit && (amp < lowLimit)) ||
+                        (hasHighLimit && (amp > highLimit))) {
+                        flags(corr, chan, row) = true;
                         wasUpdatedRow = true;
                         itsStats.visFlagged++;
                     }
@@ -262,12 +278,11 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                     // but not sure that all applications support flagRow
                     if ( !itsMaskTimes[key][itsCountTimes[key]] ) {
                         for (size_t chan = 0; chan < nChan; ++chan) {
-                            //if (flags(k, chan, corr)) continue;
-                            if (flags(corr, chan, k)) continue;
-                                //flags(k, chan, corr) = true;
-                                flags(corr, chan, k) = true;
+                            if (!flags(corr, chan, row)) {
+                                flags(corr, chan, row) = true;
                                 wasUpdatedRow = true;
                                 itsStats.visFlagged++;
+                            }
                         }
                         // everything is flagged, so move to the next "corr"
                         continue;
@@ -278,10 +293,8 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
                 // apply itsIntegrateSpectra flags
                 if ( itsIntegrateSpectra ) {
                     for (size_t chan = 0; chan < nChan; ++chan) {
-                        //if ( !flags(k, chan, corr) && !itsMaskSpectra[key][chan] ) {
-                        if ( !flags(corr, chan, k) && !itsMaskSpectra[key][chan] ) {
-                            //flags(k, chan, corr) = true;
-                            flags(corr, chan, k) = true;
+                        if ( !flags(corr, chan, row) && !itsMaskSpectra[key][chan] ) {
+                            flags(corr, chan, row) = true;
                             wasUpdatedRow = true;
                             itsStats.visFlagged++;
                         }
@@ -292,9 +305,6 @@ void AmplitudeFlagger::processRows(const IDataSharedIter& di,
 
         if (wasUpdatedRow && itsIntegrateTimes && !leaveRowFlag && (pass==1)) {
             itsStats.rowsFlagged++;
-            if (!dryRun) {
-                //msc.flagRow().put(row + k, true);
-            }
         }
         if (wasUpdatedRow) wasUpdated = true;
     }

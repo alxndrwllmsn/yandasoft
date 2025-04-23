@@ -72,7 +72,7 @@ void FlagParallel::flagOne(const std::string &ms, bool distributeByTile)
     // Print a summary if needed
     if (itsComms.isMaster() && parset().getBool("summary", true)) {
         MeasurementSet mset(ms);
-        MSFlaggingSummary::printToLog(mset);
+        MSFlaggingSummary::printToLog(mset,"Pre");
     }
     // don't start flagging before summary is done
     itsComms.barrier();
@@ -85,7 +85,6 @@ void FlagParallel::flagOne(const std::string &ms, bool distributeByTile)
     // Create a vector of all the flagging strategies specified in the parset
     itsFlaggers = FlaggerFactory::build(parset(), ms);
     ASKAPCHECK(!itsFlaggers.empty(), "No flaggers configured - Aborting");
-
 
     // Open readonly, accessor will reopen table r/w when needed
     TableDataSource ds(ms, TableDataSource::MEMORY_BUFFERS | TableDataSource::WRITE_DATA_ONLY,
@@ -159,8 +158,13 @@ void FlagParallel::flagOne(const std::string &ms, bool distributeByTile)
                               << ", Visibilities flagged: " << stats.visFlagged);
     }
 
-    //stats.logSummary();
     //RODataManAccessor(ms, "TiledData", False).showCacheStatistics (cout);
+
+    itsComms.barrier();
+    if (itsComms.isMaster() && parset().getBool("finalsummary", false)) {
+        MeasurementSet mset(ms);
+        MSFlaggingSummary::printToLog(mset,"Post");
+    }
 }
 
 /// @brief perform the subtraction

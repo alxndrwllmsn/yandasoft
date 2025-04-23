@@ -7,6 +7,7 @@ ElevationFlagger.cc
 FlaggerFactory.cc
 IFlagger.cc
 MSFlaggingSummary.cc
+NoiseScaler.cc
 SelectionFlagger.cc
 StokesVFlagger.cc
 )
@@ -18,6 +19,7 @@ FlaggerFactory.h
 FlaggingStats.h
 IFlagger.h
 MSFlaggingSummary.h
+NoiseScaler.h
 SelectionFlagger.h
 StokesVFlagger.h
 
