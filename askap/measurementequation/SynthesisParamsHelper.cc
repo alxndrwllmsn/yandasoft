@@ -1732,10 +1732,15 @@ namespace askap
        //   " to source "<<params->scalarValue("sourceID."+srcName));
        params->add("source."+compName, params->scalarValue("sourceID."+srcName));
 
+       // we have two conventions - with or without the source name in the component description
+       // see which one we are using
+       bool longFormat = parset.isDefined(baseKey+srcName+"."+compName+".flux.i");
+
        // now iterate through all parameters
        for (std::map<std::string, bool>::const_iterator ci = parameterList.begin();
             ci!=parameterList.end(); ++ci) {
-            const std::string parName = baseKey+compName+"."+ci->first;
+            const std::string parName = (longFormat ? baseKey+srcName+"."+compName+"." : 
+                baseKey+compName+".")+ci->first;
             if (parset.isDefined(parName)) {
                 const double val = parset.getDouble(parName);
                 params->add(ci->first+"."+compName, val);
