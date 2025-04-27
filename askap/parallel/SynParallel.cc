@@ -83,7 +83,7 @@ namespace askap
       ASKAPCHECK(itsModel, "Model not defined correctly");
 
       // setup frequency frame
-      const std::string freqFrame = parset.getString("freqframe","topo");
+      const string freqFrame = parset.getString("freqframe","topo");
       if (freqFrame == "topo") {
           ASKAPLOG_INFO_STR(logger, "Parset frequencies will be treated as topocentric");
           itsFreqRefFrame = casacore::MFrequency::Ref(casacore::MFrequency::TOPO);
@@ -96,8 +96,8 @@ namespace askap
       } else {
           ASKAPTHROW(AskapError, "Unsupported frequency frame "<<freqFrame);
       }
-      const std::string parString = itsComms.isParallel() ? "parallel" : "serial";
-      std::string mwString = itsComms.isWorker() ? "worker" : "master";
+      const string parString = itsComms.isParallel() ? "parallel" : "serial";
+      string mwString = itsComms.isWorker() ? "worker" : "master";
       if (itsComms.isWorker() && itsComms.isMaster()) {
           mwString += "&master";
       }
@@ -116,11 +116,11 @@ namespace askap
 
     // sort the image names, so all Taylor 0 images come first, then 1, 2
     // but only if all images have the same number of taylor terms
-    void sortTaylorTerms(std::vector<std::string>& names)
+    void sortTaylorTerms(vector<string>& names)
     {
         ASKAPLOG_DEBUG_STR(logger,"sortTaylorTerms: names= "<<names);
-        std::vector<std::string> sorted(names.size());
-        std::map<std::string, int> taylorMap;
+        vector<string> sorted(names.size());
+        map<string, int> taylorMap;
         SynthesisParamsHelper::listTaylor(names,taylorMap);
         // check all taylor images have same order
         int maxTaylor = 0;
@@ -159,7 +159,7 @@ namespace askap
         casacore::Timer timer;
         timer.mark();
 
-        const std::vector<std::string> names = parametersToBroadcast();
+        const vector<string> names = parametersToBroadcast();
         if (itsComms.nGroups() == 1) {
             ASKAPLOG_INFO_STR(logger, "Sending the whole model to all workers");
             if (names.size() == itsModel->names().size()) {
@@ -173,11 +173,11 @@ namespace askap
             ASKAPLOG_INFO_STR(logger, "Distribute model between "<<itsComms.nGroups()<<
                   " groups of workers");
             // build two lists of parameters: parameters to distribute and parameters to send to all groups
-            std::vector<std::string> names2distribute;
-            std::vector<std::string> names2keep;
+            vector<string> names2distribute;
+            vector<string> names2keep;
             names2distribute.reserve(names.size());
             names2keep.reserve(names.size());
-            for (std::vector<std::string>::const_iterator ci = names.begin(); ci!=names.end(); ++ci) {
+            for (vector<string>::const_iterator ci = names.begin(); ci!=names.end(); ++ci) {
                  // distribute only parameters starting with "image" for now
                  if (ci->find("image") == 0) {
                      names2distribute.push_back(*ci);
@@ -200,7 +200,7 @@ namespace askap
                       names2keep.size()<<")");
             }
 
-            std::vector<std::string> currentNames;
+            vector<string> currentNames;
             currentNames.reserve(itsComms.nGroups() + nPerGroup - 1 + names2keep.size());
             scimath::Params buffer;
             for (size_t group = 0, index = 0; group<itsComms.nGroups(); ++group, index+=nPerGroup) {
@@ -352,14 +352,14 @@ namespace askap
     /// it returns all parameter names. This method is supposed to be overridden in
     /// derived classes (e.g. ImagerParallel) where a different behavior is needed.
     /// @return a vector with parameters to broadcast
-    std::vector<std::string> SynParallel::parametersToBroadcast() const
+    vector<string> SynParallel::parametersToBroadcast() const
     {
        ASKAPDEBUGASSERT(itsModel);
        return itsModel->names();
     }
 
 
-    std::string SynParallel::substitute(const std::string& s) const
+    string SynParallel::substitute(const string& s) const
     {
        return itsComms.substitute(s);
     }
@@ -413,19 +413,19 @@ namespace askap
           parset = LOFAR::ParameterSet(substitute(itsParset.getString("sources.definition")));
       }
 
-      const std::vector<std::string> sources = parset.getStringVector("sources.names");
-      std::set<std::string> loadedImageModels;
-      for (size_t i=0; i<sources.size(); ++i) {
-	       const std::string modelPar = std::string("sources.")+sources[i]+".model";
-	       const std::string compPar = std::string("sources.")+sources[i]+".components";
+      const vector<string> sources = parset.getStringVector("sources.names");
+      set<string> loadedImageModels;
+      for (const string src : sources) {
+	       const string modelPar = string("sources.")+src+".model";
+	       const string compPar = string("sources.")+src+".components";
 	       // check that only one is defined
 	       ASKAPCHECK(parset.isDefined(compPar) != parset.isDefined(modelPar),
 	            "The model should be defined with either image (via "<<modelPar<<") or components (via "<<
 	             compPar<<"), not both");
 	       //
            if (parset.isDefined(modelPar)) {
-               const std::vector<std::string> vecModels = parset.getStringVector(modelPar);
-               const int nTaylorTerms = parset.getInt32(std::string("sources.")+sources[i]+".nterms",1);
+               const vector<string> vecModels = parset.getStringVector(modelPar);
+               const int nTaylorTerms = parset.getInt32(string("sources.")+src+".nterms",1);
                ASKAPCHECK(nTaylorTerms>0, "Number of Taylor terms is supposed to be a positive number, you gave "<<
                          nTaylorTerms);
                if (nTaylorTerms>1) {
@@ -435,7 +435,7 @@ namespace askap
                ASKAPCHECK((vecModels.size() == 1) || (int(vecModels.size()) == nTaylorTerms),
                     "Number of model images given by "<<modelPar<<" should be either 1 or one per taylor term, you gave "<<
                     vecModels.size()<<" nTaylorTerms="<<nTaylorTerms);
-               ImageParamsHelper iph("image."+sources[i]);
+               ImageParamsHelper iph("image."+src);
                // for simulations we don't need cross-terms
                for (int order = 0; order<nTaylorTerms; ++order) {
                     if (nTaylorTerms > 1) {
@@ -443,20 +443,20 @@ namespace askap
                         iph.makeTaylorTerm(order);
                         ASKAPLOG_INFO_STR(logger,"Processing Taylor term "<<order);
                     }
-                    std::string model = substitute(vecModels[vecModels.size() == 1 ? 0 : order]);
+                    string model = substitute(vecModels[vecModels.size() == 1 ? 0 : order]);
                     if (vecModels.size() == 1) {
                         // only base name is given, need to add taylor suffix
                         model += iph.suffix();
                     }
 
                     if (std::find(loadedImageModels.begin(),loadedImageModels.end(),model) != loadedImageModels.end()) {
-                        ASKAPLOG_INFO_STR(logger, "Model " << model << " has already been loaded, reusing it for "<< sources[i]);
+                        ASKAPLOG_INFO_STR(logger, "Model " << model << " has already been loaded, reusing it for "<< src);
                         if (vecModels.size()!=1) {
                             ASKAPLOG_WARN_STR(logger, "MFS simulation will not work correctly if you specified the same model "<<
                                  model<<" for multiple Taylor terms");
                         }
                     } else {
-                        ASKAPLOG_INFO_STR(logger, "Adding image " << model << " as model for "<< sources[i]
+                        ASKAPLOG_INFO_STR(logger, "Adding image " << model << " as model for "<< src
                                            << ", parameter name: "<<iph.paramName() );
                         // need to patch model to append taylor suffix
                         SynthesisParamsHelper::loadImageParameter(*pModel, iph.paramName(), model);
@@ -466,11 +466,11 @@ namespace askap
            } else {
                // DDCALTAG COMPTAG
                // loop through components
-               ASKAPLOG_INFO_STR(logger, "Adding components as model for "<< sources[i] );
+               ASKAPLOG_INFO_STR(logger, "Adding components as model for "<< src );
                const vector<string> compList = parset.getStringVector(compPar);
-               for (vector<string>::const_iterator cmp = compList.begin(); cmp != compList.end(); ++cmp) {
-                    ASKAPLOG_INFO_STR(logger, "Loading component " <<*cmp<<" as part of the model for "<<sources[i]);
-                    SynthesisParamsHelper::copyComponent(pModel, parset, sources[i], *cmp, "sources.");
+               for (const string cmp : compList) {
+                    ASKAPLOG_INFO_STR(logger, "Loading component " <<cmp<<" as part of the model for "<<src);
+                    SynthesisParamsHelper::copyComponent(pModel, parset, src, cmp, "sources.");
                 }
            }
       }
