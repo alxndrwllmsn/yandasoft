@@ -110,9 +110,6 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
       noiseAndFlagDA = boost::dynamic_pointer_cast<accessors::IFlagAndNoiseDataAccessor>(chunkPtr);
   }
 
-  // full 4x4 Mueller matrix
-  casacore::SquareMatrix<casacore::Complex, 2> fullMueller(casacore::SquareMatrix<casacore::Complex, 2>::General);
-
   // MV: we have to use rwFlag to avoid caching the wrong reference (it's a bit ugly)
   const casacore::Cube<casacore::Bool> &flag = noiseAndFlagDA ? noiseAndFlagDA->rwFlag() : chunk.flag();
 
@@ -163,11 +160,16 @@ void CalibrationApplicatorME::generic(accessors::IDataAccessor &chunk, bool corr
                         if (amp>0) jones2(i,i) /= amp;
                     }
                 }
+
+                // use const reference to ensure const indexing is used
+                const casacore::SquareMatrix<casacore::Complex, 2>& jones1c(jones1);
+                const casacore::SquareMatrix<casacore::Complex, 2>& jones2c(jones2);
+
                 for (casacore::uInt i = 0; i < nPol; ++i) {
                      for (casacore::uInt j = 0; j < nPol; ++j) {
                           const casacore::uInt index1 = indices(i);
                           const casacore::uInt index2 = indices(j);
-                          mueller(i,j) = jones1(index1 / 2, index2 / 2) * conj(jones2(index1 % 2, index2 % 2));
+                          mueller(i,j) = jones1c(index1 / 2, index2 / 2) * conj(jones2c(index1 % 2, index2 % 2));
                      }
                 }
 
