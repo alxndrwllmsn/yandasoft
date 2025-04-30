@@ -106,6 +106,7 @@ CalcCore::CalcCore(LOFAR::ParameterSet& parset,
     itsGridder = VisGridderFactory::make(parset); // this is private to an inherited class so have to make a new one
     itsRestore = parset.getBool("restore", false);
 }
+
 CalcCore::CalcCore(LOFAR::ParameterSet& parset,
                        askap::askapparallel::AskapParallel& comms,
                        accessors::IDataSource& ds, askap::synthesis::IVisGridder::ShPtr gdr,
@@ -377,11 +378,8 @@ void CalcCore::addGridsToModel(const boost::shared_ptr<scimath::Params> &storage
 
 void CalcCore::calcNE()
 {
-
     init();
-
     doCalc();
-
 }
 
 void CalcCore::zero() const {
@@ -439,6 +437,7 @@ void CalcCore::check() const
 
     ASKAPLOG_DEBUG_STR(logger, "Max data: " << max(dv) << " Max PSF: " << max(slice) << " Normalised: " << max(dv)/max(slice)<<" ("<<names[0]<<")");
 }
+
 void CalcCore::solveNE()
 {
     casacore::Timer timer;
@@ -493,86 +492,6 @@ void CalcCore::solveNE()
 
 }
 
-// This code is not called from anywhere at present
-void CalcCore::writeLocalModel(const std::string &postfix) const {
-
-    ASKAPLOG_DEBUG_STR(logger, "Writing out results as images");
-    ASKAPDEBUGASSERT(itsModel);
-    std::vector<std::string> resultimages=itsModel->names();
-    bool hasWeights = false;
-    for (std::vector<std::string>::const_iterator it=resultimages.begin(); it
-        !=resultimages.end(); it++) {
-        if (it->find("weights") == 0) {
-            hasWeights = true;
-        }
-    }
-    if (!hasWeights) {
-        ASKAPDEBUGASSERT(itsSolver);
-        boost::shared_ptr<ImageSolver> image_solver = boost::dynamic_pointer_cast<ImageSolver>(itsSolver);
-        ASKAPDEBUGASSERT(image_solver);
-        image_solver->saveWeights(*itsModel);
-        resultimages=itsModel->names();
-    }
-
-    // Check whether or not the model has been stored at a higher resolution
-    boost::optional<float> extraOSfactor;
-    if (parset().isDefined("Images.extraoversampling")) {
-        extraOSfactor = parset().getFloat("Images.extraoversampling");
-        ASKAPDEBUGASSERT(*extraOSfactor > 1.);
-    }
-
-    if (itsRestore && postfix == "")
-    {
-        ASKAPLOG_DEBUG_STR(logger, "Restore images and writing them to disk");
-        boost::shared_ptr<ImageRestoreSolver> ir = ImageRestoreSolver::createSolver(parset().makeSubset("restore."));
-        ASKAPDEBUGASSERT(ir);
-        ASKAPDEBUGASSERT(itsSolver);
-        // configure restore solver the same way as normal imaging solver
-        if (extraOSfactor) {
-            ASKAPLOG_INFO_STR(logger,
-                "Configuring restore solver with an extra oversampling factor of "<<*extraOSfactor);
-            ir->setExtraOversampling(*extraOSfactor);
-        }
-        boost::shared_ptr<ImageSolver> template_solver = boost::dynamic_pointer_cast<ImageSolver>(itsSolver);
-        ASKAPDEBUGASSERT(template_solver);
-        ir->configureSolver(*template_solver);
-        ir->copyNormalEquations(*template_solver);
-        Quality q;
-        ir->solveNormalEquations(*itsModel,q);
-        // merged image should be a fixed parameter without facet suffixes
-        resultimages=itsModel->fixedNames();
-        for (std::vector<std::string>::const_iterator ci=resultimages.begin(); ci!=resultimages.end(); ++ci) {
-            const ImageParamsHelper iph(*ci);
-            if (extraOSfactor) {
-                if (!iph.isFacet() && (ci->find("fullres") == 0)) {
-                    string tmpname = *ci;
-                    tmpname.replace(0,7,"image");
-                    ASKAPLOG_DEBUG_STR(logger, "Saving restored image " << *ci << " with name "
-                                  << tmpname+string(".restored") );
-                    SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, tmpname+string(".restored"));
-                }
-            } else {
-                if (!iph.isFacet() && (ci->find("image") == 0)) {
-                    ASKAPLOG_DEBUG_STR(logger, "Saving restored image " << *ci << " with name "
-                                  << *ci+string(".restored") );
-                    SynthesisParamsHelper::saveImageParameter(*itsModel, *ci, *ci+string(".restored"));
-                }
-            }
-        }
-    }
-    ASKAPLOG_DEBUG_STR(logger, "Writing out additional parameters made by restore solver as images");
-    std::vector<std::string> resultimages2=itsModel->names();
-    for (std::vector<std::string>::const_iterator it=resultimages2.begin(); it
-        !=resultimages2.end(); it++) {
-        ASKAPLOG_DEBUG_STR(logger, "Checking "<<*it);
-        if ((it->find("psf") == 0) && (std::find(resultimages.begin(),
-            resultimages.end(),*it) == resultimages.end())) {
-            ASKAPLOG_DEBUG_STR(logger, "Saving " << *it << " with name " << *it+postfix );
-            SynthesisParamsHelper::saveImageParameter(*itsModel, *it, *it+postfix, extraOSfactor);
-        }
-    }
-
-}
 void CalcCore::restoreImage() const
 {
     ASKAPDEBUGASSERT(itsModel);
