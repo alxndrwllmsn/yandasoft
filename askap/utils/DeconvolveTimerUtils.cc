@@ -56,10 +56,10 @@ Timer::Timer()
     } else {
         ASKAPLOG_INFO_STR(logger,"MPI is installed but MPI_Initialized() is not yet called.");
 #ifdef _OPENMP
-        ASKAPLOG_INFO_STR(logger,"Using OPENMP timer instead of MPI timer.");
+        ASKAPLOG_DEBUG_STR(logger,"Using OPENMP timer instead of MPI timer.");
         itsTimerImpl.reset(new OpenMPTimer {});
 #else
-        ASKAPLOG_INFO_STR(logger,"Using standard timer instead of MPI timer.");
+        ASKAPLOG_DEBUG_STR(logger,"Using standard timer instead of MPI timer.");
         itsTimerImpl.reset(new StdTimer {});
 #endif
     }
@@ -99,7 +99,6 @@ StdTimer::StdTimer()
 
 StdTimer::~StdTimer()
 {
-    ASKAPLOG_DEBUG_STR(logger,"StdTimer::~STDTimer()");
 }
 
 void StdTimer::start()
@@ -154,7 +153,6 @@ MPITimer::MPITimer()
 
 MPITimer::~MPITimer()
 {
-    ASKAPLOG_DEBUG_STR(logger,"MPITimer::~MPITimer()");
 }
 
 void MPITimer::start()
@@ -207,7 +205,6 @@ OpenMPTimer::OpenMPTimer()
 
 OpenMPTimer::~OpenMPTimer()
 {
-    ASKAPLOG_DEBUG_STR(logger,"MPITimer::~MPITimer()");
 }
 
 void OpenMPTimer::start()

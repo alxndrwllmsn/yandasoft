@@ -48,11 +48,6 @@ ASKAP_LOGGER(logger, ".gridding.tablevisgridder");
 #include <askap/measurementequation/ImageParamsHelper.h>
 #include <askap/scimath/utils/ImageUtils.h>
 
-// MV: We need to check whether thread synchronisation is actually necessary here in our use cases
-// If so, boost includes should probably go into CasaSyncHelper - see AXA-3289
-#include <boost/thread/lock_guard.hpp>
-#include <askap/askap/CasaSyncHelper.h>
-
 #include <askap/profile/AskapProfiler.h>
 
 using namespace askap::scimath;
@@ -84,9 +79,6 @@ void deepCopyOfSTDVector(const std::vector<T> &in,
        *outIt = inIt->copy();
    }
 }
-
-/// @brief required to mediate thread safety issues of the casa cube
-utility::CasaSyncHelper syncHelper;
 
 // DDCALTAG -- itsSourceIndex added to all of the constructors
 TableVisGridder::TableVisGridder() : itsSumWeights(),
@@ -490,18 +482,9 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
    const casacore::MVDirection imageCentre = getImageCentre();
    const casacore::MVDirection tangentPoint = getTangentPoint();
 
-   // its fine to work with the reference in the openmp case because all our current use cases
-   // have the same tangent point for all gridders, otherwise we have to move this call
-   // inside the section protected by the lock and make a copy of the returned vector
    const casacore::Vector<casacore::RigidVector<double, 3> > &outUVW = (rotateUVW() ? acc.rotatedUVW(tangentPoint) : acc.uvw());
 
-   #ifdef _OPENMP_WORKING
-   boost::unique_lock<boost::mutex> lock(itsMutex);
-   const casa::Vector<double> delay = acc.uvwRotationDelay(tangentPoint, imageCentre).copy();
-   lock.unlock();
-   #else
    const casa::Vector<double> &delay = (rotateUVW() ? acc.uvwRotationDelay(tangentPoint, imageCentre) : casa::Vector<double>(acc.nRow()));
-   #endif
    itsTimeCoordinates += timer.real();
 
    // Now time the gridding
@@ -520,19 +503,12 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
    // of the matrices for every accessor. More intelligent caching is possible with a bit
    // more effort (i.e. one has to detect whether polarisation frames change from the
    // previous call). Need to think about parallactic angle dependence.
-   // OPENMP case needs work...
-   #ifdef _OPENMP_WORKING
-   itsPolConv = (forward ? : scimath::PolConverter(getStokes(),syncHelper.copy(acc.stokes()), false)
-                             scimath::PolConverter(syncHelper.copy(acc.stokes()), getStokes()));
-   //scimath::PolConverter degridPolConv(getStokes(),syncHelper.copy(acc.stokes()), false);
-   #else
    if (nPol != itsVisPols.nelements()  || !allEQ(acc.stokes(), itsVisPols)) {
      itsPolConv = (forward ? scimath::PolConverter(getStokes(),acc.stokes(), false) :
                              scimath::PolConverter(acc.stokes(), getStokes()));
      itsVisPols.assign(acc.stokes());
      itsPolVector.resize(nPol);
    }
-   #endif
 
 
    ASKAPDEBUGASSERT(itsShape.nelements()>=2);
@@ -1144,7 +1120,7 @@ casacore::MVDirection TableVisGridder::getImageCentre() const
    for (size_t dim=0; dim<2; ++dim) {
         centrePixel[dim] = double(itsShape[dim])/2./double(paddingFactor());
    }
-   ASKAPCHECK(syncHelper.toWorld(itsAxes.directionAxis(),out, centrePixel),
+   ASKAPCHECK(itsAxes.directionAxis().toWorld(out, centrePixel),
         "Unable to obtain world coordinates for the centre of the image. Something is wrong with the coordinate system");
    return out.getValue();
 }

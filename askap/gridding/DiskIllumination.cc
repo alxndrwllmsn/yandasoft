@@ -146,31 +146,23 @@ void DiskIllumination::getPattern(double freq, UVPattern &pattern,
     }
 
     double sum=0.; // normalisation factor
-    #ifdef _OPENMP_WORKING
-    #pragma omp parallel default(shared)
-    {
-        #pragma omp for reduction(+:sum)
-    #endif
-        for (casacore::uInt iU=0; iU<nU; ++iU) {
-             const double offsetU = double(iU)-double(nU)/2.;
-             const double offsetUSquared = casacore::square(offsetU);
-             for (casacore::uInt iV=0; iV<nV; ++iV) {
-                  const double offsetV = double(iV)-double(nV)/2.;
-                  const double offsetVSquared = casacore::square(offsetV);
-                  const double radiusSquared = offsetUSquared + offsetVSquared;
-                  if ( (radiusSquared >= rMinSquared) && (radiusSquared <= rMaxSquared)) {
-                       // don't need to multiply by wavelength here because we
-                       // divided the radius (i.e. the illumination pattern is given
-                       // in a relative coordinates in frequency
-                       const double phase = lScaled*offsetU + mScaled*offsetV;
-                       pattern(iU, iV) = imtypeComplex(cos(phase), -sin(phase));
-                       sum += 1.;
-                  }
-             }
-	    }
-    #ifdef _OPENMP_WORKING
+    for (casacore::uInt iU=0; iU<nU; ++iU) {
+        const double offsetU = double(iU)-double(nU)/2.;
+        const double offsetUSquared = casacore::square(offsetU);
+        for (casacore::uInt iV=0; iV<nV; ++iV) {
+            const double offsetV = double(iV)-double(nV)/2.;
+            const double offsetVSquared = casacore::square(offsetV);
+            const double radiusSquared = offsetUSquared + offsetVSquared;
+            if ( (radiusSquared >= rMinSquared) && (radiusSquared <= rMaxSquared)) {
+                // don't need to multiply by wavelength here because we
+                // divided the radius (i.e. the illumination pattern is given
+                // in a relative coordinates in frequency
+                const double phase = lScaled*offsetU + mScaled*offsetV;
+                pattern(iU, iV) = imtypeComplex(cos(phase), -sin(phase));
+                sum += 1.;
+            }
+        }
     }
-    #endif
 
     ASKAPCHECK(sum > 0., "Integral of the disk should be non-zero");
     pattern.pattern() *= imtypeComplex(float(nU)*float(nV)/float(sum),0.);
