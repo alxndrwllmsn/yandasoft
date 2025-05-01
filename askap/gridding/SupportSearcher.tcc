@@ -92,11 +92,6 @@ void SupportSearcher::findPeak(const casacore::Matrix<T> &in)
   itsPeakPos.resize(in.shape().nelements(),casacore::False);
   itsPeakPos = 0;
   itsPeakVal = -1;
-  #ifdef _OPENMP_WORKING
-  #pragma omp parallel default(shared)
-  {
-  #pragma omp for
-  #endif
   for (int iy=0;iy<int(in.ncolumn());++iy) {
        double tempPeakNorm = -1;
        int tempPeakX = 0, tempPeakY = 0;
@@ -108,22 +103,12 @@ void SupportSearcher::findPeak(const casacore::Matrix<T> &in)
                tempPeakNorm = curNorm;
             }
        }
-       #ifdef _OPENMP_WORKING
-       #pragma omp critical
-       {
-       #endif
        if (itsPeakVal < 0 || (itsPeakVal*itsPeakVal < tempPeakNorm)) {
            itsPeakPos(0) = tempPeakX;
            itsPeakPos(1) = tempPeakY;
            itsPeakVal = sqrt(tempPeakNorm);
        }
-       #ifdef _OPENMP_WORKING
-       }
-       #endif
   }
-  #ifdef _OPENMP_WORKING
-  }
-  #endif
 #ifdef ASKAP_DEBUG
   if (itsPeakVal<0) {
       ASKAPTHROW(CheckError, "An empty matrix has been passed to SupportSearcher::findPeak, please investigate. Shape="<<
@@ -195,24 +180,12 @@ void SupportSearcher::doSupportSearch(const casacore::Matrix<T> &in)
 
   const double absCutoff = processAmplitudeThreshold(in, itsCutoff*itsPeakVal);
 
-  #ifdef _OPENMP_WORKING
-  #pragma omp parallel sections
-  {
-  #pragma omp section
-  {
-  #endif
   for (int ix = 0; ix<=itsPeakPos(0); ++ix) {
        if (ampFunction(in(ix, itsPeakPos(1))) > absCutoff) {
            itsBLC(0) = ix;
            break;
        }
   }
-
-  #ifdef _OPENMP_WORKING
-  }
-  #pragma omp section
-  {
-  #endif
 
   for (int iy = 0; iy<=itsPeakPos(1); ++iy) {
        if (ampFunction(in(itsPeakPos(0),iy)) > absCutoff) {
@@ -221,12 +194,6 @@ void SupportSearcher::doSupportSearch(const casacore::Matrix<T> &in)
        }
   }
 
-  #ifdef _OPENMP_WORKING
-  }
-  #pragma omp section
-  {
-  #endif
-
   for (int ix = int(in.nrow())-1; ix>=itsPeakPos(0); --ix) {
        if (ampFunction(in(ix, itsPeakPos(1))) > absCutoff) {
            itsTRC(0) = ix;
@@ -234,23 +201,12 @@ void SupportSearcher::doSupportSearch(const casacore::Matrix<T> &in)
        }
   }
 
-  #ifdef _OPENMP_WORKING
-  }
-  #pragma omp section
-  {
-  #endif
-
   for (int iy = int(in.ncolumn())-1; iy>=itsPeakPos(1); --iy) {
        if (ampFunction(in(itsPeakPos(0),iy)) > absCutoff) {
            itsTRC(1) = iy;
            break;
        }
   }
-
-  #ifdef _OPENMP_WORKING
-  }
-  }
-  #endif
 
   ASKAPCHECK((itsBLC(0)>=0) && (itsBLC(1)>=0) && (itsTRC(0)>=0) &&
              (itsTRC(1)>=0), "Unable to find the support on one of the coordinates (try decreasing the value of .gridder.cutoff) Effective support is 0. itsBLC="<<itsBLC<<" itsTRC="<<itsTRC<<" itsPeakPos="<<itsPeakPos<<" in.shape()="<<in.shape()<<" absCutoff="<<absCutoff<<" itsPeakVal="<<itsPeakVal);
