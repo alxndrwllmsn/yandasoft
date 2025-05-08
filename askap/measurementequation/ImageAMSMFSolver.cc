@@ -504,7 +504,7 @@ namespace askap
                             fullResName.replace(index,5,"fullres");
                             imagemath::MultiDimArrayPlaneIter fullResPlaneIter(ip.shape(fullResName));
                             imagemath::MultiDimArrayPlaneIter it(casacore::IPosition(3,3,3));
-                    
+
                             casacore::Array<float> tempArray = ip.valueF(fullResName);
                             cleanVec(order).reference(fullResPlaneIter.getPlane( tempArray,planeIter.position()));
                         }
@@ -515,18 +515,14 @@ namespace askap
 
             // get noise for thresholds if needed
             float sigma = 0.;
-            //Matrix<imtype> madMap;
             Matrix<casacore::Float> madMap;
             if (noiseThreshold()>0) {
                 // get mad estimate for sigma
                 // may need to take mask into account?
-                //imtype mad = casacore::madfm(dirtyVec(0));
                 casacore::Float mad = casacore::madfm(dirtyVec(0));
                 sigma = 1.48f * mad;
                 if (noiseBoxSize()>0) {
                     // get mad map for position dependent threshold
-                    //madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
-                    //    IPosition(2,noiseBoxSize()),MadfmFunc<imtype>());
                     madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
                         IPosition(2,noiseBoxSize()),MadfmFunc<casacore::Float>());
                     //normalise madMap to overall mad and send it to cleaner
@@ -728,20 +724,8 @@ namespace askap
             ip.fix(peakResParam);
 
             // check if we're below the noise thresholds
-            bool below = false;
-            if (peakRes > 0 && sigma > 0) {
-                if (deepNoiseThreshold()>0) {
-                    if (peakRes < itsControl->targetObjectiveFunction2()) {
-                        below = true;
-                    }
-                } else if (noiseThreshold()>0) {
-                    if (peakRes < itsControl->targetObjectiveFunction()) {
-                        below = true;
-                    }
-                } else {
-                    ASKAPTHROW(AskapError,"Logic error in ImageAMSMFSolver::solveNormalEquations");
-                }
-            }
+            const bool below = (peakRes < 0 || sigma <= 0) ? false :
+                checkNoiseThresholds(itsCleaners[imageTag]->state()->objectiveFunction());
             const string noiseParam = string("noise_threshold_reached.") + imageTag;
             if (ip.has(noiseParam)) {
                 ip.update(noiseParam, below ? 1.0 : -1.0);
@@ -850,6 +834,24 @@ namespace askap
 
       return true;
     };
+
+    bool ImageAMSMFSolver::checkNoiseThresholds(double objectiveFunction) const {
+        // use objective function instead of peakRes to determine convergence
+        // (they differ if scalebias or noiseboxsize are used)
+        if (deepNoiseThreshold()>0) {
+            if (objectiveFunction < itsControl->targetObjectiveFunction2()) {
+                return true;
+            }
+        } else if (noiseThreshold()>0) {
+            if (objectiveFunction < itsControl->targetObjectiveFunction()) {
+                return true;
+            }
+        } else {
+            ASKAPTHROW(AskapError,"Logic error in ImageAMSMFSolver::checkNoiseThresholds");
+        }
+        return false;
+    }
+
 
     void ImageAMSMFSolver::configure(const LOFAR::ParameterSet &parset) {
       ASKAPLOG_INFO_STR(logger,"Configuring the AMSMF solver");

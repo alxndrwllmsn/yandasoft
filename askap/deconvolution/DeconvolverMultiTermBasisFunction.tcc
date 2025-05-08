@@ -72,9 +72,9 @@ namespace askap {
         ///  noise scaling
         /// @param[in] increment, pixel increment to use
         /// @param[in] positive, constrain search to positive image values if true
-        template<class T> 
+        template<class T>
         void absMaxPos(T& maxVal, T& maxValScaled, IPosition& maxPos, const Matrix<T>& im,
-            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize = 0, uInt increment = 1, bool positive = false) 
+            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize = 0, uInt increment = 1, bool positive = false)
         {
             // Set Shared Values
             maxVal = T(0.0);
@@ -113,7 +113,7 @@ namespace askap {
                         const uInt row = (pixel % nrow) / boxSize;
                         const uInt col = (pixel / nrow) / boxSize;
                         testVal /= noise(row, col);
-                    } 
+                    }
                     if (testVal > maxValScaled_private) {
                         maxValScaled_private = testVal;
                         maxVal_private = val;
@@ -184,6 +184,7 @@ namespace askap {
             itsBasisFunction = bf;
             itsBasisFunctionChanged = True;
             itsPositivityConstraint = std::vector<bool>(bf->numberBases(),false);
+            itsScaleBias = std::vector<float>(bf->numberBases(),1.0);
         }
 
         template<class T, class FT>
@@ -214,7 +215,7 @@ namespace askap {
             // I suspect because ImageAMSMFSolver replaces the DeconvolverControl object.
             // Task cdeconvolver-mpi will set configurebase="true" because it needs this configuration done.
             if (parset.getString("configurebase","false")=="true") {
-                DeconvolverBase<T, FT>::configure(parset); 
+                DeconvolverBase<T, FT>::configure(parset);
             }
 
             // Make the basis function
@@ -228,11 +229,27 @@ namespace askap {
             }
             itsPositivityConstraint = std::vector<bool>(scales.size(), false);
             if (parset.isDefined("positivity")) {
-                std::vector<bool> positivity = parset.getBoolVector("positivity");
-                for (uInt i; i<min(scales.size(),positivity.size()); i++) {
+                const std::vector<bool> positivity = parset.getBoolVector("positivity");
+                std::ostringstream oss;
+                for (uInt i=0; i<scales.size() && i<positivity.size(); i++) {
                     itsPositivityConstraint[i] = positivity[i];
+                    if (positivity[i]) {
+                        if (!oss.str().empty()) oss << ", ";
+                        oss << scales[i];
+                    }
                 }
+                ASKAPLOG_INFO_STR(decmtbflogger,"Using positivity constraint for scales "<<oss.str());
             }
+            const float bias = parset.getFloat("scalebias", 1.0f);
+            ASKAPCHECK(bias>0 && bias<2,"The scalebias parameter needs to be between 0 and 2");
+            itsScaleBias = std::vector<float>(scales.size(), 1.0f);
+            if (parset.isDefined("scalebias")) {
+                for (uInt i = 1; i< scales.size(); i++) {
+                    itsScaleBias[i] = pow(bias,1+log(scales[i]/scales[1])/log(2));
+                }
+                ASKAPLOG_INFO_STR(decmtbflogger,"Using scale bias of "<< bias<< " in peak search, scale bias factors: "<<itsScaleBias);
+            }
+
             // MV: a bit of technical debt highlighted by casacore's interface change. In principle, we could've
             // had scales as std::vector in the interface to avoid the explicit construction (in this particular case,
             // there is no benefit of using Vector)
@@ -840,9 +857,9 @@ namespace askap {
 
         // the maxPos, maxVal and maxValScaled arguments are shared state variables, the return values are not used
         template<class T, class FT>
-        void DeconvolverMultiTermBasisFunction<T, FT>::chooseComponent(uInt& optimumBase, IPosition& absPeakPos, 
-            T& absPeakVal, T& absPeakValScaled, bool firstCycle, const std::vector<std::vector<uInt>>&highPixels, 
-            askap::utils::SectionTimer& sectionTimer, IPosition& maxPos, T& maxVal, T& maxValScaled, 
+        void DeconvolverMultiTermBasisFunction<T, FT>::chooseComponent(uInt& optimumBase, IPosition& absPeakPos,
+            T& absPeakVal, T& absPeakValScaled, bool firstCycle, const std::vector<std::vector<uInt>>&highPixels,
+            askap::utils::SectionTimer& sectionTimer, IPosition& maxPos, T& maxVal, T& maxValScaled,
             const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients)
         {
             const uInt nBases(itsBasisFunction->numberBases());
@@ -870,7 +887,7 @@ namespace askap {
                     // initialise list of pixels depending on mode we're in
                     const bool deepClean = this->control()->deepCleanMode();
                     const bool useHighPixels = !deepClean && itsUsePixelLists && !firstCycle;
-                    const std::vector<uInt>& pixels (deepClean ? 
+                    const std::vector<uInt>& pixels (deepClean ?
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         ( useHighPixels ? highPixels[base] : std::vector<uInt>()));
                     const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
@@ -879,12 +896,13 @@ namespace askap {
                     }
                     // In performing the search for the peak across bases, we want to take into account
                     // the SNR so we normalise out the coupling matrix for term=0 to term=0.
+                    // Also apply scale bias factors.
                     #pragma omp single
                     {
                         T couplingFactor = sqrt(itsCouplingMatrix(base)(0, 0));
                         ASKAPDEBUGASSERT(couplingFactor > 0);
                         maxVal /= couplingFactor;
-                        maxValScaled /= couplingFactor;
+                        maxValScaled /= couplingFactor * itsScaleBias[base];
                     }
                     sectionTimer.stop(1);
 
@@ -933,7 +951,7 @@ namespace askap {
                         }
                     }
                     // initialise list of pixels depending on mode we're in
-                    const std::vector<uInt>& pixels (this->control()->deepCleanMode() ? 
+                    const std::vector<uInt>& pixels (this->control()->deepCleanMode() ?
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         std::vector<uInt>());
 
@@ -947,10 +965,10 @@ namespace askap {
                 {
                     // We use the maxVal to find the optimum base
                     if (abs(maxValScaled) > absPeakValScaled) {
-                            optimumBase = base;
-                            absPeakVal = abs(maxVal);
-                            absPeakValScaled = abs(maxValScaled);
-                            absPeakPos = maxPos;
+                        optimumBase = base;
+                        absPeakVal = abs(maxVal);
+                        absPeakValScaled = abs(maxValScaled);
+                        absPeakPos = maxPos;
                     }
                 }
 
