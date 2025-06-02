@@ -224,7 +224,7 @@ class SynthesisProgramRunner:
          try:
             row = 0
             for line in f:
-               line2 = re.split('[(,) \[\]]',line)
+               line2 = re.split(r'[(), \[\]]',line)
                parts = [x for x in line2 if x]
                if len(parts)<2 and row>0:
                   raise RuntimeError("Expected at least 2 elements in row %i, you have: %s" % (row+1,parts))

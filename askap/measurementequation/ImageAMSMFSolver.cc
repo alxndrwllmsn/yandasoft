@@ -49,11 +49,6 @@ using namespace askap::scimath;
 #include <cmath>
 using std::abs;
 
-#include <map>
-#include <vector>
-#include <string>
-#include <set>
-
 using std::map;
 using std::vector;
 using std::string;
@@ -515,12 +510,23 @@ namespace askap
 
             // get noise for thresholds if needed
             float sigma = 0.;
+            float mad = 0.;
+            const float mad2rms = 1.4826f;
+
             Matrix<casacore::Float> madMap;
             if (noiseThreshold()>0) {
                 // get mad estimate for sigma
-                // may need to take mask into account?
-                casacore::Float mad = casacore::madfm(dirtyVec(0));
-                sigma = 1.48f * mad;
+                // check if this is likely to be a joint deconvolution
+                if (maskArray.nelements()>0 && min(maskArray)==0) {
+                    // exclude masked points
+                    mad = casacore::madfm(planeIter.getPlane(dirtyVec(0))(maskArray > 0.0f));
+                    sigma = mad2rms * mad;
+                    ASKAPLOG_INFO_STR(logger,"Current residual rms excluding masked points = "<<sigma);
+                } else {
+                    mad = casacore::madfm(dirtyVec(0));
+                    sigma = mad2rms * mad;
+                    ASKAPLOG_INFO_STR(logger,"Current residual rms  = "<<sigma);
+                }
                 if (noiseBoxSize()>0) {
                     // get mad map for position dependent threshold
                     madMap = casacore::boxedArrayMath(dirtyVec(0).nonDegenerate(),
@@ -529,6 +535,8 @@ namespace askap
                     if (mad > 0) {
                         madMap /= mad;
                         // do we want to enforce madMap >= 1 ?
+                        // maybe, but we definitely don't want any zero's
+                        madMap(madMap==0.0f) = 1.0f;
                     }
                 }
             }
