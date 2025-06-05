@@ -510,11 +510,11 @@ namespace askap
 
             // get noise for thresholds if needed
             float sigma = 0.;
-            float mad = 0.;
             const float mad2rms = 1.4826f;
 
             Matrix<casacore::Float> madMap;
             if (noiseThreshold()>0) {
+                float mad = 0.;
                 // get mad estimate for sigma
                 // check if this is likely to be a joint deconvolution
                 if (maskArray.nelements()>0 && min(maskArray)==0) {

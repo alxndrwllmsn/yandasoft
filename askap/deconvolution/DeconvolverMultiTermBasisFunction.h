@@ -320,6 +320,11 @@ namespace askap {
                 /// pixels go in the pixel list for a major cycle. Suggested value 0.1
                 float itsPixelListTolerance;
 
+                /// @brief pixel list n sigma limit
+                /// @details Don't put pixels in the pixellist with amplitude < limit*noise
+                /// The noise is determined separately for each scale / residual basis
+                float itsPixelListNSigma;
+
                 /// @brief pixellist range of number of pixels
                 /// @details Avoid putting way too many pixels in the list
                 /// Try to get the number between the first and second entry times
