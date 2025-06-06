@@ -139,7 +139,7 @@ namespace askap {
                 Vector<Array<T>>& psfLong)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
                 itsSolutionType("MAXBASE"), itsUsePixelLists(true),
-                itsPixelListTolerance(0.1), itsPixelListNPixRange(std::vector<float>({10.0,100.0})),
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0})),
                 itsNoiseBoxSize(0)
         {
             ASKAPLOG_DEBUG_STR(decmtbflogger, "There are " << this->nTerms() << " terms to be solved");
@@ -158,7 +158,7 @@ namespace askap {
                 Array<T>& psf)
                 : DeconvolverBase<T, FT>::DeconvolverBase(dirty, psf), itsDirtyChanged(True), itsBasisFunctionChanged(True),
                 itsSolutionType("MAXBASE"), itsUsePixelLists(true),
-                itsPixelListTolerance(0.1), itsPixelListNPixRange(std::vector<float>({10.0,100.0})),
+                itsPixelListTolerance(0.1), itsPixelListNSigma(4.0), itsPixelListNPixRange(std::vector<float>({2.0,10.0})),
                 itsNoiseBoxSize(0)
 
         {
@@ -283,6 +283,7 @@ namespace askap {
                 ASKAPLOG_INFO_STR(decmtbflogger, "Using pixel lists with active (high) pixels");
             }
             itsPixelListTolerance = parset.getFloat("usepixellists.tolerance",0.1);
+            itsPixelListNSigma = parset.getFloat("usepixellists.nsigma",4.0);
             itsPixelListNPixRange = parset.getFloatVector("usepixellists.npixrange",std::vector<float>({10.0,100.0}));
             ASKAPCHECK(itsPixelListNPixRange.size()==2,"npixrange needs to have 2 values");
             ASKAPCHECK(itsPixelListNPixRange[0]<itsPixelListNPixRange[1],"first value of npixrange needs to be smaller than second");
@@ -983,14 +984,25 @@ namespace askap {
             const bool haveMask = weights.size()>0;
             const uInt nBases = highPixels.size();
             // Added code to limit the number of high pixels collected - above 1e5 things get slow
-            // no more than npixrange[1] x nIter pixels to be collected per base
+            // no more than itsPixelListNPixRange[1] x nIter pixels to be collected per base
             const uInt upperLimit = itsPixelListNPixRange[1] * this->control()->targetIter();
-            // but try to get at least npixrange[0] x nIter pixels
+            // but try to get at least itsPixelListNPixRange[0] x nIter pixels
             const uInt lowerLimit = itsPixelListNPixRange[0] * this->control()->targetIter();
             #pragma omp for schedule(static)
             for (uInt base = 0; base < nBases; base++) {
                 const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                 const Matrix<T>& res = itsResidualBasis(base)(0);
+                float sigma = 0.0f;
+                // get a quick estimate of the rms using 1% of pixels
+                // (but only calculate it if needed)
+                if (itsPixelListNSigma > 0) {
+                    const float mad2rms = 1.4826f;
+                    ASKAPDEBUGASSERT(res.nrow()>10 && res.ncolumn()>10);
+                    const Slice sliceX = Slice(0,res.nrow()/10,10);
+                    const Slice sliceY = Slice(0,res.ncolumn()/10,10);
+                    const Matrix<T> subRes(res(sliceX,sliceY));
+                    sigma = mad2rms * (haveMask ? madfm(subRes(weights(sliceX,sliceY)>T(0))) : madfm(subRes));
+                }
                 ASKAPDEBUGASSERT(res.contiguousStorage());
                 ASKAPDEBUGASSERT(!haveMask || weights.contiguousStorage());
                 const T* pRes = res.data();
@@ -1000,8 +1012,8 @@ namespace askap {
                 // check we don't overflow uInt
                 ASKAPDEBUGASSERT(n==res.size());
                 std::vector<uInt>& pixels = highPixels[base];
-                // scale the level down for larger scales
-                const float cutoff = sqrt(itsCouplingMatrix(base)(0, 0)) * level;
+                // scale the level down for larger scales, but not below n sigma
+                const float cutoff = max(itsPixelListNSigma*sigma,sqrt(itsCouplingMatrix(base)(0, 0)) * level);
                 const float prev = this->state()->initialObjectiveFunction();
                 float step = 1.0;
                 float scale = 0.0;
@@ -1055,7 +1067,7 @@ namespace askap {
                         scale -= step;
                     }
                 }
-                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" is using "<<highPixels[base].size()<<" pixels above "<<trialCutoff);
+                ASKAPLOG_DEBUG_STR(decmtbflogger,"Base "<<base<<" is using "<<highPixels[base].size()<<" pixels above "<<trialCutoff <<" sigma = "<<sigma);
             }
         }
 
