@@ -1,4 +1,7 @@
 # GitLab CI script for yandasoft
+include: # include the common github callback mechanism from askapdev
+  - project: 'ASKAPSDP/askap-dev'
+    file:    'developer/gitlab-ci/github-status-callback.yaml'
 
 image: registry.gitlab.com/askapsdp/yandasoft_image/yandasoft:casacore3.5.0-mpich
 
@@ -165,13 +168,22 @@ success:
     - sudo apt update && sudo apt install -y curl
   after_script:
     - ""
+  variables:
+    CI_STATE:   "success"
+    CI_MESSAGE: "The build succeeded!"
   script:
-    - BUILD_STATUS=passed BUILD_KEY=push ./build_status
-    - >
-      if [ "$CI_COMMIT_BRANCH" = develop ]; then
-        curl --request POST --form "token=$CI_JOB_TOKEN" --form ref=develop https://gitlab.com/api/v4/projects/19044771/trigger/pipeline
-      fi
-    - >
+    - if [ "$PUSH_SOURCE" == "GITHUB" ]; then
+    -   echo Push source is $PUSH_SOURCE
+    -   echo Building for csiro-internal/${CI_PROJECT_NAME}/statuses/${CI_COMMIT_SHA}
+    -   echo Building in "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}"
+    -   !reference [.github-status-callback, script]
+    - else
+    -   echo Push source is probably from bitbucket
+    -   BUILD_STATUS=passed BUILD_KEY=push ./build_status
+    -   if [ "$CI_COMMIT_BRANCH" = develop ]; then
+    -     curl --request POST --form "token=$CI_JOB_TOKEN" --form ref=develop https://gitlab.com/api/v4/projects/19044771/trigger/pipeline
+    -   fi
+    - fi
   when: on_success
 
 failure:
@@ -180,7 +192,17 @@ failure:
     - sudo apt update && sudo apt install -y curl
   after_script:
     - ""
+  variables:
+    CI_STATE:   "failure"
+    CI_MESSAGE: "The build failed!"
   script:
-    - BUILD_STATUS=failed BUILD_KEY=push ./build_status
+    - if [ "$PUSH_SOURCE" == "GITHUB" ]; then
+    -   echo Push source is $PUSH_SOURCE
+    -   echo Building for csiro-internal/${CI_PROJECT_NAME}/statuses/${CI_COMMIT_SHA}
+    -   echo Building in "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}"
+    -   !reference [.github-status-callback, script]
+    - else
+    -   echo Push source is probably from bitbucket
+    -   BUILD_STATUS=failed BUILD_KEY=push ./build_status
+    - fi
   when: on_failure
-

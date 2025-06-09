@@ -1,0 +1,14 @@
+name: Mirror and run GitLab CI
+# This workflow will mirror a branch to our gitlab ci system on a push. 
+# The reusable workflow [github] csiro-internal/askap-dev/.github/workflows/mirror-to-gitlab.yml
+# is used to perform the action.
+
+on: [push, workflow_dispatch]
+
+jobs:
+  call-workflow-mirror-to-gitlab:
+    uses: csiro-internal/askap-dev/.github/workflows/mirror-to-gitlab.yml@develop
+    with:
+      gitlab-group-name: "ASKAPSDP"
+      gitlab-project-name: "yandasoft"
+    secrets: inherit
