@@ -107,7 +107,7 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsMaskLevel(parset.getFloat("solver.Clean.tolerance",0.1)),
     // use MFS starting model (for spectral mode)
     itsMFSStartingModel(parset.getBool("mfsstartingmodel",false)),
-    // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether 
+    // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether
     // the shared pointer is not empty. But this is cheap. We can clear this up later)
     // uv-weight calculator object; at the moment, it is an empty pointer if no traditional weighting is done
     itsUVWeightCalculator(ImagerParallel::createUVWeightCalculator(parset))
@@ -477,7 +477,7 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
             }
 
             if (itsReadStartingModelCube) {
-                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));             
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
             } else if (itsWriteModelImage) {
                 itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, itsNChanCube, f0, freqinc, img_name));
             }
@@ -583,7 +583,7 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 }
 
 /// @brief helper method to create and configure work and (optionally) root imagers
-/// @details This method encapsulates the part of single work unit processing where the work and root imagers are created. 
+/// @details This method encapsulates the part of single work unit processing where the work and root imagers are created.
 /// Using two imager objects is a bit of the technical debt - ideally, one has to merge normal equations or models directly.
 /// But this is deeply in the design of this application and left as is for now. Normally, all gridding of data is taken place
 /// in the 'work imager' and the results are merged into 'root imager' when ready. If the root imager is not defined, the work imager
@@ -795,7 +795,7 @@ void ContinuumWorker::accumulateUVWeightsForOneWorkUnit(boost::shared_ptr<CalcCo
                                 wu.get_dataset()<<" global channel "<<wu.get_globalChannel()<<"(: "<< e.what());
          } else {
              // MV: it is not clear to me whether we should ignore this error, but keep the same behaviour as it was prior to the refactoring
-             // for normal imaging 
+             // for normal imaging
              ASKAPLOG_ERROR_STR(logger, "Askap error in uv-weight accumulation - skipping accumulation of some or all data in "<<
                                wu.get_dataset()<<" and carrying on: " << e.what());
          }
@@ -855,6 +855,8 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
         ASKAPLOG_DEBUG_STR(logger,"Merged");
 
         ASKAPDEBUGASSERT(rootImagerPtr);
+        // cover the case where we stop on thresholds instead of max #major cycles
+        lastcycle |= checkStoppingThresholds(rootImagerPtr->params());
         if (itsWriteGrids && lastcycle && itsLocalSolver) {
             ASKAPLOG_INFO_STR(logger, "Extracting grids and summing them in the root imager");
             // the following would work regarless whether root imager and working imager are the same object or not
@@ -1186,7 +1188,7 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        }
    }
    const bool forcedStopping = checkStoppingThresholds(rootImagerPtr->params());
-   // MV: it would be nice to check if continuum and spectral line mode do the same thing in terms of the number of major cycles 
+   // MV: it would be nice to check if continuum and spectral line mode do the same thing in terms of the number of major cycles
    // (in both cases of stopping on thresholds and on reaching the limit of major cycles)
    const bool lastCycle = forcedStopping || !haveMoreMajorCycles;
    if (itsLocalSolver && !lastCycle) {
@@ -1359,8 +1361,8 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   // before the restore the image is the model ....
   SynthesisParamsHelper::copyImageParameter(src, dest,"image.slice");
 
-  // uv-weight related parameters are stored as part of the model. If present, the corresponding parameter name 
-  // as accepted by UVWeightParamsHelper would be without the leading "image". 
+  // uv-weight related parameters are stored as part of the model. If present, the corresponding parameter name
+  // as accepted by UVWeightParamsHelper would be without the leading "image".
   UVWeightParamsHelper hlp(src);
   hlp.copyTo(dest, "slice");
 }
@@ -1787,7 +1789,7 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   const casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
   const string name("image.slice");
   const boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
-  IPosition inShape = imagePixels.shape().getFirst(2); 
+  IPosition inShape = imagePixels.shape().getFirst(2);
   const IPosition outShape = itsImageCube->imageHandler()->shape(imageName).getFirst(2);
   ASKAPCHECK(inputCoords.hasSquarePixels()&&imageCoords.directionCoordinate().hasSquarePixels(),"Can't deal with non square pixels yet");
   const double inputInc = abs(inputCoords.increment()(0));
@@ -1797,7 +1799,7 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   // adjust the cellsize of the input to match the output
   SynthesisParamsHelper::adjustCellsize(imagePixels,inputInc, outputInc, inShape(0), outShape(0));
   // get input size again, as it may have changed
-  inShape = imagePixels.shape().getFirst(2); 
+  inShape = imagePixels.shape().getFirst(2);
   // Option to subset the input to the size of the output
   ASKAPCHECK(inShape(0) >= outShape(0), "Model MFS image should be the same size or larger than output image");
   Array<float> pixels;
