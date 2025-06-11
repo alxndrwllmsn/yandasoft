@@ -279,8 +279,8 @@ class CdeconvolverApp : public askap::Application
                 fov(1) = shape[1] * abs(coordSys.increment()(1));
             } else {
                 coordSys = iaccC->coordSys(visGridCubeNames[iMax]);
-                ASKAPLOG_INFO_STR(logger,"Setting Images.shape="+shape.toString());
-                subset.replace("Images.shape",shape.toString());
+                ASKAPLOG_INFO_STR(logger,"Setting Images.shape=["+std::to_string(shape[0])+","+std::to_string(shape[1])+"]");
+                subset.replace("Images.shape","["+std::to_string(shape[0])+","+std::to_string(shape[1])+"]");
             }
 
             if (fov(0)>0) {
@@ -448,10 +448,10 @@ class CdeconvolverApp : public askap::Application
                     inblc[3] = channel;
                     intrc[3] = channel;
                     ASKAPCHECK(intrc[2]==0,"Cannot handle >1 polarisation plane in the cubes");
-                    outBlc[0] = shape[0]/2 - shapes(i)[0]/2; 
-                    outTrc[0] = shape[0]/2 + shapes(i)[0]/2 - 1; 
-                    outBlc[1] = shape[1]/2 - shapes(i)[1]/2; 
-                    outTrc[1] = shape[1]/2 + shapes(i)[1]/2 - 1; 
+                    outBlc[0] = shape[0]/2 - shapes(i)[0]/2;
+                    outTrc[0] = shape[0]/2 + shapes(i)[0]/2 - 1;
+                    outBlc[1] = shape[1]/2 - shapes(i)[1]/2;
+                    outTrc[1] = shape[1]/2 + shapes(i)[1]/2 - 1;
                     if (imagePlaneInput) {
                         psfImage += weights[i] * iaccF->read(psfGridCubeNames[i], inblc, intrc);
                         pcfImage += weights[i] * iaccF->read(pcfGridCubeNames[i], inblc, intrc);
@@ -845,7 +845,7 @@ void CdeconvolverApp::doTheWork(const LOFAR::ParameterSet subset,
                 // may need to take mask into account?
                 Float mad = casacore::madfm(dirtyIn);
                 sigmaValue = 1.48f * mad;
-                boost::shared_ptr<DeconvolverMultiTermBasisFunction<Float,Complex>> dcmtbf = 
+                boost::shared_ptr<DeconvolverMultiTermBasisFunction<Float,Complex>> dcmtbf =
                     boost::dynamic_pointer_cast<DeconvolverMultiTermBasisFunction<Float,Complex>>(deconvolver);
                 if (dcmtbf && boxSize > 0) {
                     // get mad map for position dependent threshold
