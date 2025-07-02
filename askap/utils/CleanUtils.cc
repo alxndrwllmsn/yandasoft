@@ -123,7 +123,7 @@ Matrix<casacore::Float> askap::utils::overlapMask(const scimath::Params& ip, con
 
     // Work out overlap for each image and set pixels to zero
     const DirectionCoordinate& refDC = DCs[mainImage];
-    bool anyOverlap = false;
+    bool overlap = false;
     for (int i=0; i<names.size(); i++) {
         ASKAPLOG_DEBUG_STR(logger,"Field "<<i<<" : "<<names[i]);
         // apply mask for all images smaller than the biggest one
@@ -133,23 +133,18 @@ Matrix<casacore::Float> askap::utils::overlapMask(const scimath::Params& ip, con
             const DirectionCoordinate& inDC = DCs[i];
             const Vector<IPosition> edgePoints = imagemath::LinmosAccumulator<float>::
                 convertImageEdgePointsToRef(inDC,shapes[i],refDC, false, true, &x, &y);
-            bool overlap = false;
-            for (const IPosition & point : edgePoints) {
-                if (point >= 0  && point < shapes[mainImage]) {
-                    overlap = true;
-                    anyOverlap = true;
-                    break;
-                }
-            }
-            if (overlap) {
-                ASKAPLOG_INFO_STR(logger,names[i]<<" overlaps "<<names[mainImage]<<", setting a mask on the main image");
+            try {
                 LCPolygon poly(x,y,shapes[mainImage]);
                 mask(poly.boundingBox())(poly.maskArray()) = 0;
+                ASKAPLOG_INFO_STR(logger,names[i]<<" overlaps "<<names[mainImage]<<", setting a mask on the main image");
+                overlap = true;
+            } catch (AipsError x) {
+                // no overlap
             }
         }
     }
     // if there is no overlap, we don't need the mask
-    if (!anyOverlap) {
+    if (!overlap) {
         mask.resize(0,0);
     }
     return mask;
