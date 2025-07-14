@@ -33,9 +33,6 @@
 #include <askap/gridding/WProjectVisGridder.h>
 #include <askap/askapparallel/AskapParallel.h>
 
-// Local package includes
-#include <askap/dataaccess/IConstDataAccessor.h>
-
 namespace askap
 {
     namespace synthesis
@@ -120,18 +117,14 @@ namespace askap
                 /// @param[in] parset input parset file
                 /// @return a shared pointer to the gridder instance
                 static IVisGridder::ShPtr createGridder(const LOFAR::ParameterSet& parset);
-                /// @details records which ranks are still active since the gridder's MPI
-                ///          communicator is created. To stop the gridder from hanging in the
-                ///          initConvolutionFunction() method, client code (eg ContSubtractParallel)
-                ///          should call this method (and then updateMpiComms() below) if some
-                ///          ranks dont use the gridder.
-                static void unusedRank();
-                /// @details updates the gridder's MPI communicator to only include ranks that
-                ///          are still active
-                static void updateMpiComms();
-                /// @details this method works the same as MPI_Barrier() function except that it
-                ///          only waits for all the ranks in the gridder's communicator.
-                static void barrier();
+                /// @details determines if the rank that calls this function is still active
+                ///          or it is about to exit
+                /// @param[in] active - true if the calling rank is still active after calling
+                ///                     this function. False if the calling rank is going to
+                ///                     exit. If active = false then the gridder marks the 
+                ///                     rank as inactive (1) in the shared memory and removes
+                ///                     it from the gridder's internal MPI communicator.
+                static void determineRanksUsed(bool active);
             protected:
                 /// @brief additional operations to configure gridder
                 /// @details This method is supposed to be called from createGridder and could be
@@ -145,6 +138,18 @@ namespace askap
                 void initConvolutionFunction(const accessors::IConstDataAccessor& acc) override;
 
             private:
+                /// @details records which ranks are still active since the gridder's MPI
+                ///          communicator is created. To stop the gridder from hanging in the
+                ///          initConvolutionFunction() method, client code (eg ContSubtractParallel)
+                ///          should call this method (and then updateMpiComms() below) if some
+                ///          ranks dont use the gridder.
+                static void unusedRank();
+                /// @details updates the gridder's MPI communicator to only include ranks that
+                ///          are still active
+                static void updateMpiComms();
+                /// @details this method works the same as MPI_Barrier() function except that it
+                ///          only waits for all the ranks in the gridder's communicator.
+                static void barrier();
 
                 void setupMpiMemory(size_t bufferSize /* in bytes */);
                 void copyToSharedMemory(std::vector<std::pair<int,int> >& itsConvFuncMatSize);

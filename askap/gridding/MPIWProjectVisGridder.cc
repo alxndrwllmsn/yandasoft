@@ -635,6 +635,23 @@ void MPIWProjectVisGridder::copyConvFuncOffset()
 #endif
 }
 
+void MPIWProjectVisGridder::determineRanksUsed(bool active)
+{
+#ifdef HAVE_MPI
+    if ( !active ) {
+        // Tell the MPI gridder the ranks that are going to exit.
+        // This is to stop the gridder from hanging in the code later on.
+        MPIWProjectVisGridder::unusedRank();
+    }
+    // cant call itsComms.barrier() here because the master may not
+    // executing this code
+    MPIWProjectVisGridder::barrier();
+    // Tell the MPI gridder to update its MPI communicator to exclude
+    // the ranks that dont run the for loop below
+    MPIWProjectVisGridder::updateMpiComms();
+    MPIWProjectVisGridder::barrier();
+#endif
+}
 void MPIWProjectVisGridder::unusedRank()
 {
 #ifdef HAVE_MPI
@@ -692,8 +709,6 @@ void MPIWProjectVisGridder::updateMpiComms()
         if ( sub_group != MPI_GROUP_NULL ) {
             MPI_Group_free(&sub_group);
         }
-
-        ASKAPLOG_INFO_STR(logger,"---> itsNodeSize: " << itsNodeSize << ", itsNodeRank: " << itsNodeRank);
     }
 
 #endif
