@@ -210,7 +210,7 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
         // here is to let each rank within a node to generate a portion the convoulution cache
         // (ie each rank does a portion of nWPlanes()*itsOverSample*itsOverSample)
         ASKAPCHECK(itsCFRank > 0,"CF Rank (i.e itsCFRank) is <= 0");
-        if ( itsCFRank >= itsNodeSize ) {
+        if ( itsCFRank > itsNodeSize ) {
             itsCFRank = static_cast<int> (itsNodeSize/2);
             ASKAPCHECK(itsCFRank > 0,"CF Rank (i.e itsCFRank) must be greater than 0");
         }
