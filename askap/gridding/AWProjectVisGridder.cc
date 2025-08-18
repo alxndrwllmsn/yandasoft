@@ -32,6 +32,7 @@ ASKAP_LOGGER(logger, ".gridding.awprojectvisgridder");
 #include <askap/gridding/AWProjectVisGridder.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/scimath/utils/PaddingUtils.h>
+#include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 #include <casacore/casa/Arrays/ArrayIter.h>
 #include <casacore/casa/BasicSL/Complex.h>
 #include <casacore/casa/Arrays/Array.h>
@@ -407,7 +408,7 @@ void AWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAcc
                     // Now correct for normalization of FFT
                     thisPlane *= imtypeComplex(1.0 / (double(nx) * double(ny)));
                     // use this norm later on during normalisation
-                    const double thisPlaneNorm = sum(real(thisPlane));
+                    const double thisPlaneNorm = utility::sumArray(real(thisPlane));
                     ASKAPDEBUGASSERT(thisPlaneNorm > 0.);
 
                     const int zIndex = iw + nWPlanes() * (chan + nChan * (feed + itsMaxFeeds * currentField()));

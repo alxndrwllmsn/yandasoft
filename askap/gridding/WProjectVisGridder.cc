@@ -38,6 +38,7 @@
 #include <casacore/casa/BasicSL/Constants.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/profile/AskapProfiler.h>
+#include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 
 // Local package includes
 #include <askap/gridding/WProjectVisGridder.h>
@@ -622,7 +623,7 @@ void WProjectVisGridder::normalise(std::vector<casacore::Matrix<casacore::Comple
             continue;
         }
 
-        const double norm = sum(casacore::real(convFunc[plane]));
+        const double norm = utility::sumArray(casacore::real(convFunc[plane]));
         // ASKAPLOG_INFO_STR(logger, "Sum of convolution function = " << norm);
         ASKAPDEBUGASSERT(norm > 0.);
 
