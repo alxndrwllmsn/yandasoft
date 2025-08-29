@@ -40,6 +40,7 @@
 #include <casacore/casa/Arrays/MatrixMath.h>
 #include <casacore/scimath/Mathematics/MatrixMathLA.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
+#include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 
 // Local package includes
 #include <askap/measurementequation/SynthesisParamsHelper.h>
@@ -606,7 +607,7 @@ namespace askap {
 
             this->state()->setPeakResidual(abs(absPeakVal));
             this->state()->setObjectiveFunction(abs(absPeakVal));
-            this->state()->setTotalFlux(sum(this->model()));
+            this->state()->setTotalFlux(utility::sumArray(this->model()));
 
             const casacore::IPosition residualShape(this->itsResidualBasisFunction.shape());
             const casacore::IPosition psfShape(this->itsPSFBasisFunction.shape());

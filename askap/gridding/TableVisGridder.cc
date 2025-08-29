@@ -47,6 +47,7 @@ ASKAP_LOGGER(logger, ".gridding.tablevisgridder");
 #include <askap/scimath/utils/PaddingUtils.h>
 #include <askap/measurementequation/ImageParamsHelper.h>
 #include <askap/scimath/utils/ImageUtils.h>
+#include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 
 #include <askap/profile/AskapProfiler.h>
 
@@ -1028,13 +1029,13 @@ void TableVisGridder::addConjugates() {
 
 // DAM -- it would be faster to do this all in uv, but testing and don't want to deal with off-by-one issues...
 
-ASKAPLOG_INFO_STR(logger, "DAMDAM before conjugates. sum of grid = " << sum(real(aGrid)) );
+ASKAPLOG_INFO_STR(logger, "DAMDAM before conjugates. sum of grid = " << utility::sumArray(real(aGrid)) );
 // Limit number of fft threads to 8 (more is slower for our fft sizes)
     scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
     fft2d(aGrid, false);
     aGrid += conj(aGrid);
     fft2d(aGrid, true);
-ASKAPLOG_INFO_STR(logger, "DAMDAM after conjugates. sum of grid = " << sum(real(aGrid)) );
+ASKAPLOG_INFO_STR(logger, "DAMDAM after conjugates. sum of grid = " << utility::sumArray(real(aGrid)) );
 
 }
 
@@ -1055,13 +1056,13 @@ void TableVisGridder::setRobustness(const float robustness) {
 
     casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer));
     casa::Matrix<casa::Complex> grid(aGrid.nonDegenerate());
-    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << utility::sumArray(real(aGrid)) );
     ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
 
     ASKAPLOG_DEBUG_STR(logger, "DAM estimating the average wgt sum");
     casa::Array<double> wgts(aGrid.nonDegenerate().shape());
     casa::convertArray<double,float>(wgts, real(aGrid.nonDegenerate()));
-    double aveWgtSum = sum(wgts*wgts) / sum(wgts);
+    double aveWgtSum = utility::sumArray(wgts*wgts) / utility::sumArray(wgts);
     ASKAPLOG_DEBUG_STR(logger, "DAM average wgt sum estimate: " << aveWgtSum);
 
     const float noisePower = (1.0/aveWgtSum)*25.0*std::pow(10., -2.0*robustness);

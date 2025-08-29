@@ -34,6 +34,7 @@
 #include <askap/askap/AskapLogging.h>
 #include <casacore/casa/aips.h>
 #include <casacore/casa/Arrays/Cube.h>
+#include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 
 using namespace casa;
 
@@ -90,7 +91,7 @@ namespace askap {
             this->itsBasisFunction = mDataArray.copy();
             Cube<T> BF(this->itsBasisFunction);
             for (uInt i = 0; i < this->itsNumberBases; i++) {
-                const T sumBF(sum(BF.xyPlane(i)));
+                const T sumBF(utility::sumArray(BF.xyPlane(i)));
                 if (abs(sumBF) > 0.0) {
                     BF.xyPlane(i) = BF.xyPlane(i) / sumBF;
                 }
@@ -100,7 +101,7 @@ namespace askap {
         /// @brief return requested basis function
         /// @details index index of the basis function to return [0..numberBases()-1]
         /// @return basis function of interest
-        /// @note due to reference semantics of casa arrays it is possible to change the 
+        /// @note due to reference semantics of casa arrays it is possible to change the
         /// basis function despite the fact that this method is const.
         template<typename T>
         casacore::Matrix<T> BasisFunction<T>::basisFunction(casacore::uInt index) const
