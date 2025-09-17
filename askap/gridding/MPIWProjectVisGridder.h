@@ -180,6 +180,7 @@ namespace askap
                 /// @brief current rank in the itsNodeComms
                 static int      itsNodeRank;
                 static int      itsWorldRank;
+                static int      itsWorldSize;
                 /// @brief a pointer to the MPI shared memory
                 static casacore::Complex* itsMpiSharedMemory;
                 /// @brief a pointer to the MPI scratch shared memory which

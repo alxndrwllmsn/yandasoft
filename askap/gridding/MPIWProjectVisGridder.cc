@@ -66,6 +66,7 @@ MPI_Group MPIWProjectVisGridder::itsGridderGroup = MPI_GROUP_NULL;
 int MPIWProjectVisGridder::itsNodeSize;
 int MPIWProjectVisGridder::itsNodeRank;
 int MPIWProjectVisGridder::itsWorldRank;
+int MPIWProjectVisGridder::itsWorldSize;
 casacore::Complex* MPIWProjectVisGridder::itsMpiSharedMemory = nullptr;
 bool MPIWProjectVisGridder::itsMpiMemSetup = false;
 unsigned int MPIWProjectVisGridder::ObjCount = 0;
@@ -389,9 +390,9 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
     int mpiInitalised = 0;
     MPI_Initialized(&mpiInitalised);
     if ( mpiInitalised == 1 ) {
-        int numRanks = 0;
-        MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
-        if ( numRanks == 1 ) {
+        MPIWProjectVisGridder::itsWorldSize = 1;
+        MPI_Comm_size(MPI_COMM_WORLD, &MPIWProjectVisGridder::itsWorldSize);
+        if ( MPIWProjectVisGridder::itsWorldSize == 1 ) {
             // MPI has only one rank so it must be running in serial
             ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in serial");
             itsSerial = true;
@@ -638,18 +639,20 @@ void MPIWProjectVisGridder::copyConvFuncOffset()
 void MPIWProjectVisGridder::determineRanksUsed(bool active)
 {
 #ifdef HAVE_MPI
-    if ( !active ) {
-        // Tell the MPI gridder the ranks that are going to exit.
-        // This is to stop the gridder from hanging in the code later on.
-        MPIWProjectVisGridder::unusedRank();
+    if ( MPIWProjectVisGridder::itsWorldSize > 1 ) {
+        if ( !active ) {
+            // Tell the MPI gridder the ranks that are going to exit.
+            // This is to stop the gridder from hanging in the code later on.
+            MPIWProjectVisGridder::unusedRank();
+        }
+        // cant call itsComms.barrier() here because the master may not
+        // executing this code
+        MPIWProjectVisGridder::barrier();
+        // Tell the MPI gridder to update its MPI communicator to exclude
+        // the ranks that dont run the for loop below
+        MPIWProjectVisGridder::updateMpiComms();
+        MPIWProjectVisGridder::barrier();
     }
-    // cant call itsComms.barrier() here because the master may not
-    // executing this code
-    MPIWProjectVisGridder::barrier();
-    // Tell the MPI gridder to update its MPI communicator to exclude
-    // the ranks that dont run the for loop below
-    MPIWProjectVisGridder::updateMpiComms();
-    MPIWProjectVisGridder::barrier();
 #endif
 }
 void MPIWProjectVisGridder::unusedRank()
