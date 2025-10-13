@@ -528,20 +528,38 @@ void CubeBuilder<T>::writeRigidSlice(const casacore::Array<T>& arr, const casaco
 }
 
 template < class T >
-void CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
+const casacore::Array<float> CubeBuilder<T>::createFlexibleSlice(const casacore::Array<float>& arr)
 {
-
     if (itsExtraOversamplingFactor) {
         // Image param is stored at a lower resolution, so increase to desired resolution before writing
         casacore::Array<float> fullresarr(scimath::PaddingUtils::paddedShape(arr.shape(),*itsExtraOversamplingFactor));
         scimath::PaddingUtils::fftPad(arr,fullresarr);
-        casacore::IPosition where(4, 0, 0, 0, chan);
-        itsCube->write(itsFilename, fullresarr, where);
+        return fullresarr;
     }
     else {
-        writeRigidSlice(arr, chan);
+        return arr;
     }
+}
 
+
+template < class T >
+const casacore::Array<float> CubeBuilder<T>::writeFlexibleSlice(const casacore::Array<float>& arr, const casacore::uInt chan)
+{
+    const Array<float> farr = createFlexibleSlice(arr);
+    casacore::IPosition where(4, 0, 0, 0, chan);
+    itsCube->write(itsFilename, farr, where);
+    return farr;
+}
+
+template < class T >
+const casacore::Array<float> CubeBuilder<T>::readRigidSlice(const casacore::uInt chan)
+{
+    const casacore::IPosition blc(4, 0, 0, 0, chan);
+    casacore::IPosition trc = itsCube->shape(itsFilename) - 1;
+    ASKAPDEBUGASSERT(chan >=0 && chan <=trc(3));
+    trc(3) = chan;
+    casacore::Array<float> arr = itsCube->read(itsFilename, blc, trc);
+    return arr;
 }
 
 template < class T >
@@ -571,8 +589,9 @@ CubeBuilder<T>::createCoordinateSystem(const LOFAR::ParameterSet& parset,
         Matrix<Double> xform(2, 2);
         xform = 0.0;
         xform.diagonal() = 1.0;
-        const Quantum<Double> ra = asQuantity(dirVector.at(0), "deg");
-        const Quantum<Double> dec = asQuantity(dirVector.at(1), "deg");
+        const MDirection dir = asMDirection(dirVector);
+        const Quantum<Double> ra = dir.getValue().getLong("deg");
+        const Quantum<Double> dec = dir.getValue().getLat("deg");
         ASKAPLOG_DEBUG_STR(CubeBuilderLogger, "Direction: " << ra.getValue() << " degrees, "
                            << dec.getValue() << " degrees");
 

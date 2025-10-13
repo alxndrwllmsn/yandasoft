@@ -1,4 +1,5 @@
 set (_progs
+arrindexspeed
 delaysolver
 extractdata
 genoffsets
@@ -59,6 +60,9 @@ tstuvw2
 statsAndMaskChanApp
 tWeightsLogGather
 tMajorCycleComms
+tClearMSCache
+tDeconvolveTimerUtils
+bpdelaytool
 )
 
 

@@ -30,6 +30,7 @@
 // ASKAPsoft includes
 #include "Common/ParameterSet.h"
 #include "askap/dataaccess/TableDataAccessor.h"
+#include "casacore/tables/TaQL/ExprNode.h"
 
 // Local package includes
 #include "askap/flagging/IFlagger.h"
@@ -83,7 +84,8 @@ class SelectionFlagger : public IFlagger {
             TIMERANGE,
             SCAN,
             FEED,
-            AUTOCORR
+            AUTOCORR,
+            TEN
         };
 
         bool checkBaseline(const accessors::IDataSharedIter& di, const casacore::uInt row);
@@ -126,6 +128,9 @@ class SelectionFlagger : public IFlagger {
 
         // A set containing the feeds that should be flagged.
         std::set<uint32_t> itsFeedsFlagged;
+
+        // Table row selection expression
+        casacore::TableExprNode itsTEN;
 };
 
 }

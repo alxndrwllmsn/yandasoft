@@ -76,7 +76,7 @@ struct GenericUVWeightIndexTranslator : virtual public IUVWeightIndexTranslator 
    /// @param[in] source source index used to form direction-dependent offset index (not sure if it is needed, 
    /// add it here just to keep things general as it is used in the gridder code)
    /// @return flat index into the weight collection
-   virtual casacore::uInt indexOf(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const override final;
+   casacore::uInt indexOf(casacore::uInt beam, casacore::uInt field, casacore::uInt source) const final;
 
 private:
 

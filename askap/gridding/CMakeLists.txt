@@ -38,6 +38,7 @@ GenericUVWeightIndexTranslator.cc
 RobustUVWeightCalculator.cc
 ConjugatesAdderFFT.cc
 CompositeUVWeightCalculator.cc
+ReciprocalUVWeightCalculator.cc
 UVWeightGridder.cc
 UVWeightParamsHelper.cc
 )
@@ -89,6 +90,7 @@ IUVWeightIndexTranslator.h
 UVWeightIndexTranslationHelper.h
 GenericUVWeightIndexTranslator.h
 RobustUVWeightCalculator.h
+ReciprocalUVWeightCalculator.h
 ConjugatesAdderFFT.h
 CompositeUVWeightCalculator.h
 UVWeightGridder.h

@@ -57,7 +57,7 @@ namespace synthesis {
 void ConjugatesAdderFFT::process(casacore::Matrix<float> &wt) const
 {
    ASKAPTRACE("ConjugatesAdderFFT::process");
-   ASKAPLOG_DEBUG_STR(logger, "Before conjugates sum of grid = " << sum(wt));
+   ASKAPLOG_DEBUG_STR(logger, "Before ConjugatesAdderFFT sum of grid = " << sum(wt));
 
    // Note, we could've moved wrapper to the class body. It would allow us to reuse the plan on subsequent calls.
    // However, we expect to build and finalise weight only once and then reuse the result. So if the high-level code
@@ -71,7 +71,7 @@ void ConjugatesAdderFFT::process(casacore::Matrix<float> &wt) const
    buffer += casacore::conj(buffer);
    wrapper(buffer, true);
    casacore::real(wt, buffer);
-   ASKAPLOG_DEBUG_STR(logger, "Before conjugates sum of grid = " << sum(wt));
+   ASKAPLOG_DEBUG_STR(logger, "After ConjugatesAdderFFT sum of grid = " << sum(wt));
 }
 
 } // namespace synthesis

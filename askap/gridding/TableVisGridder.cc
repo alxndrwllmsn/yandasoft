@@ -30,10 +30,9 @@ ASKAP_LOGGER(logger, ".gridding.tablevisgridder");
 
 #include <askap/askap/AskapError.h>
 #include <askap/askap/AskapUtil.h>
-#include <askap/scimath/fft/FFTWrapper.h>
+#include <askap/scimath/fft/FFT2DWrapper.h>
 
 #include <casacore/casa/BasicSL/Constants.h>
-#include <casacore/casa/Arrays/ArrayIter.h>
 #include <casacore/casa/Arrays/ArrayMath.h>
 #include <casacore/casa/Arrays/Slicer.h>
 #include <casacore/casa/Arrays/Slice.h>
@@ -141,6 +140,13 @@ TableVisGridder::TableVisGridder(const TableVisGridder &other) :
      itsTimeDegridded(other.itsTimeDegridded),
      itsDopsf(other.itsDopsf),
      itsDopcf(other.itsDopcf),
+     // MV: it looks like there is some technical debt / untidy design here. There is clearly an intention to do a real copy for data fields
+     // held by reference. However, we usually clone empty gridders (essentially, clone not to copy objects but to create from a template), so
+     // there is no duplication of data. With this usage in mind, it makes sense to have reference semantics for the weight accessor and builder
+     // fields (i.e. only shared pointers are copied)
+     itsUVWeightAccessor(other.itsUVWeightAccessor),
+     itsUVWeightBuilder(other.itsUVWeightBuilder),
+     //
      itsFirstGriddedVis(other.itsFirstGriddedVis),
      itsFeedUsedForPSF(other.itsFeedUsedForPSF),
      itsPointingUsedForPSF(other.itsPointingUsedForPSF),
@@ -566,20 +572,18 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
        roVisNoise.reset(&acc.noise(), utility::NullDeleter());
    }
 
-   // MV: there is something untidy about itsSourceIndex - it doesn't seem to be set anywhere within this class
-   // suggesting that encapsulation is broken somewhere. Leave it as is for now.
    const uint iDDOffset = itsSourceIndex * nSamples;
 
    // MV: always create UVWeight object even if traditional weighting is not done / it is not needed for this particular type of gridder.
    // This is the price paid to have a generic code. However, this object is lightweight (effectively only manages a pointer behind the scene +
    // has some basic metadata), so shouldn't be a huge overhead. It can be moved inside the samples loop (although it is not obvious whether
-   // this is better.
+   // this is better).
    UVWeight uvWeight;
 
    // Use a separate UVWeight object for the optional gridder-based builder (RW - read/write). Doing it this way (as opposed to reusing uvWeight declared above) allows us
    // to both apply some preliminary weight and build accurate one during the same (first) major cycle (if we found this mode interesting). At this stage,
    // it looks like we're unlikely to use gridder-based weight builder long term. So if declaring a separate unused object here is found to be an unacceptable
-   // overhead, we can work with the temporary in the inner loop (which won't be invoked anyway if the builder is not associated with the gridder) 
+   // overhead, we can work with the temporary in the inner loop (which won't be invoked anyway if the builder is not associated with the gridder)
    UVWeight uvWeightRW;
 
    for (uint i=0; i<nSamples; ++i) {
@@ -684,7 +688,8 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
 
            bool allPolGood=true;
            for (uint pol=0; pol<nPol; ++pol) {
-               if (flagCube(i, chan, pol)) {
+               //if (flagCube(i, chan, pol)) {
+               if (flagCube(pol, chan, i)) {
                    allPolGood=false;
                    break;
                }
@@ -707,7 +712,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                const int imageChan = itsFreqMapper(chan);
                ipStart(3) = imageChan;
 
-               // check that imageChan is within the shape of uvWeight grid, also cater for the 
+               // check that imageChan is within the shape of uvWeight grid, also cater for the
                // situation when weighting is not done
                ASKAPDEBUGASSERT(uvWeight.empty() || imageChan < uvWeight.nPlane());
                ASKAPDEBUGASSERT(uvWeightRW.empty() || imageChan < uvWeightRW.nPlane());
@@ -715,13 +720,13 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                if (!forward) {
                    if (!isPSFGridder() && !isPCFGridder()) {
                        ASKAPDEBUGASSERT(roVisCube!=0);
-                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(i,chan,pol);
+                       for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisCube)(pol,chan,iDDOffset+i);
                        itsPolConv.convert(itsImagePolFrameVis,itsPolVector);
                    }
                    // we just don't need this quantity for the forward gridder, although there would be no
                    // harm to always compute it
                    ASKAPDEBUGASSERT(roVisNoise!=0);
-                   for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(i,chan,pol);
+                   for (uint pol=0; pol<nPol; pol++) itsPolVector(pol) = (*roVisNoise)(pol,chan,i);
                    itsPolConv.noise(itsImagePolFrameNoise,itsPolVector);
                }
                // Now loop over all image polarizations
@@ -904,7 +909,7 @@ void TableVisGridder::generic(accessors::IDataAccessor& acc, bool forward) {
                    if (forward) {
                        ASKAPDEBUGASSERT(visCube!=0)
                        itsPolConv.convert(itsPolVector,itsImagePolFrameVis);
-                       for (uint pol=0; pol<nPol; pol++) (*visCube)(iDDOffset+i,chan,pol) += itsPolVector(pol);
+                       for (uint pol=0; pol<nPol; pol++) (*visCube)(pol,chan,iDDOffset+i) += itsPolVector(pol);
                        // visibilities with w out of range are left unchanged during prediction
                        // as long as subsequent imaging uses the same wmax this should work ok
                        // we may want to flag these data to be sure
@@ -982,7 +987,8 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
 
            bool allPolGood=true;
            for (uint pol=0; pol<nPol; ++pol) {
-               if (acc.flag()(i, chan, pol))
+               //if (acc.flag()(i, chan, pol))
+               if (acc.flag()(pol, chan, i))
                    allPolGood=false;
            }
 
@@ -1017,12 +1023,15 @@ void TableVisGridder::setWeights(accessors::IDataAccessor& acc) {
                    const int iuOffset = iu + cfOffset.first;
                    const int ivOffset = iv + cfOffset.second;
 
+                   ASKAPCHECK(iuOffset >= 0 && ivOffset >= 0 && iuOffset < grid.nrow() && ivOffset < grid.ncolumn(),
+                    "grid coordinates out of range in setWeight");
+
                    if ( real(grid(iuOffset, ivOffset)) > 0.0 ) {
-                       casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
+                       //casa::Vector<casa::Complex> thisChanNoise = acc.noise().yzPlane(i).row(chan);
+                       casa::Vector<casa::Complex> thisChanNoise = acc.noise().xyPlane(i).column(chan);
                        const float rootInvWgt = sqrt(real(grid(iuOffset, ivOffset)));
                        thisChanNoise *= rootInvWgt;
                    }
-
                }
 
            }
@@ -1047,11 +1056,13 @@ void TableVisGridder::addConjugates() {
     const casa::IPosition ipStart(4, 0, 0, pol, imageChan);
     const casa::Slicer slicer(ipStart, onePlane4D);
 
-    casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer).nonDegenerate());
+    casa::Matrix<casa::Complex> aGrid(itsGrid[gInd](slicer).nonDegenerate());
 
 // DAM -- it would be faster to do this all in uv, but testing and don't want to deal with off-by-one issues...
 
 ASKAPLOG_INFO_STR(logger, "DAMDAM before conjugates. sum of grid = " << sum(real(aGrid)) );
+// Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<casacore::Complex> fft2d(true,8);
     fft2d(aGrid, false);
     aGrid += conj(aGrid);
     fft2d(aGrid, true);
@@ -1076,8 +1087,8 @@ void TableVisGridder::setRobustness(const float robustness) {
 
     casa::Array<casa::Complex> aGrid(itsGrid[gInd](slicer));
     casa::Matrix<casa::Complex> grid(aGrid.nonDegenerate());
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
-ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. sum of grid = " << sum(real(aGrid)) );
+    ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustness );
 
     ASKAPLOG_DEBUG_STR(logger, "DAM estimating the average wgt sum");
     casa::Array<double> wgts(aGrid.nonDegenerate().shape());
@@ -1096,9 +1107,6 @@ ASKAPLOG_INFO_STR(logger, "DAMDAM before robustness. robustness = " << robustnes
     }
 
 }
-
-
-
 
 /// @brief correct visibilities, if necessary
 /// @details This method is intended for on-the-fly correction of visibilities (i.e.
@@ -1140,6 +1148,7 @@ casacore::MVDirection TableVisGridder::getImageCentre() const
    casacore::Vector<casacore::Double> centrePixel(2);
    ASKAPDEBUGASSERT(itsShape.nelements()>=2);
    ASKAPDEBUGASSERT(paddingFactor()>0);
+
    for (size_t dim=0; dim<2; ++dim) {
         centrePixel[dim] = double(itsShape[dim])/2./double(paddingFactor());
    }
@@ -1273,14 +1282,14 @@ void TableVisGridder::initialiseCellSize(const scimath::Axes& axes)
 /// (and the weight builder assigned).
 /// We could've just added this code to initialiseCellSize, but it would be called unnecessary from
 /// initialiseDegrid and for PCF/PSF gridders (although, presumably, the builder won't be set in this
-/// cases, so no harm). Having a separate method is neater. 
+/// cases, so no harm). Having a separate method is neater.
 void TableVisGridder::initialiseWeightBuilder()
 {
   // why to exclude PSF and PCF gridder here? It can be controlled on the user side
   if (itsUVWeightBuilder && !isPSFGridder() && !isPCFGridder()) {
       ASKAPCHECK(itsShape.nelements()>=2, "Shape has not been initialised before initialiseWeightBuilder is called");
       itsUVWeightBuilder->initialise(itsShape[0], itsShape[1], itsShape.nelements() > 3 ? itsShape[3] : 1u);
-  } 
+  }
 }
 
 
@@ -1348,7 +1357,8 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
     casacore::Array<imtype> dBuffer(itsGrid[0].shape());
     ASKAPDEBUGASSERT(dBuffer.shape().nelements()>=2);
     ASKAPDEBUGASSERT(itsShape == scimath::PaddingUtils::paddedShape(out.shape(),paddingFactor()));
-
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     /// Loop over all grids Fourier transforming and accumulating
     for (unsigned int i=0; i<itsGrid.size(); i++) {
         #ifdef ASKAP_FLOAT_IMAGE_PARAMS
@@ -1446,8 +1456,8 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
         }
         // end of debugging code
         */
+        fft2d.transformAllHyperPlanes(scratch, false);
 
-        fft2d(scratch, false);
         if (i==0) {
             toDouble(dBuffer, scratch);
         } else {
@@ -1456,18 +1466,11 @@ void TableVisGridder::finaliseGrid(casacore::Array<imtype>& out) {
             dBuffer+=work;
         }
     }
+    clearGrid();
     // Now we can do the convolution correction
     correctConvolution(dBuffer);
     dBuffer*=imtype(double(dBuffer.shape()(0))*double(dBuffer.shape()(1)));
     out = scimath::PaddingUtils::extract(dBuffer,paddingFactor());
-
-    // Free up the grid memory?
-    if (itsClearGrid) {
-        ASKAPLOG_INFO_STR(logger,"Clearing the grid");
-        itsGrid.resize(0);
-        its2dGrid.resize(0,0);
-        itsGridIndex=-1;
-    }
 }
 
 /// @brief store given grid
@@ -1520,7 +1523,7 @@ void TableVisGridder::finaliseWeights(casacore::Array<imtype>& out) {
 
 void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
         const casacore::Array<imtype>& in) {
-   ASKAPTRACE("TableVisGridder::initialiseDegrid");
+    ASKAPTRACE("TableVisGridder::initialiseDegrid");
     configureForPSF(false);
     configureForPCF(false);
     itsShape = scimath::PaddingUtils::paddedShape(in.shape(),paddingFactor());
@@ -1536,16 +1539,22 @@ void TableVisGridder::initialiseDegrid(const scimath::Axes& axes,
 
     // Make sure we reinitalise the pol converter
     itsVisPols.resize(0);
-
+    // Limit number of fft threads to 8 (more is slower for our fft sizes)
+    scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     if (casacore::max(casacore::abs(in))>0.0) {
         itsModelIsEmpty=false;
         casacore::Array<imtype> scratch(itsShape,static_cast<imtype>(0.));
         scimath::PaddingUtils::extract(scratch, paddingFactor()) = in;
         correctConvolution(scratch);
+        #ifdef ASKAP_FLOAT_IMAGE_PARAMS
+        toComplex(itsGrid[0], scratch);
+        fft2d.transformAllHyperPlanes(itsGrid[0], true);
+        #else
         casacore::Array<imtypeComplex> scratch2(itsGrid[0].shape());
         toComplex(scratch2, scratch);
-        fft2d(scratch2, true);
+        fft2d.transformAllHyperPlanes(scratch2), true);
         casacore::convertArray<casacore::Complex,imtypeComplex>(itsGrid[0],scratch2);
+        #endif
     } else {
         ASKAPLOG_DEBUG_STR(logger, "No need to degrid: model is empty");
         itsModelIsEmpty=true;
@@ -1598,8 +1607,13 @@ void TableVisGridder::logUnusedSpectralPlanes() const
 /// This is the default implementation
 void TableVisGridder::finaliseDegrid() {
     /// Nothing to do
+    clearGrid();
+}
+
+void TableVisGridder::clearGrid() {
     // Free up the grid memory?
     if (itsClearGrid) {
+        ASKAPLOG_INFO_STR(logger,"Clearing the grid - free "<<sizeof(casacore::Complex)*its2dGrid.size()/1024/1024<<" MB/plane, #gridplanes "<<itsGrid.size());
         itsGrid.resize(0);
         its2dGrid.resize(0,0);
         itsGridIndex=-1;

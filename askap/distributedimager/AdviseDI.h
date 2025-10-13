@@ -84,7 +84,7 @@ namespace askap {
             void addMissingParameters(bool extra=false);
 
             /// @brief Use workunit to set Image direction parameters in parset
-            void updateDirectionFromWorkUnit(askap::cp::ContinuumWorkUnit& wu);
+            void updateDirectionFromWorkUnit(const askap::cp::ContinuumWorkUnit& wu);
 
             /// @brief the datasets
             std::vector<std::string> getDatasets() const;

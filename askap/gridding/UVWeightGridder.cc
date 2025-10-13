@@ -47,8 +47,18 @@ namespace synthesis {
 /// @note this class constructed via the default constructor will be useless without the builder set (via setUVWeightBuilder call)
 UVWeightGridder::UVWeightGridder() : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), itsMaxPointingSeparation(-1.), 
        itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
-       itsPointingTolerance(0.0001)
+       itsPointingTolerance(0.0001), itsOversample(1)
 {}
+
+/// @brief constructor setting the weight builder up front
+/// @details Equivalent to the default constructor followed by a call to setUVWeightBuilder
+/// @param[in] wtBuilder shared pointer to the weight builder to use
+UVWeightGridder::UVWeightGridder(const boost::shared_ptr<IUVWeightBuilder> &wtBuilder) : itsPaddingFactor(1.f), itsUCellSize(0.), itsVCellSize(0.), 
+       itsUVWeightBuilder(wtBuilder), itsMaxPointingSeparation(-1.),
+       itsFirstAccumulatedVis(false), itsDoBeamAndFieldSelection(true), itsSourceIndex(0u), itsCurrentField(0u),
+       itsPointingTolerance(0.0001), itsOversample(1)
+{}
+
 
 /// @brief Initialise the gridding and the associated builder class
 /// @details This method is supposed to be called before gridding first data. For convenience parameters resemble those
@@ -100,7 +110,7 @@ void UVWeightGridder::initialise(const scimath::Axes& axes, const casacore::IPos
 /// we need some selection methods to control what actually contributes to weights or should use the accessor selector instead 
 /// (as this would be a separate iteration over the data anyway). The method is 'const' because the actual accumulation is done
 /// by the builder and this class is unchanged except for various caches (like frequency mapper)
-void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
+void UVWeightGridder::accumulate(const accessors::IConstDataAccessor& acc) const
 {
    // it may be worth thinking about the mode where we don't bother figuring out field index but rather use 0
    // (although this index can always be ignored anyway by the builder class). This behaviour would mimic what we have in the
@@ -175,16 +185,39 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
                     "comment this statement in the code if you're trying something non-standard. Frequency = "<<
                     frequencyList[chan]/1e9<<" GHz");
              }
-             /// Scale U,V to integer pixels, ignore fractional terms and dependence on oversampling factor in the current code (see AXA-2485)
+             /*
+             // commented out until AXA-2485 is sorted out
+             // Scale U,V to integer pixels, ignore fractional terms and dependence on oversampling factor in the current code (see AXA-2485)
              const double uScaled=reciprocalToWavelength * outUVW(i)(0) / itsUCellSize;
              const int iu = askap::nint(uScaled) + itsShape(0) / 2;
              const double vScaled=reciprocalToWavelength * outUVW(i)(1) / itsVCellSize;
              const int iv = askap::nint(vScaled) + itsShape(1) / 2;
+             */
+             // same approach as used with gridder which takes fractional term into account and assumes oversampling factor of 1.
+             const double uScaled=reciprocalToWavelength * outUVW(i)(0) / itsUCellSize;
+             int iu = askap::nint(uScaled);
+             const int fracu = askap::nint(itsOversample*(double(iu) - uScaled));
+             if (fracu < 0) {
+                 iu += 1;
+             } else if (fracu >= itsOversample) {
+                 iu -= 1;
+             }
+             const double vScaled=reciprocalToWavelength * outUVW(i)(1) / itsVCellSize;
+             int iv = askap::nint(vScaled);
+             const int fracv = askap::nint(itsOversample*(double(iv) - vScaled));
+             if (fracv < 0) {
+                 iv += 1;
+             } if (fracv >= itsOversample) {
+                 iv -= 1;
+             }
+             iu += itsShape(0) / 2;
+             iv += itsShape(1) / 2;
 
              // mimic the behaviour of the orginary gridder w.r.t. partial polarisation, i.e. ignore the whole sample
              bool allPolGood=true;
              for (casacore::uInt pol=0; pol<nPol; ++pol) {
-                  if (flagCube(i, chan, pol)) {
+                  //if (flagCube(i, chan, pol)) {
+                  if (flagCube(pol, chan, i)) {
                       allPolGood=false;
                       break;
                   }
@@ -201,7 +234,8 @@ void UVWeightGridder::accumulate(accessors::IConstDataAccessor& acc) const
                  // the check for more than one polarisation could in principle be optimised (e.g. scaling factor could be defined outside the loop) or even removed
                  // completely as absolute scaling is not important for uv-weights (but it is handy to get the matching behaviour to the case when the weights are 
                  // generated during the gridding)
-                 const float visNoise = casacore::square(casacore::real(noiseCube(i, chan, 0))) + (nPol > 1u ? casacore::square(casacore::real(noiseCube(i, chan, nPol-1))) : 0.f);
+                 //const float visNoise = casacore::square(casacore::real(noiseCube(i, chan, 0))) + (nPol > 1u ? casacore::square(casacore::real(noiseCube(i, chan, nPol-1))) : 0.f);
+                 const float visNoise = casacore::square(casacore::real(noiseCube(0, chan, i))) + (nPol > 1u ? casacore::square(casacore::real(noiseCube(nPol-1, chan, i))) : 0.f);
                  const float visNoiseWt = (visNoise > 0.) ? 1./visNoise : 0.;
                  ASKAPCHECK(visNoiseWt>0., "Weight is supposed to be a positive number; visNoiseWt="<<
                             visNoiseWt<<" visNoise="<<visNoise);
@@ -242,7 +276,7 @@ void UVWeightGridder::indexField(const accessors::IConstDataAccessor &acc) const
 
   itsCurrentField = itsKnownPointings.size();
   itsKnownPointings.push_back(firstPointing);
-  ASKAPLOG_DEBUG_STR(logger, "Found new field " << itsCurrentField << " with beam 0 at "<<
+  ASKAPLOG_DEBUG_STR(logger, "Found new field " << itsCurrentField << " with beam "<<acc.feed1()(0)<<" at "<<
             printDirection(firstPointing));
 }
 

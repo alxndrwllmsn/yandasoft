@@ -73,7 +73,7 @@ public:
    /// @param[in] argc number of parameters
    /// @param[in] argv parameter vector
    /// @return exit code
-   virtual int run(int argc, char *argv[]) override;
+   int run(int argc, char *argv[]) final;
 protected:
    /// @brief helper method to fill antenna names
    /// @details This method extracts antenna names from the supplied parset of ingest pipeline
@@ -88,7 +88,7 @@ protected:
    std::vector<double> getCurrentDelays(const LOFAR::ParameterSet &parset);
 
 private:
-    std::string getVersion() const override {
+    std::string getVersion() const final {
        const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
        return pkgVersion;
     }

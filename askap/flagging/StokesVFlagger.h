@@ -58,7 +58,8 @@ class StokesVFlagger : public IFlagger {
         /// @brief Constructor
         StokesVFlagger(float threshold, bool robustStatistics,
                        bool integrateSpectra, float spectraThreshold,
-                       bool integrateTimes, float timesThreshold);
+                       bool integrateTimes, float timesThreshold,
+                       float highLimit);
 
         /// @see IFlagger::processRows()
         virtual void processRows(const accessors::IDataSharedIter& di,
@@ -95,6 +96,9 @@ class StokesVFlagger : public IFlagger {
         // When integrating, used to limit flag generation to a single call to
         // "processRow"
         bool itsAverageFlagsAreReady;
+
+        // absolute limit flagging
+        float itsHighLimit;
 
         // Calculate the median, the interquartile range, the min and the max
         // of a simple array without masking

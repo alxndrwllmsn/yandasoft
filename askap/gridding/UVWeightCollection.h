@@ -46,6 +46,9 @@
 // boost includes
 #include <boost/noncopyable.hpp>
 
+// other 3rd party
+#include <Blob/BlobIStream.h>
+#include <Blob/BlobOStream.h>
 
 namespace askap {
 
@@ -128,11 +131,31 @@ struct UVWeightCollection : public boost::noncopyable {
    /// extra complexity at this stage.
    std::set<casacore::uInt> indices() const;
 
-   /// do we need pixel by pixel direct access?
+   /// @brief reset the collection into a pristine state
+   /// @details This method is a bit of the technical debt, as we don't need this functionality for the traditional weighting
+   /// framework itself. But it is required to implement reduction via the normal equations reduction code. It doesn't hurt, 
+   /// however, to have it. All it does is to clear the content of the map
+   inline void clear() { itsData.clear(); }
+
+   // do we need pixel by pixel direct access?
+
+   // serialisation / deserialisation
+
+   /// @brief write the object to a blob stream
+   /// @param[in] os the output stream
+   void writeToBlob(LOFAR::BlobOStream& os) const;
+
+   /// @brief read the object from a blob stream
+   /// @param[in] is the input stream
+   /// @note Not sure whether the parameter should be made const or not
+   void readFromBlob(LOFAR::BlobIStream& is);
 
 private:
    /// @brief map of weight grids
    std::map<casacore::uInt, casacore::Cube<float> > itsData;
+
+   /// @brief payload version for the serialisation
+   static constexpr int theirPayloadVersion = 1;
 };
 
 } // namespace synthesis

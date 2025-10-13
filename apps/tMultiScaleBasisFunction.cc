@@ -72,7 +72,7 @@ public:
    /// @param[in] argc number of parameters
    /// @param[in] argv parameter vector
    /// @return exit code
-   virtual int run(int argc, char *argv[]) override;
+   int run(int argc, char *argv[]) final;
 
 protected:
    // test class to access protected method without making the whole app class a friend
@@ -85,7 +85,7 @@ protected:
    };
 
 private:
-        std::string getVersion() const override {
+        std::string getVersion() const final {
             const std::string pkgVersion = std::string("yandasoft:") + ASKAP_PACKAGE_VERSION;
             return pkgVersion;
         }

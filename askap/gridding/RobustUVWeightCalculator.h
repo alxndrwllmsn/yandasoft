@@ -54,7 +54,7 @@ struct RobustUVWeightCalculator : virtual public IUVWeightCalculator {
    /// At this stage, we can guarantee that supplied matrix has contiguous storage.
    /// @param[in] wt weight to work with (it is modified in situ).
    /// @note The shape is supposed to stay intact.
-   virtual void process(casacore::Matrix<float> &wt) const;
+   void process(casacore::Matrix<float> &wt) const final;
 private:
    /// @brief robustness parameter
    /// @note it is made const because we don't need to change it after construction (can be changed if needed)
