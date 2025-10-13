@@ -384,6 +384,7 @@ class ContinuumWorker : public boost::noncopyable
         /// imagers and it makes the code messy). Ideally, we need to clean up some technical debt and probably avoid having 
         /// unnecessary responsibilities assign to the imager class.
         const boost::shared_ptr<IUVWeightCalculator> itsUVWeightCalculator;
+
 };
 
 };

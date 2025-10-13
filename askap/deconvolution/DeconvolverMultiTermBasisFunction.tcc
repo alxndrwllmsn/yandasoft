@@ -56,9 +56,25 @@ namespace askap {
         /// e.g. DeconvolverMultiTermBasisFunction<double, DComplex>
         /// @ingroup Deconvolver
 
-        template<class T> 
+        /// @brief find the maximum in the given image
+        /// @details find maximum and position of maximum in the given image or list of pixels
+        /// taking into account optional mask, noise scaling, increments or positivity constraints
+        /// @param[out] maxVal, the maximum value found
+        /// @param[out] maxValScaled, the maximum value found scaled with local noise value
+        /// @param[out] maxPos, the position of the maximum
+        /// @param[in] im, the image to search for a peak
+        /// @param[in] mask, optional mask to apply to the image
+        /// @param[in] pixels, if filled, use this vector of pixel indices to do the search instead
+        ///  of searching the whole image
+        /// @param[in] noise, a noise image to use for S/N scaled peak searching, smaller than input
+        ///  image by about a factor boxSize in each dimension, or empty for no scaling
+        /// @param[in] boxSize, the size of the box used to calculate the noise, default of 0 means no
+        ///  noise scaling
+        /// @param[in] increment, pixel increment to use
+        /// @param[in] positive, constrain search to positive image values if true
+        template<class T>
         void absMaxPos(T& maxVal, T& maxValScaled, IPosition& maxPos, const Matrix<T>& im,
-            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize, uInt increment) 
+            const Matrix<T>& mask, const std::vector<uInt>& pixels, const Matrix<T>& noise, uInt boxSize = 0, uInt increment = 1, bool positive = false)
         {
             // Set Shared Values
             maxVal = T(0.0);
@@ -83,14 +99,21 @@ namespace askap {
                 // skip pixels (for larger scales)
                 if (increment == 1|| ((pixel % nrow)%increment == 0 &&
                          (pixel / nrow)%increment == 0)) {
-                    T val = abs(pIm[pixel]);
+                    T val = pIm[pixel];
+                    if (val < 0) {
+                        if (positive) {
+                            val = 0;
+                        } else {
+                            val = -val;
+                        }
+                    }
                     if (useMask) val *= pMask[pixel];
                     T testVal = val;
                     if (useNoise) {
                         const uInt row = (pixel % nrow) / boxSize;
                         const uInt col = (pixel / nrow) / boxSize;
                         testVal /= noise(row, col);
-                    } 
+                    }
                     if (testVal > maxValScaled_private) {
                         maxValScaled_private = testVal;
                         maxVal_private = val;
@@ -160,6 +183,8 @@ namespace askap {
         {
             itsBasisFunction = bf;
             itsBasisFunctionChanged = True;
+            itsPositivityConstraint = std::vector<bool>(bf->numberBases(),false);
+            itsScaleBias = std::vector<float>(bf->numberBases(),1.0);
         }
 
         template<class T, class FT>
@@ -190,7 +215,7 @@ namespace askap {
             // I suspect because ImageAMSMFSolver replaces the DeconvolverControl object.
             // Task cdeconvolver-mpi will set configurebase="true" because it needs this configuration done.
             if (parset.getString("configurebase","false")=="true") {
-                DeconvolverBase<T, FT>::configure(parset); 
+                DeconvolverBase<T, FT>::configure(parset);
             }
 
             // Make the basis function
@@ -201,6 +226,28 @@ namespace askap {
             bool orthogonal = parset.getBool("orthogonal", false);
             if (orthogonal) {
                 ASKAPLOG_DEBUG_STR(decmtbflogger, "Multiscale basis functions will be orthogonalised");
+            }
+            itsPositivityConstraint = std::vector<bool>(scales.size(), false);
+            if (parset.isDefined("positivity")) {
+                const std::vector<bool> positivity = parset.getBoolVector("positivity");
+                std::ostringstream oss;
+                for (uInt i=0; i<scales.size() && i<positivity.size(); i++) {
+                    itsPositivityConstraint[i] = positivity[i];
+                    if (positivity[i]) {
+                        if (!oss.str().empty()) oss << ", ";
+                        oss << scales[i];
+                    }
+                }
+                ASKAPLOG_INFO_STR(decmtbflogger,"Using positivity constraint for scales "<<oss.str());
+            }
+            const float bias = parset.getFloat("scalebias", 1.0f);
+            ASKAPCHECK(bias>0 && bias<2,"The scalebias parameter needs to be between 0 and 2");
+            itsScaleBias = std::vector<float>(scales.size(), 1.0f);
+            if (parset.isDefined("scalebias")) {
+                for (uInt i = 1; i< scales.size(); i++) {
+                    itsScaleBias[i] = pow(bias,1+log(scales[i]/scales[1])/log(2));
+                }
+                ASKAPLOG_INFO_STR(decmtbflogger,"Using scale bias of "<< bias<< " in peak search, scale bias factors: "<<itsScaleBias);
             }
 
             // MV: a bit of technical debt highlighted by casacore's interface change. In principle, we could've
@@ -237,7 +284,7 @@ namespace askap {
             }
             itsPixelListTolerance = parset.getFloat("usepixellists.tolerance",0.1);
             itsPixelListNSigma = parset.getFloat("usepixellists.nsigma",4.0);
-            itsPixelListNPixRange = parset.getFloatVector("usepixellists.npixrange",std::vector<float>({2.0,10.0}));
+            itsPixelListNPixRange = parset.getFloatVector("usepixellists.npixrange",std::vector<float>({10.0,100.0}));
             ASKAPCHECK(itsPixelListNPixRange.size()==2,"npixrange needs to have 2 values");
             ASKAPCHECK(itsPixelListNPixRange[0]<itsPixelListNPixRange[1],"first value of npixrange needs to be smaller than second");
 
@@ -245,6 +292,8 @@ namespace askap {
             if (itsUseIncrements) {
                 ASKAPLOG_INFO_STR(decmtbflogger, "Using larger pixel increments for larger scales");
             }
+
+
         }
 
         template<class T, class FT>
@@ -369,10 +418,6 @@ namespace askap {
             ASKAPTRACE("DeconvolverMultiTermBasisFunction::initialiseMask");
             ASKAPLOG_DEBUG_STR(decmtbflogger, "initialiseMask called");
 
-            // check if we need the masks
-            if (this->control()->targetObjectiveFunction2()==0) {
-                return;
-            }
             // check if we've already done this
             if (itsScalePixels.size()>0) {
                 return;
@@ -812,9 +857,9 @@ namespace askap {
 
         // the maxPos, maxVal and maxValScaled arguments are shared state variables, the return values are not used
         template<class T, class FT>
-        void DeconvolverMultiTermBasisFunction<T, FT>::chooseComponent(uInt& optimumBase, IPosition& absPeakPos, 
-            T& absPeakVal, T& absPeakValScaled, bool firstCycle, const std::vector<std::vector<uInt>>&highPixels, 
-            askap::utils::SectionTimer& sectionTimer, IPosition& maxPos, T& maxVal, T& maxValScaled, 
+        void DeconvolverMultiTermBasisFunction<T, FT>::chooseComponent(uInt& optimumBase, IPosition& absPeakPos,
+            T& absPeakVal, T& absPeakValScaled, bool firstCycle, const std::vector<std::vector<uInt>>&highPixels,
+            askap::utils::SectionTimer& sectionTimer, IPosition& maxPos, T& maxVal, T& maxValScaled,
             const Matrix<T>& weights, Matrix<T>& negchisq, Vector<Matrix<T>>& coefficients)
         {
             const uInt nBases(itsBasisFunction->numberBases());
@@ -842,21 +887,22 @@ namespace askap {
                     // initialise list of pixels depending on mode we're in
                     const bool deepClean = this->control()->deepCleanMode();
                     const bool useHighPixels = !deepClean && itsUsePixelLists && !firstCycle;
-                    const std::vector<uInt>& pixels (deepClean ? 
+                    const std::vector<uInt>& pixels (deepClean ?
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         ( useHighPixels ? highPixels[base] : std::vector<uInt>()));
                     const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                     if (!(deepClean||useHighPixels) || pixels.size()>0) {
-                        absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize,increment);
+                        absMaxPos(maxVal,maxValScaled,maxPos,res,weights,pixels,itsNoiseMap,itsNoiseBoxSize,increment,itsPositivityConstraint[base]);
                     }
                     // In performing the search for the peak across bases, we want to take into account
                     // the SNR so we normalise out the coupling matrix for term=0 to term=0.
+                    // Also apply scale bias factors.
                     #pragma omp single
                     {
                         T couplingFactor = sqrt(itsCouplingMatrix(base)(0, 0));
                         ASKAPDEBUGASSERT(couplingFactor > 0);
                         maxVal /= couplingFactor;
-                        maxValScaled /= couplingFactor;
+                        maxValScaled /= couplingFactor * itsScaleBias[base];
                     }
                     sectionTimer.stop(1);
 
@@ -905,11 +951,11 @@ namespace askap {
                         }
                     }
                     // initialise list of pixels depending on mode we're in
-                    const std::vector<uInt>& pixels (this->control()->deepCleanMode() ? 
+                    const std::vector<uInt>& pixels (this->control()->deepCleanMode() ?
                         std::vector<uInt>(itsScalePixels[base].begin(),itsScalePixels[base].end()) :
                         std::vector<uInt>());
 
-                    absMaxPos(maxVal,maxValScaled,maxPos,negchisq,weights,pixels,itsNoiseMap,itsNoiseBoxSize,1);
+                    absMaxPos(maxVal,maxValScaled,maxPos,negchisq,weights,pixels,itsNoiseMap,itsNoiseBoxSize);
 
                     // End of section 3
                     sectionTimer.stop(3);
@@ -919,10 +965,10 @@ namespace askap {
                 {
                     // We use the maxVal to find the optimum base
                     if (abs(maxValScaled) > absPeakValScaled) {
-                            optimumBase = base;
-                            absPeakVal = abs(maxVal);
-                            absPeakValScaled = abs(maxValScaled);
-                            absPeakPos = maxPos;
+                        optimumBase = base;
+                        absPeakVal = abs(maxVal);
+                        absPeakValScaled = abs(maxValScaled);
+                        absPeakPos = maxPos;
                     }
                 }
 
@@ -938,17 +984,25 @@ namespace askap {
             const bool haveMask = weights.size()>0;
             const uInt nBases = highPixels.size();
             // Added code to limit the number of high pixels collected - above 1e5 things get slow
-            // no more than 10 x nIter pixels to be collected per base
+            // no more than itsPixelListNPixRange[1] x nIter pixels to be collected per base
             const uInt upperLimit = itsPixelListNPixRange[1] * this->control()->targetIter();
-            // but try to get at least 2 x nIter pixels
+            // but try to get at least itsPixelListNPixRange[0] x nIter pixels
             const uInt lowerLimit = itsPixelListNPixRange[0] * this->control()->targetIter();
             #pragma omp for schedule(static)
             for (uInt base = 0; base < nBases; base++) {
                 const uInt increment = itsUseIncrements && base > 0 ? 1 << (base-1) : 1;
                 const Matrix<T>& res = itsResidualBasis(base)(0);
+                float sigma = 0.0f;
                 // get a quick estimate of the rms using 1% of pixels
-                ASKAPDEBUGASSERT(res.nrow()>10 && res.ncolumn()>10);
-                const float sigma = 1.48f * madfm(res(Slice(0,res.nrow()/10,10),Slice(0,res.ncolumn()/10,10)));
+                // (but only calculate it if needed)
+                if (itsPixelListNSigma > 0) {
+                    const float mad2rms = 1.4826f;
+                    ASKAPDEBUGASSERT(res.nrow()>10 && res.ncolumn()>10);
+                    const Slice sliceX = Slice(0,res.nrow()/10,10);
+                    const Slice sliceY = Slice(0,res.ncolumn()/10,10);
+                    const Matrix<T> subRes(res(sliceX,sliceY));
+                    sigma = mad2rms * (haveMask ? madfm(subRes(weights(sliceX,sliceY)>T(0))) : madfm(subRes));
+                }
                 ASKAPDEBUGASSERT(res.contiguousStorage());
                 ASKAPDEBUGASSERT(!haveMask || weights.contiguousStorage());
                 const T* pRes = res.data();

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(VERSION "1.17.1")
+set(VERSION "1.17.6")
 project(yandasoft VERSION ${VERSION} LANGUAGES C CXX)
 
 
@@ -233,7 +233,7 @@ endif(ENABLE_SHARED)
 find_package(log4cxx REQUIRED)
 find_package(Casacore REQUIRED COMPONENTS  ms images mirlib coordinates fits lattices measures scimath scimath_f tables casa)
 find_package(GSL REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem program_options)
+find_package(Boost REQUIRED COMPONENTS filesystem program_options)
 find_package(Components REQUIRED)
 find_package(MPI)
 find_package(CPPUnit)

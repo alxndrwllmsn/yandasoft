@@ -109,6 +109,13 @@ struct ICalibrationApplicator {
   /// @param[in] flag, if true interpolate between solutions
   virtual void interpolateTime(bool flag) {};
 
+  /// @brief normalise gains before application, i.e., do phase-only
+  /// @details Doing phase only gain correction is often useful when the
+  /// model is not very good (yet), this option normalises the gains to have
+  /// unit amplitude
+  /// @param flag, if true normalise gains, apply phase correction only
+  virtual void normalise(bool flag) {};
+
 };
 
 } // namespace synthesis

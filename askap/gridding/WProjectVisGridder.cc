@@ -38,6 +38,7 @@
 #include <casacore/casa/BasicSL/Constants.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/profile/AskapProfiler.h>
+#include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 
 // Local package includes
 #include <askap/gridding/WProjectVisGridder.h>
@@ -587,7 +588,8 @@ WProjectVisGridder::CFSupport WProjectVisGridder::calcSupport(const casacore::Ma
     return cfSupport;
 }
 
-void WProjectVisGridder::populateItsConvFunc(const casacore::Matrix<casacore::Complex> &cfPlane, const int iw,
+//void WProjectVisGridder::populateItsConvFunc(const casacore::Matrix<casacore::Complex> &cfPlane, const int iw,
+void WProjectVisGridder::populateItsConvFunc(const casacore::Matrix<imtypeComplex> &cfPlane, const int iw,
                          const int support, const CFSupport& cfSupport, const int cSize,
                          const int nx, const int ny)
 {
@@ -621,7 +623,7 @@ void WProjectVisGridder::normalise(std::vector<casacore::Matrix<casacore::Comple
             continue;
         }
 
-        const double norm = sum(casacore::real(convFunc[plane]));
+        const double norm = utility::sumArray(casacore::real(convFunc[plane]));
         // ASKAPLOG_INFO_STR(logger, "Sum of convolution function = " << norm);
         ASKAPDEBUGASSERT(norm > 0.);
 
@@ -631,7 +633,7 @@ void WProjectVisGridder::normalise(std::vector<casacore::Matrix<casacore::Comple
         }
     } // for plane
 }
-void WProjectVisGridder::populateThisPlane(casacore::Matrix<casacore::Complex> &thisPlane,
+void WProjectVisGridder::populateThisPlane(casacore::Matrix<imtypeComplex> &thisPlane,
                                            const int qnx, const int qny, const int nx, const int ny,
                                            const double ccellx, const double ccelly, const double w,
                                            const casacore::Vector<float>& ccfx,

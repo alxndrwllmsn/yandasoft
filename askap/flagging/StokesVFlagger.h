@@ -33,6 +33,7 @@
 // Local package includes
 #include "askap/flagging/IFlagger.h"
 #include "askap/flagging/FlaggingStats.h"
+#include "askap/flagging/NoiseScaler.h"
 
 namespace askap {
 namespace synthesis {
@@ -59,7 +60,7 @@ class StokesVFlagger : public IFlagger {
         StokesVFlagger(float threshold, bool robustStatistics,
                        bool integrateSpectra, float spectraThreshold,
                        bool integrateTimes, float timesThreshold,
-                       float highLimit);
+                       float highLimit,std::shared_ptr<NoiseScaler> noiseScaler);
 
         /// @see IFlagger::processRows()
         virtual void processRows(const accessors::IDataSharedIter& di,
@@ -99,6 +100,9 @@ class StokesVFlagger : public IFlagger {
 
         // absolute limit flagging
         float itsHighLimit;
+
+        // scale the noise?
+        std::shared_ptr<NoiseScaler> itsNoiseScaler;
 
         // Calculate the median, the interquartile range, the min and the max
         // of a simple array without masking

@@ -150,6 +150,15 @@ struct UVWeightGridder  {
    /// @param[in] oversample oversample factor used by the data gridder
    void setOversampleFactor(int oversample) { itsOversample = oversample; }
 
+   /// @brief set or reset flag telling gridder to enable rotation of uvw coordinates
+   /// @details Rotation of uvw coordinates is normally enabled, but if it is known it is
+   /// not required, some time can be saved by skipping that step
+   /// @param[in] flag new value of the flag
+   void doRotateUVW(const bool flag) { itsRotateUVW = flag;}
+
+   /// @brief are we rotating the uvw coordinates?
+   bool rotateUVW() const { return itsRotateUVW;}
+
 protected:
 
    /// @brief obtain the current field index
@@ -297,6 +306,11 @@ private:
    /// bin CFs into multiple oversampling planes depends on the oversampling factor. For now, we have to make this class aware 
    /// about the oversampling factor used by the actual data gridder.
    int itsOversample;
+
+   /// @brief are we rotating uvw coordinates
+   /// @details this is an optimisation flag that can be used (set to false) if imaging at the tangent point of the data
+   bool itsRotateUVW;
+
 };
 
 } // namespace synthesis

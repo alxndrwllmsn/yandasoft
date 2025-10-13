@@ -37,6 +37,7 @@
 #include <casacore/casa/Arrays/Matrix.h>
 #include <casacore/casa/BasicSL/Complex.h>
 
+
 namespace askap {
     namespace synthesis {
         /// @brief Holder for gridding kernels

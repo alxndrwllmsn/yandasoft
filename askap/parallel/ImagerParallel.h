@@ -233,6 +233,27 @@ namespace askap
       /// state similar to that before the first major cycle if no traditional weighting is done.
       void recreateNormalEquations();
 
+      /// @brief check if we are doing selfcalibration and initialise it if needed
+      void initSelfCalibration();
+
+      /// @brief set up caching for the table selection if requested
+      /// @details Table selection can be expensive, this provides a way to
+      /// do the selection once, cache it to disk and reuse it.
+      /// @param[in] sel The data selector handle
+      /// @param[in] prefix The prefix for the table cache, if empty no caching is done
+      static void setSelectionCache(accessors::IDataSelectorPtr& sel, const std::string & prefix);
+
+      /// @brief Fill the cache of selected tables
+      /// @details Table selection can be expensive, this provides a way to
+      /// do the selection once, cache it to disk and reuse it.
+      /// @param[in] nRanks, the number of ranks
+      /// @param[in] rank, this rank's number
+      /// @param[in] parset, the ParameterSet supplying prefix, datacolumn and selection
+      /// @param[in] mss the vector of MeasurementSet names
+      /// @return true if cache was created
+      static bool fillSelectionCache(unsigned int nRanks, unsigned int rank, const LOFAR::ParameterSet& parset, 
+        const std::vector<std::string> & mss);
+
   protected:
 
       /// @brief make calibration iterator if necessary, otherwise return unchanged interator

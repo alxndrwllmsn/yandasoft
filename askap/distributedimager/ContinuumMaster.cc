@@ -27,47 +27,16 @@
 // Include own header file first
 #include "ContinuumMaster.h"
 
-// System includes
-#include <string>
-#include <sstream>
-#include <stdexcept>
-#include <vector>
-
 // ASKAPsoft includes
 #include <askap/askap/AskapLogging.h>
 #include <askap/askap/AskapError.h>
-#include <askap/profile/AskapProfiler.h>
-#include <askap/askapparallel/AskapParallel.h>
-
+#include <askap/parallel/CalibratorParallel.h>
 #include <Common/ParameterSet.h>
-#include <askap/scimath/fitting/Params.h>
-#include <askap/scimath/fitting/Axes.h>
-/*
-#include <askap/dataaccess/IConstDataSource.h>
-#include <askap/dataaccess/TableConstDataSource.h>
-#include <askap/dataaccess/IConstDataIterator.h>
-#include <askap/dataaccess/IDataConverter.h>
-#include <askap/dataaccess/IDataSelector.h>
-#include <askap/dataaccess/IDataIterator.h>
-#include <askap/dataaccess/SharedIter.h>
-#include <askap/dataaccess/TableInfoAccessor.h>
-*/
-#include <casacore/casa/Quanta.h>
-#include <askap/imageaccess/BeamLogger.h>
-#include <askap/parallel/ImagerParallel.h>
-#include <askap/measurementequation/SynthesisParamsHelper.h>
 
 // Local includes
 #include "askap/distributedimager/AdviseDI.h"
-#include "askap/distributedimager/CalcCore.h"
-#include "askap/distributedimager/CubeComms.h"
 #include "askap/messages/ContinuumWorkUnit.h"
 #include "askap/messages/ContinuumWorkRequest.h"
-
-
-//casacore includes
-#include "casacore/ms/MeasurementSets/MeasurementSet.h"
-#include "casacore/ms/MeasurementSets/MSColumns.h"
 
 using namespace std;
 using namespace askap::cp;
@@ -95,6 +64,7 @@ void ContinuumMaster::run(void)
     if (ms.size() == 0) {
         ASKAPTHROW(std::runtime_error, "No datasets specified in the parameter set file");
     }
+
     // Need to break these measurement sets into groups
     // there are three posibilties:
     // 1 - the different measurement sets have the same epoch - but different
@@ -159,14 +129,19 @@ void ContinuumMaster::run(void)
         }
 
     }
+
     // all the work units allocated - lets send the DONEs
     // now finish the advice for remaining parameters
     diadvise.addMissingParameters(true);
 
     itsStats.logSummary();
 
+    const bool doSelfcal = itsParset.getBool("selfcal",false);
 
     if (localSolver) {
+        if (doSelfcal) {
+            ASKAPLOG_WARN_STR(logger,"Selfcal is not supported in spectral line mode");
+        }
         ASKAPLOG_INFO_STR(logger, "Master no longer required");
         return;
     }
@@ -174,6 +149,21 @@ void ContinuumMaster::run(void)
     // But I dont want to run Cadvise as it is too specific to the old imaging requirements
 
     synthesis::ImagerParallel imager(itsComms, itsParset);
+
+    LOFAR::ParameterSet calSubset= itsParset.makeSubset("selfcal.");
+    if (doSelfcal) {
+        // specify we're calculating calibration solutions using the master rank only
+        calSubset.replace(LOFAR::KVpair("serialmode",true));
+        calSubset.replace(LOFAR::KVpair("masterDoesWork",true));
+        // prefill the calSubset with relevant imager parameters to avoid having to
+        // specify them twice (e.g. dataset, gridder)
+        calSubset.replace("dataset",itsParset.getString("dataset"));
+        calSubset.adoptCollection(itsParset.makeSubset("gridder"),"gridder"); // Check this works with MPIWProject
+    }
+    // major cycle to start selfcal, do selfcal every # major cycles, do phase only until # (0=always)
+    const std::vector<int> calCycle = calSubset.getIntVector("calcycle",{0,1,0});
+    ASKAPASSERT(calCycle.size()>=2 && calCycle[0]>=0 && calCycle[1]>0);
+
     // do a separate loop to build weights (in workers) if we are doing traditional weighting and build new weight grid
     imager.createUVWeightCalculator();
     if (imager.isSampleDensityGridNeeded()) {
@@ -215,6 +205,7 @@ void ContinuumMaster::run(void)
             ASKAPLOG_DEBUG_STR(logger, "Master beginning major cycle ** " << cycle+1);
 
             if (cycle==0) {
+                // If we have an initial skymodel we could run the first round calibration with that before we start
                 imager.broadcastModel(); // initially empty model (with or without uv-weights)
             }
             /// Minor Cycle
@@ -223,7 +214,33 @@ void ContinuumMaster::run(void)
                             // Nothing else is done
             imager.solveNE(); /// Implicit receiveNE in here
 
+            // run selfcal here using latest model
+            // we may not want to run selfcal every iteration, especially early ones may be very incomplete
+            // do calCycle[0]+1 cycles, then calibrate every calCycle[1] cycles, do phase only until calCycle[2]
+            bool selfcal = false;
+            vector<string> keep;
+            if (doSelfcal && cycle >= calCycle[0] && (cycle - calCycle[0]) % calCycle[1] == 0) {
+                const bool normalise = calCycle[2]==0 || cycle <= calCycle[2];
+                ASKAPLOG_INFO_STR(logger,"Running "<< (normalise ? "phase-only " : "")<<"selfcal");
+                selfCalibration(imager.params(), calSubset);
+                // keep track of existing params
+                keep = imager.params()->names();
+                // add the selfcal params
+                const std::string mode = calSubset.getString("calibaccess","parset");
+                ASKAPCHECK(mode=="parset"||mode=="table","Only parset or table access are supported for selfcal");
+                if (mode == "parset") {
+                    imager.params()->add("selfcal.parset."+calSubset.getString("calibaccess.parset","caldata.dat"));
+                } else {
+                    imager.params()->add("selfcal.table."+calSubset.getString("calibaccess.table","caldata.tab"));
+                }
+                // add phase only flag
+                if (normalise) {
+                    imager.params()->add("selfcal.normalise");
+                }
+                selfcal = true;
+            }
 
+            bool final = false;
             if (imager.params()->has("peak_residual")) {
                 const double peak_residual = imager.params()->scalarValue("peak_residual");
                 ASKAPLOG_INFO_STR(logger, "Major Cycle " << cycle+1 << " Reached peak residual of " << abs(peak_residual) << " after solve");
@@ -238,10 +255,7 @@ void ContinuumMaster::run(void)
                                       << targetPeakResidual << " Jy. Stopping.");
 
                     }
-                    ASKAPLOG_INFO_STR(logger, "Broadcasting final model");
-                    imager.broadcastModel();
-                    ASKAPLOG_INFO_STR(logger, "Broadcasting final model - done");
-                    break;
+                    final = true;
 
                     // we have reached a peak residual after the
 
@@ -252,10 +266,7 @@ void ContinuumMaster::run(void)
                         if (imager.params()->has("noise_threshold_reached") &&
                             imager.params()->scalarValue("noise_threshold_reached")>0) {
                             ASKAPLOG_INFO_STR(logger, "It is below the noise threshold. Stopping.");
-                            ASKAPLOG_INFO_STR(logger, "Broadcasting final model");
-                            imager.broadcastModel();
-                            ASKAPLOG_INFO_STR(logger, "Broadcasting final model - done");
-                            break;
+                            final = true;
                         } else {
                         ASKAPLOG_INFO_STR(logger, "It is above the major cycle threshold of "
                                           << targetPeakResidual << " Jy. Continuing.");
@@ -263,27 +274,33 @@ void ContinuumMaster::run(void)
                     }
                 }
             }
-            ASKAPLOG_INFO_STR(logger, "Broadcasting latest model");
+
+            ASKAPLOG_INFO_STR(logger, "Broadcasting " << (final ? "final" : "latest") <<" model" << (selfcal ? " including selfcal params":""));
             imager.broadcastModel();
-            ASKAPLOG_INFO_STR(logger, "Broadcasting latest model - done");
+            ASKAPLOG_INFO_STR(logger, "Broadcasting " << (final ? "final" : "latest") <<" model - done");
+            if (selfcal) {
+                // remove the selfcal gain params again
+                imager.params()->makeSlice(keep);
+            }
+            if (final) break;
 
             if (writeAtMajorCycle && (cycle != nCycles-1) ) {
                 ASKAPLOG_INFO_STR(logger, "Writing out model");
                 imager.writeModel(std::string(".beam") + utility::toString(beam) + \
                 std::string(".majorcycle.") + utility::toString(cycle));
-            }
-
-            else {
+            } else {
                 ASKAPLOG_DEBUG_STR(logger, "Not writing out model");
             }
             itsStats.logSummary();
 
         }
+
         ASKAPLOG_INFO_STR(logger, "Cycles complete - Receiving residuals for latest model");
         imager.calcNE(); // Needed here because it resets the itsNE as Master
                         // Nothing else is done
         imager.receiveNE(); // updates the residuals from workers
         ASKAPLOG_INFO_STR(logger, "Writing out model");
+        // Writes all images and also runs restore solver and writes restored image
         imager.writeModel();
         itsStats.logSummary();
 
@@ -335,3 +352,44 @@ std::vector<int> ContinuumMaster::getBeams()
     }
     return bs;
 }
+
+void ContinuumMaster::selfCalibration(askap::scimath::Params::ShPtr& model, const LOFAR::ParameterSet & parset) {
+    ASKAPLOG_DEBUG_STR(logger,"Creating calibrator");
+    synthesis::CalibratorParallel calib(itsComms, parset);
+
+    const int nCycles = parset.getInt32("ncycles", 1);
+    ASKAPCHECK(nCycles >= 0, " Number of calibration iterations should be a non-negative number, you have " <<
+            nCycles);
+
+    // update the calibrator model with the latest imager model
+    calib.setPerfectModel(model);
+    size_t solution = 0;
+    for (bool continueFlag = true; continueFlag; ++solution) {
+        ASKAPLOG_DEBUG_STR(logger, "Calibration solution interval "<<solution + 1);
+        for (int cycle = 0; cycle < nCycles; ++cycle) {
+            ASKAPLOG_DEBUG_STR(logger, "*** Starting calibration iteration " << cycle + 1 << " ***");
+            calib.calcNE();
+            calib.solveNE();
+        }
+        calib.doPhaseReferencing();
+
+        ASKAPLOG_DEBUG_STR(logger,  "*** Finished calibration cycles ***");
+        calib.writeModel();
+
+        continueFlag = calib.getNextChunkFlag();
+        if (continueFlag) {
+            ASKAPLOG_DEBUG_STR(logger, "More data are available, continue to make solution for the next interval");
+            // initialise the model and measurement equation
+            calib.init(parset);
+        } else {
+            ASKAPLOG_DEBUG_STR(logger, "No more data are available, this was the last solution interval");
+        }
+
+        // Remove the next chunk flag since merge will not update the
+        // value if it already exists. This is important for the graph
+        // reduction of normal equations. This is really only needed for
+        // the master, but doesn't hurt at the worker.
+        calib.removeNextChunkFlag();
+    }
+}
+

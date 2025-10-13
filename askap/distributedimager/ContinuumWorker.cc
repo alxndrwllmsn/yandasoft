@@ -107,7 +107,7 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     itsMaskLevel(parset.getFloat("solver.Clean.tolerance",0.1)),
     // use MFS starting model (for spectral mode)
     itsMFSStartingModel(parset.getBool("mfsstartingmodel",false)),
-    // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether 
+    // flag that we do traditional weighting (note, this is somewhat ugly to setup calculators only to check whether
     // the shared pointer is not empty. But this is cheap. We can clear this up later)
     // uv-weight calculator object; at the moment, it is an empty pointer if no traditional weighting is done
     itsUVWeightCalculator(ImagerParallel::createUVWeightCalculator(parset))
@@ -115,7 +115,6 @@ ContinuumWorker::ContinuumWorker(LOFAR::ParameterSet& parset,
     ASKAPTRACE("ContinuumWorker::constructor");
 
     ASKAPCHECK(!(itsUpdateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
-
     itsAdvisor = boost::shared_ptr<synthesis::AdviseDI> (new synthesis::AdviseDI(itsComms, itsParset));
     itsAdvisor->prepare();
 
@@ -481,7 +480,7 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
             }
 
             if (itsReadStartingModelCube) {
-                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));             
+                itsImageCube.reset(new CubeBuilder<casacore::Float>(itsParset, img_name));
             } else if (itsWriteModelImage) {
                 if ((itsGridType == "adios") && (itsParset.getString("imageaccess", "individual") == "collective")) {
                     if (comm_index == -1) {
@@ -604,7 +603,7 @@ void ContinuumWorker::initialiseCubeWritingIfNecessary()
 }
 
 /// @brief helper method to create and configure work and (optionally) root imagers
-/// @details This method encapsulates the part of single work unit processing where the work and root imagers are created. 
+/// @details This method encapsulates the part of single work unit processing where the work and root imagers are created.
 /// Using two imager objects is a bit of the technical debt - ideally, one has to merge normal equations or models directly.
 /// But this is deeply in the design of this application and left as is for now. Normally, all gridding of data is taken place
 /// in the 'work imager' and the results are merged into 'root imager' when ready. If the root imager is not defined, the work imager
@@ -623,6 +622,7 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
    const double globalFrequency = wu.get_channelFrequency();
    const uInt globalChannel = wu.get_globalChannel();
    TableDataSource& ds = itsDSM->dataSource(wu.get_dataset());
+   ASKAPLOG_DEBUG_STR(logger,"createImagers");
 
    if (itsUpdateDir) {
        // note, this can update the parset which is then used to construct CalcCore objects
@@ -727,6 +727,8 @@ boost::shared_ptr<CalcCore> ContinuumWorker::createImagers(const cp::ContinuumWo
    } else {
        if (rootImagerPtr) {
            workingImager.replaceModelByReference(rootImagerPtr->params());
+           // setup self-calibration if required
+           workingImager.initSelfCalibration();
        } else {
            if (itsLocalSolver) {
               // load starting model or setup empty model image
@@ -813,7 +815,7 @@ void ContinuumWorker::accumulateUVWeightsForOneWorkUnit(boost::shared_ptr<CalcCo
                                 wu.get_dataset()<<" global channel "<<wu.get_globalChannel()<<"(: "<< e.what());
          } else {
              // MV: it is not clear to me whether we should ignore this error, but keep the same behaviour as it was prior to the refactoring
-             // for normal imaging 
+             // for normal imaging
              ASKAPLOG_ERROR_STR(logger, "Askap error in uv-weight accumulation - skipping accumulation of some or all data in "<<
                                wu.get_dataset()<<" and carrying on: " << e.what());
          }
@@ -873,9 +875,8 @@ void ContinuumWorker::processOneWorkUnit(boost::shared_ptr<CalcCore> &rootImager
         ASKAPLOG_DEBUG_STR(logger,"Merged");
 
         ASKAPDEBUGASSERT(rootImagerPtr);
-        if (lastcycle == false) {
-            lastcycle = checkStoppingThresholds(rootImagerPtr->params());
-        }
+        // cover the case where we stop on thresholds instead of max #major cycles
+        lastcycle |= checkStoppingThresholds(rootImagerPtr->params());
         if (itsWriteGrids && lastcycle && itsLocalSolver) {
             ASKAPLOG_INFO_STR(logger, "Extracting grids and summing them in the root imager");
             // the following would work regarless whether root imager and working imager are the same object or not
@@ -1207,7 +1208,7 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
        }
    }
    const bool forcedStopping = checkStoppingThresholds(rootImagerPtr->params());
-   // MV: it would be nice to check if continuum and spectral line mode do the same thing in terms of the number of major cycles 
+   // MV: it would be nice to check if continuum and spectral line mode do the same thing in terms of the number of major cycles
    // (in both cases of stopping on thresholds and on reaching the limit of major cycles)
    const bool lastCycle = forcedStopping || !haveMoreMajorCycles;
    if (itsLocalSolver && !lastCycle) {
@@ -1237,609 +1238,6 @@ bool ContinuumWorker::runMinorCycleSolver(const boost::shared_ptr<CalcCore> &roo
    return forcedStopping;
 }
 
-
-// this is the old version of processChannels method prior to refactoring. Kept in place for now just in case we need to flip between the
-// old and new versions quickly for debugging. It is no longer used.
-void ContinuumWorker::processChannelsOld()
-{
-  ASKAPTRACE("ContinuumWorker::processChannels");
-
-  ASKAPLOG_INFO_STR(logger, "Processing Channel Allocation");
-
-  if (itsWriteGrids) {
-    ASKAPLOG_INFO_STR(logger,"Will output gridded visibilities");
-  }
-
-  if (itsLocalSolver) {
-    ASKAPLOG_INFO_STR(logger, "Processing multiple channels in local solver mode");
-  }
-  else {
-    ASKAPLOG_INFO_STR(logger, "Processing multiple channels in central solver mode");
-  }
-
-  ASKAPCHECK(!(itsUpdateDir && !itsLocalSolver), "Cannot <yet> Continuum image in on-the-fly mosaick mode - need to update the image parameter setup");
-
-  configureReferenceChannel();
-
-  initialiseCubeWritingIfNecessary();
-
-  if (itsWorkUnits.size() == 0) {
-    ASKAPLOG_INFO_STR(logger,"No work todo");
-
-    // write out the beam log
-    ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
-
-    logBeamInfo();
-    logWeightsInfo();
-
-    return;
-  }
-
-  /// What are the plans for the deconvolution?
-  ASKAPLOG_DEBUG_STR(logger, "Ascertaining Cleaning Plan");
-  const bool writeAtMajorCycle = itsParset.getBool("Images.writeAtMajorCycle", false);
-  const int nCycles = itsParset.getInt32("ncycles", 0);
-
-  const int uvwMachineCacheSize = itsParset.getInt32("nUVWMachines", 1);
-  ASKAPCHECK(uvwMachineCacheSize > 0 ,
-    "Cache size is supposed to be a positive number, you have "
-    << uvwMachineCacheSize);
-
-  const double uvwMachineCacheTolerance = SynthesisParamsHelper::convertQuantity(itsParset.getString("uvwMachineDirTolerance", "1e-6rad"), "rad");
-
-  ASKAPLOG_DEBUG_STR(logger,
-      "UVWMachine cache will store " << uvwMachineCacheSize << " machines");
-  ASKAPLOG_DEBUG_STR(logger, "Tolerance on the directions is "
-      << uvwMachineCacheTolerance / casacore::C::pi * 180. * 3600. << " arcsec");
-
-  const string colName = itsParset.getString("datacolumn", "DATA");
-  const bool clearcache = itsParset.getBool("clearcache", false);
-
-  itsDSM.reset(new DataSourceManager(colName, clearcache, static_cast<size_t>(uvwMachineCacheSize), uvwMachineCacheTolerance));
-
-  // the itsWorkUnits may include different epochs (for the same channel)
-  // the order is strictly by channel - with multiple work units per channel.
-  // so you can increment the workUnit until the frequency changes - then you know you
-  // have all the workunits for that channel
-
-  boost::shared_ptr<CalcCore> rootImagerPtr;
-  bool gridder_initialized = false;
-
-  for (int workUnitCount = 0; workUnitCount < itsWorkUnits.size();) {
-
-    // NOTE:not all of these will have work
-    // NOTE:this loop does not increment here.
-
-    try {
-
-      // spin for good workunit
-      while (workUnitCount <= itsWorkUnits.size()) {
-        if (itsWorkUnits[workUnitCount].get_payloadType() == ContinuumWorkUnit::DONE){
-          workUnitCount++;
-        }
-        else if (itsWorkUnits[workUnitCount].get_payloadType() == ContinuumWorkUnit::NA) {
-          if (itsComms.isWriter()) {
-            // itsComms.removeChannelFromWriter(itsComms.rank());
-            ASKAPLOG_WARN_STR(logger,"No longer removing whole channel from write as work allocation is bad. This may not work for multiple epochs");
-          }
-          workUnitCount++;
-        }
-        else {
-          ASKAPLOG_INFO_STR(logger, "Good workUnit at number " << workUnitCount);
-          break;
-        }
-      }
-      if (workUnitCount >= itsWorkUnits.size()) {
-        ASKAPLOG_INFO_STR(logger, "Out of work with workUnit " << workUnitCount);
-        break;
-      }
-      itsStats.logSummary();
-      ASKAPLOG_INFO_STR(logger, "Starting to process workunit " << workUnitCount+1 << " of " << itsWorkUnits.size());
-
-      int initialChannelWorkUnit = workUnitCount;
-
-      if (!itsUpdateDir) {
-
-        // NOTE: this is because if we are mosaicking ON THE FLY. We do
-        // not process the first workunit outside the imaging loop.
-        // But for "normal" processing the first workunit is processed outside the loops
-        // This adds all sorts of complications to the logic BTW.
-
-        initialChannelWorkUnit = workUnitCount+1;
-      }
-
-      const cp::ContinuumWorkUnit& currentWorkUnit = itsWorkUnits[workUnitCount];
-
-      double frequency=currentWorkUnit.get_channelFrequency();
-
-      int localChannel = currentWorkUnit.get_localChannel();
-
-      double globalFrequency = currentWorkUnit.get_channelFrequency();
-      int globalChannel = currentWorkUnit.get_globalChannel();
-
-      TableDataSource& ds = itsDSM->dataSource(currentWorkUnit.get_dataset());
-
-      /// Need to set up the rootImager here
-      if (itsUpdateDir) {
-            itsAdvisor->updateDirectionFromWorkUnit(currentWorkUnit);
-            // change gridder for initial calcNE in itsUpdateDir mode
-            LOFAR::ParameterSet tmpParset = itsParset.makeSubset("");
-            tmpParset.replace("gridder","SphFunc");
-            boost::shared_ptr<CalcCore> tempIm(new CalcCore(tmpParset,itsComms,ds,localChannel,globalFrequency));
-            rootImagerPtr = tempIm;
-      } else if (!gridder_initialized) {
-            boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,ds,localChannel,globalFrequency));
-            rootImagerPtr = tempIm;
-            gridder_initialized = true;
-      } else {
-        boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,ds,rootImagerPtr->gridder(),localChannel,globalFrequency));
-        rootImagerPtr = tempIm;
-      }
-
-      CalcCore& rootImager = *rootImagerPtr; // just for the semantics
-      /// set up the image for this channel
-      /// this will actually build a full image for the first - it is not actually used tho.
-      ///
-      ASKAPLOG_INFO_STR(logger, "Initialised imager & gridder");
-      bool stopping = false;
-
-      if (!itsUpdateDir) {
-          // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
-          // for itsUpdateDir option we have to do weighting in the working imager, root imager just handles the linmos
-          // (although this is probably a bit of the technical debt)
-          rootImager.createUVWeightCalculator();
-      }
-      if (!itsLocalSolver) {
-        // for central solver weight grid computation happens here, if it is required
-        if (rootImager.isSampleDensityGridNeeded()) {
-            // the code below is expected to be called in normal continuum case, incompatible with updatedir
-            ASKAPASSERT(!itsUpdateDir);
-            // MV: a bit of the technical debt here, we don't need the whole model for weights, but we need coordinate systems, shapes and names distributed the right way
-            ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model (just for uv-weight calculation)");
-            rootImager.receiveModel();
-            ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
-            rootImager.setupUVWeightBuilder();
-            rootImager.accumulateUVWeights();
-            // the following call sends the weight grid back to the master for merging and processing,
-            // the result will be sent back along with the model
-            rootImager.sendNE();
-            // revert normal equations back to the type suitable for imaging
-            rootImager.recreateNormalEquations();
-        }
-
-        //
-        // MV: technically, this barrier should be redundant as we'd wait in receiveModel anyway
-        // we need to wait for the first empty model.
-        ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
-        itsComms.barrier(itsComms.theWorkers());
-        ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
-
-
-        ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
-        rootImager.receiveModel();
-        ASKAPLOG_INFO_STR(logger, "Worker received initial model for cycle 0");
-      }
-      else {
-        // this assumes no subimage will be formed.
-        setupImage(rootImager.params(), frequency, false);
-
-        // for local solver build weights locally too without interrank communication
-        // Note, the check for !itsUpdateDir is technically redundant here as traditional weighting will only
-        // be setup for rootImager if itsUpdateDir is false. But add it here for clarify.
-        if (rootImager.isSampleDensityGridNeeded() && !itsUpdateDir) {
-            ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
-            rootImager.setupUVWeightBuilder();
-            rootImager.accumulateUVWeights();
-            // this will compute weights and add them to the model
-            rootImager.computeUVWeights();
-            ASKAPLOG_DEBUG_STR(logger, "uv-weight has been added to the model");
-            // revert normal equations back to the type suitable for imaging
-            rootImager.recreateNormalEquations();
-        }
-      }
-
-
-      try {
-
-        rootImager.calcNE(); // why do this -
-        // this essentially forces me to
-        // image the full FOV for a single beam
-        // but all I want is something to linmos into.
-        // But I need this for the solver ....
-        // I should find a away to get the NE initialised w/o regridding
-        // which would be much better.
-        // Why not just use a spheroidal for the PSF gridders (use sphfuncforpsf)/ full FOV (done)
-        // FIXME
-        if (itsUpdateDir) {
-            rootImager.configureNormalEquationsForMosaicing();
-            rootImager.zero(); // then we delete all our work ....
-        }
-      }
-      catch (const askap::AskapError& e) {
-        ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE - rootImager failed");
-        ASKAPLOG_WARN_STR(logger,"Incrementing workunit count as this one failed");
-        workUnitCount++;
-
-        throw;
-      }
-
-      /// need to put in the major and minor cycle loops
-      /// If we are doing more than one major cycle I need to reset
-      /// the workUnit count to permit a re-read of the input data.
-      /// LOOP:
-
-      /// For continuum we need to loop over epochs/beams and frequencies
-      /// For "localSolver" or continuum we process each freuqency in turn.
-
-      if (nCycles == 0) {
-        stopping = true;
-      }
-
-      for (int majorCycleNumber = 0; majorCycleNumber <= nCycles; ++majorCycleNumber) {
-        // NOTE: within this loop the workUnit is incremented.
-        // so we need to check whether the frequency changes.
-        // Perhaps something cleaner is needed.
-
-        int tempWorkUnitCount = initialChannelWorkUnit;
-        // clearer if it were called nextWorkUnit - but this is essentially the workunit we are starting this loop on.
-
-
-        // now we are going to actually image this work unit
-        // This loops over work units that are the same itsBaseFrequency
-        // but probably not the same epoch or beam ....
-
-        while (tempWorkUnitCount < itsWorkUnits.size())   {
-
-          /// need a working imager to allow a merge over epochs for this channel
-          /// assuming subsequent workunits are the same channel but either different
-          /// epochs or look directions.
-
-          const cp::ContinuumWorkUnit& tempWorkUnit = itsWorkUnits[tempWorkUnitCount];
-
-          if (frequency != tempWorkUnit.get_channelFrequency()) {
-            if (itsLocalSolver) { // the frequencies should be the same.
-              // THis is probably the normal spectral line or continuum cube mode.
-              // each workunit is a different frequency
-              ASKAPLOG_INFO_STR(logger,"Change of frequency for workunit");
-              break;
-            }
-          }
-
-          localChannel = tempWorkUnit.get_localChannel();
-
-          globalFrequency = tempWorkUnit.get_channelFrequency();
-          TableDataSource& myDs = itsDSM->dataSource(tempWorkUnit.get_dataset());
-          try {
-
-            boost::shared_ptr<CalcCore> workingImagerPtr;
-
-            if (itsUpdateDir) {
-              itsAdvisor->updateDirectionFromWorkUnit(tempWorkUnit);
-              // in itsUpdateDir mode I cannot cache the gridders as they have a tangent point.
-              // FIXED: by just having 2 possible working imagers depending on the mode. ... easy really
-
-              boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,localChannel,globalFrequency));
-              workingImagerPtr = tempIm;
-
-              // this method just sets up weight calculator if traditional weighting is done or a null shared pointer if not
-              // (it is used as a flag indicating whether to do traditional weighting)
-              // MV: for now set this up only for itsUpdateDir=true and follow the old logic for all other cases,
-              // however it may be worth while to be able to regenerate weight in workingImager instead of reusing what has
-              // been done in rootImager in the case of itsUpdateDir=false. There is a bit of untidy design / technical debt here.
-              workingImagerPtr->createUVWeightCalculator();
-            }
-            else {
-
-              boost::shared_ptr<CalcCore> tempIm(new CalcCore(itsParset,itsComms,myDs,rootImager.gridder(),localChannel,globalFrequency));
-              workingImagerPtr = tempIm;
-            }
-
-            CalcCore& workingImager = *workingImagerPtr; // just for the semantics
-
-            ///this loop does the calcNE and the merge of the residual images
-
-            if (itsUpdateDir) {
-
-              const bool useSubSizedImages = true;
-              setupImage(workingImager.params(), frequency, useSubSizedImages);
-
-              // if traditional weighting is enabled compute the weight. The code below assumes local
-              // computation without interrank communication
-              if (workingImager.isSampleDensityGridNeeded()) {
-                  ASKAPLOG_DEBUG_STR(logger, "Worker rank "<<itsComms.rank()<<" is about to compute weight grid for its portion of the data");
-                  ASKAPASSERT(itsLocalSolver);
-                  workingImager.setupUVWeightBuilder();
-                  workingImager.accumulateUVWeights();
-                  // this will compute weights and add them to the model
-                  workingImager.computeUVWeights();
-                  ASKAPLOG_DEBUG_STR(logger, "uv-weight has been added to the model");
-                  // revert normal equations back to the type suitable for imaging
-                  workingImager.recreateNormalEquations();
-              }
-              ASKAPLOG_DEBUG_STR(logger, "model after uv-weight generation workingImager = "<<*workingImager.params()<<" rootImager = "<<*rootImager.params());
-            }
-            else {
-              workingImager.replaceModel(rootImager.params());
-            }
-
-            // grid and image
-            try {
-              workingImager.calcNE();
-            }
-            catch (const askap::AskapError& e) {
-              ASKAPLOG_WARN_STR(logger,"Askap error in worker calcNE");
-              // if this failed but the root did not one of two things may have happened
-              // in continuum mode the gridding fails due to w projection errors - which
-              // were not apparent in lower frequency observations - we have to just keep throwing
-              // the exception up the tree in this case because we cannot recover.
-              // in spectral line mode - this epoch/beam may have failed but other epochs succeeded.
-              // what to do here. Do we continue with the accumulation or just fail ...
-              throw;
-            }
-
-            itsStats.logSummary();
-
-            // merge into root image if required.
-            // this is required if there is more than one workunit per channel
-            // either in time or by beam.
-
-            ASKAPLOG_DEBUG_STR(logger,"About to merge into rootImager");
-            if (itsUpdateDir) {
-              workingImager.configureNormalEquationsForMosaicing();
-            }
-
-            rootImager.mergeNormalEquations(workingImager);
-            ASKAPLOG_DEBUG_STR(logger,"Merged");
-          }
-          catch( const askap::AskapError& e) {
-            ASKAPLOG_WARN_STR(logger, "Askap error in imaging - skipping accumulation: carrying on - this will result in a blank channel" << e.what());
-            std::cerr << "Askap error in: " << e.what() << std::endl;
-          }
-
-          if (frequency == tempWorkUnit.get_channelFrequency()) {
-            tempWorkUnitCount++;
-            // NOTE: here we increment the workunit count.
-            // but the frequency is the same so this is just combining epochs or beams.
-            // the accumulator does <not> have to be clean.
-          }
-          else {
-            // the frequency has changed - which means for spectral line we break.
-            // but for continuum we continue ...
-            // this first condition has already been checked earlier in the loop.
-            if (itsLocalSolver) {
-              break;
-            }
-            else {
-              // update the frequency
-              frequency = tempWorkUnit.get_channelFrequency();
-              // we are now in the next channel
-              // NOTE: we also need to increment the tempWorkUnitCount.
-              tempWorkUnitCount++;
-
-            }
-          }
-
-        }
-
-        workUnitCount = tempWorkUnitCount; // this is to remember what finished on (important for localSolver).
-        /// now if we are in spectral line mode we have a "full" set of NE we can SolveNE to update the model
-        /// the solving is either done locally - or sent to a "master" for Solving
-        /// IF dont locally then we solve - update the model and go again until we reach the majorcycle count.
-
-
-
-
-        if (itsLocalSolver && (majorCycleNumber == nCycles)) { // done the last cycle
-          stopping = true;
-          break;
-        }
-
-
-
-        else if (!itsLocalSolver){ // probably continuum mode ....
-          // If we are in continuum mode we have probaby ran through the whole allocation
-          // lets send it to the master for processing.
-          rootImager.sendNE();
-          // now we have to wait for the model (solution) to come back.
-          // we need to wait for the first empty model.
-          ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
-          itsComms.barrier(itsComms.theWorkers());
-          ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
-          if (!stopping) { // if set then the master will not be sending a model
-            ASKAPLOG_INFO_STR(logger, "Worker waiting to receive new model");
-            rootImager.receiveModel();
-            ASKAPLOG_INFO_STR(logger, "Worker received model for use in cycle " << majorCycleNumber+1);
-          }
-          else { // stopping == true.
-            ASKAPLOG_INFO_STR(logger,"Worker stopping, the master will not be sending a new model");
-            break;
-          }
-
-        }
-        // check the model - have we reached a stopping threshold.
-        stopping |= checkStoppingThresholds(rootImager.params());
-
-        if (!itsLocalSolver && (majorCycleNumber == nCycles -1)) {
-          stopping = true;
-        }
-
-        if (!stopping && itsLocalSolver) {
-          try {
-            rootImager.solveNE();
-            itsStats.logSummary();
-          } catch (const askap::AskapError& e) {
-            ASKAPLOG_WARN_STR(logger, "Askap error in solver:" << e.what());
-
-            throw;
-          }
-        }
-        else if (stopping && itsLocalSolver) {
-          break; // should be done if I am in local solver mode.
-        }
-
-        if (!stopping && itsUpdateDir){
-
-          /// But we dont want to keep merging into the same NE
-          /// so lets reset
-          ASKAPLOG_INFO_STR(logger, "Continuuing - Reset normal equations");
-
-          // this implies all workunits are processed independently including the first one - so I can completely
-          // empty the NE
-
-          // Actually I've found that I cannot completely empty the NE. As I need the full size PSF and this is stored in the NE
-          // So this method pretty much only zeros the weights and the datavector(image)
-
-          rootImager.zero();
-
-          // the model is now updated but the NE are empty ... - lets go again
-          // well they are not completely empty - the PSF is still there but the weights and image are zero
-        }
-        else if (!stopping && !itsUpdateDir) {
-          // In this case the first workUnit is processed outside the workUnit loop.
-          // So we need to calcNE again with the latest model before the major cycle starts.
-          //
-          // If we are using itsUpdateDir we reprocess all the workunits - so this is not needed.
-          ASKAPLOG_INFO_STR(logger, "Continuuing - Reset normal equations");
-          rootImager.reset();
-
-          // we have found that resetting the NE is causing some problems after r10290.
-
-          try {
-            rootImager.calcNE();
-          }
-          catch (const askap::AskapError& e) {
-            ASKAPLOG_WARN_STR(logger, "Askap error in calcNE after majorcycle: " << e.what());
-          }
-        }
-        else if (stopping && !itsLocalSolver) {
-          ASKAPLOG_INFO_STR(logger, "Not local solver but last run - Reset normal equations");
-          rootImager.reset();
-
-          if (!itsUpdateDir) {
-
-            try {
-              rootImager.calcNE();
-            }
-            catch (const askap::AskapError& e) {
-              ASKAPLOG_WARN_STR(logger, "Askap error in calcNE after majorcycle: " << e.what());
-            }
-          }
-
-        }
-        itsStats.logSummary();
-
-
-      }
-      ASKAPLOG_INFO_STR(logger," Finished the major cycles");
-
-
-
-      if (!itsLocalSolver) { // all my work is done - only continue if in local mode
-        ASKAPLOG_INFO_STR(logger,"Finished imaging");
-        ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " at barrier");
-        itsComms.barrier(itsComms.theWorkers());
-        ASKAPLOG_INFO_STR(logger, "Rank " << itsComms.rank() << " passed barrier");
-
-        // write out the beam log
-        ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
-        logBeamInfo();
-        logWeightsInfo();
-
-        return;
-      }
-
-      rootImager.updateSolver();
-
-      // At this point we have finished our last major cycle. We have the "best" model from the
-      // last minor cycle. Which should be in the archive - or full coordinate system
-      // the residual image should be merged into the archive coordinated as well.
-      addImageAsModel(rootImager.params());
-
-      if (itsWriteGrids) {
-          rootImager.addGridsToModel(rootImager.params());
-      }
-
-      rootImager.check();
-
-
-      if (itsRestore) {
-        ASKAPLOG_INFO_STR(logger, "Running restore");
-        rootImager.restoreImage();
-      }
-
-      // force cache clearing here (although it would be done automatically at the end of the method) to match the
-      // code behaviour prior to refactoring. It will be no operation if clearcache is false
-      itsDSM->reset();
-
-      itsStats.logSummary();
-
-      ASKAPLOG_INFO_STR(logger, "writing channel into cube");
-
-      if (itsComms.isWriter()) {
-
-        // write own portion first
-        performOwnWriteJob(itsWorkUnits[workUnitCount - 1].get_globalChannel(), rootImager.params());
-
-        /// write everyone elses
-
-        /// one per client ... I dont care what order they come in at
-
-        performOutstandingWriteJobs(itsComms.getOutstanding() > itsComms.getClients().size() ?
-                                    itsComms.getOutstanding() - itsComms.getClients().size() : 0,
-                                    itsWorkUnits.size() - workUnitCount);
-
-      } else {
-
-        ContinuumWorkRequest result;
-        result.set_params(rootImager.params());
-        result.set_globalChannel(itsWorkUnits[workUnitCount - 1].get_globalChannel());
-        /// send the work to the writer with a blocking send
-        result.sendRequest(itsWorkUnits[workUnitCount - 1].get_writer(), itsComms);
-        itsComms.removeChannelFromWorker(itsComms.rank());
-
-      }
-
-      /// outside the clean-loop write out the slice
-    }
-
-    catch (const std::exception& e) {
-
-      if (!itsLocalSolver) {
-        /// this is MFS/continuum mode
-        /// throw this further up - this avoids a failure in continuum mode generating bogus - or furphy-like
-        /// error messages
-        ASKAPLOG_WARN_STR(logger, "Error processing a channel in continuum mode");
-        throw;
-      }
-
-      ASKAPLOG_WARN_STR(logger, "Error in channel processing, skipping: " << e.what());
-      std::cerr << "Skipping channel due to error and continuing: " << e.what() << std::endl;
-
-      // Need to either send an empty map - or
-      if (itsComms.isWriter()) {
-        ASKAPLOG_INFO_STR(logger, "Marking bad channel as processed in count for writer\n");
-        itsComms.removeChannelFromWriter(itsComms.rank());
-      } else {
-        const int goodUnitCount = workUnitCount - 1; // last good one - needed for the correct freq label and writer
-        ASKAPLOG_INFO_STR(logger, "Failed on count " << goodUnitCount);
-        sendBlankImageToWriter(itsWorkUnits[goodUnitCount]);
-      }
-      // No need to increment workunit. Although this assumes that we are here because we failed the solveNE not the calcNE
-
-    }
-
-  } // next workunit if required.
-
-  // cleanup
-  performOutstandingWriteJobs();
-
-  // write out the beam log
-  ASKAPLOG_INFO_STR(logger, "About to log the full set of restoring beams");
-  itsComms.barrier(itsComms.theWorkers());
-  logBeamInfo();
-  logWeightsInfo();
-
-}
 
 /// @brief send blank image to writer
 /// @details This method is expected to be used when calculation of a spectral plane is failed for some reason,
@@ -1983,8 +1381,8 @@ void ContinuumWorker::copyModel(askap::scimath::Params::ShPtr SourceParams, aska
   // before the restore the image is the model ....
   SynthesisParamsHelper::copyImageParameter(src, dest,"image.slice");
 
-  // uv-weight related parameters are stored as part of the model. If present, the corresponding parameter name 
-  // as accepted by UVWeightParamsHelper would be without the leading "image". 
+  // uv-weight related parameters are stored as part of the model. If present, the corresponding parameter name
+  // as accepted by UVWeightParamsHelper would be without the leading "image".
   UVWeightParamsHelper hlp(src);
   hlp.copyTo(dest, "slice");
 }
@@ -2260,12 +1658,6 @@ void ContinuumWorker::recordWeight(float wt, const unsigned int cubeChannel)
   itsWeightsList[cubeChannel] = wt;
 }
 
-// void ContinuumWorker::storeBeam(const unsigned int cubeChannel)
-// {
-//   if (cubeChannel == itsBeamReferenceChannel) {
-//     itsRestoredCube->addBeam(itsBeamList[cubeChannel]);
-//   }
-// }
 
 void ContinuumWorker::logBeamInfo() const
 {
@@ -2417,7 +1809,7 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   const casacore::CoordinateSystem imageCoords = itsImageCube->imageHandler()->coordSys(imageName);
   const string name("image.slice");
   const boost::optional<float> extraOversampleFactor = itsImageCube->oversamplingFactor();
-  IPosition inShape = imagePixels.shape().getFirst(2); 
+  IPosition inShape = imagePixels.shape().getFirst(2);
   const IPosition outShape = itsImageCube->imageHandler()->shape(imageName).getFirst(2);
   ASKAPCHECK(inputCoords.hasSquarePixels()&&imageCoords.directionCoordinate().hasSquarePixels(),"Can't deal with non square pixels yet");
   const double inputInc = abs(inputCoords.increment()(0));
@@ -2427,7 +1819,7 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   // adjust the cellsize of the input to match the output
   SynthesisParamsHelper::adjustCellsize(imagePixels,inputInc, outputInc, inShape(0), outShape(0));
   // get input size again, as it may have changed
-  inShape = imagePixels.shape().getFirst(2); 
+  inShape = imagePixels.shape().getFirst(2);
   // Option to subset the input to the size of the output
   ASKAPCHECK(inShape(0) >= outShape(0), "Model MFS image should be the same size or larger than output image");
   Array<float> pixels;
@@ -2443,8 +1835,6 @@ void ContinuumWorker::loadImageFromMFSModel(const askap::scimath::Params::ShPtr&
   SynthesisParamsHelper::loadImageParameter(*params, name, pixels, imageCoords,
     extraOversampleFactor, channel);
 }
-
-
 
 void ContinuumWorker::setupImage(const askap::scimath::Params::ShPtr& params,
                                  double channelFrequency, bool shapeOverride) const

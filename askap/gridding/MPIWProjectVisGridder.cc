@@ -39,6 +39,8 @@
 #include <casacore/casa/BasicSL/Constants.h>
 #include <askap/profile/AskapProfiler.h>
 
+#include <askap/dataaccess/DataAccessorStub.h>
+    
 // Local package includes
 #include <askap/gridding/MPIWProjectVisGridder.h>
 #include <askap/gridding/SupportSearcher.h>
@@ -52,6 +54,10 @@ namespace synthesis {
 MPI_Aint MPIWProjectVisGridder::itsWindowSize;
 int      MPIWProjectVisGridder::itsWindowDisp;
 MPI_Win  MPIWProjectVisGridder::itsWindowTable = MPI_WIN_NULL;
+MPI_Aint MPIWProjectVisGridder::itsScratchWindowSize;
+int      MPIWProjectVisGridder::itsScratchWindowDisp;
+MPI_Win  MPIWProjectVisGridder::itsScratchWindowTable = MPI_WIN_NULL;
+int* MPIWProjectVisGridder::itsScratchSharedMemory = nullptr;
 MPI_Comm MPIWProjectVisGridder::itsNodeComms;
 MPI_Comm MPIWProjectVisGridder::itsNonRankZeroComms;
 MPI_Group MPIWProjectVisGridder::itsWorldGroup = MPI_GROUP_NULL;
@@ -60,7 +66,8 @@ MPI_Group MPIWProjectVisGridder::itsGridderGroup = MPI_GROUP_NULL;
 int MPIWProjectVisGridder::itsNodeSize;
 int MPIWProjectVisGridder::itsNodeRank;
 int MPIWProjectVisGridder::itsWorldRank;
-imtypeComplex* MPIWProjectVisGridder::itsMpiSharedMemory = nullptr;
+int MPIWProjectVisGridder::itsWorldSize;
+casacore::Complex* MPIWProjectVisGridder::itsMpiSharedMemory = nullptr;
 bool MPIWProjectVisGridder::itsMpiMemSetup = false;
 unsigned int MPIWProjectVisGridder::ObjCount = 0;
 std::mutex MPIWProjectVisGridder::ObjCountMutex;
@@ -114,6 +121,9 @@ MPIWProjectVisGridder::~MPIWProjectVisGridder()
         if ( itsWindowTable != MPI_WIN_NULL )
             MPI_Win_free(&itsWindowTable);
 
+        if ( itsScratchWindowTable != MPI_WIN_NULL )
+            MPI_Win_free(&itsScratchWindowTable);
+
         itsMpiMemSetup = false;
     }
 #endif
@@ -158,11 +168,11 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
 {
 #ifdef HAVE_MPI
     ASKAPTRACE("MPIWProjectVisGridder::initConvolutionFunction");
-
     if ( itsSerial ) {
         ASKAPLOG_DEBUG_STR(logger,"MPI WPRoject gridder runs in serial mode. Delegate the call to WProjectVisGridder::initConvolutionFunction");
         WProjectVisGridder::initConvolutionFunction(acc);
     } else {
+
         /// We have to calculate the lookup function converting from
         /// row and channel to plane of the w-dependent convolution
         /// function
@@ -201,7 +211,10 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
         // here is to let each rank within a node to generate a portion the convoulution cache
         // (ie each rank does a portion of nWPlanes()*itsOverSample*itsOverSample)
         ASKAPCHECK(itsCFRank > 0,"CF Rank (i.e itsCFRank) is <= 0");
-        ASKAPCHECK(itsCFRank <= itsNodeSize,"CF Rank (i.e itsCFRank) is more than the number of ranks per node");
+        if ( itsCFRank > itsNodeSize ) {
+            itsCFRank = static_cast<int> (itsNodeSize/2);
+            ASKAPCHECK(itsCFRank > 0,"CF Rank (i.e itsCFRank) must be greater than 0");
+        }
         // itsCFRank => number of ranks that participate in the CF calculation
         if ( itsNodeRank < itsCFRank ) {
             int numberOfPlanePerNodeRank;
@@ -231,6 +244,7 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
             // Only ranks smaller than itsCFRank participate in the CF calculation
             generate(startPlane,endPlane);
         }
+
         // ranks > itsCFRank of a given node wait here
         ASKAPLOG_DEBUG_STR(logger,"itsNodeRank: " << itsNodeRank << " waits at mpi barrier");
         MPI_Barrier(itsNodeComms);
@@ -241,7 +255,7 @@ void MPIWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataA
         size_t total = 0;
         for ( auto it = itsConvFunc.begin();
             it != itsConvFunc.end(); ++it) {
-            total += it->nelements() * sizeof(imtypeComplex);
+            total += it->nelements() * sizeof(casacore::Complex);
         }
         // now collect the total number of bytes from all the ranks to create the shared memory
         unsigned long totalFromAllRanks = 0;
@@ -330,7 +344,6 @@ IVisGridder::ShPtr MPIWProjectVisGridder::createGridder(const LOFAR::ParameterSe
             cutoff, oversample, maxSupport, limitSupport, tablename, alpha, useDouble,cfRank,masterDoesWork,mpipresetup));
     gridder->configureGridder(parset);
     gridder->configureWSampling(parset);
-
     return gridder;
 }
 
@@ -377,9 +390,9 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
     int mpiInitalised = 0;
     MPI_Initialized(&mpiInitalised);
     if ( mpiInitalised == 1 ) {
-        int numRanks = 0;
-        MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
-        if ( numRanks == 1 ) {
+        MPIWProjectVisGridder::itsWorldSize = 1;
+        MPI_Comm_size(MPI_COMM_WORLD, &MPIWProjectVisGridder::itsWorldSize);
+        if ( MPIWProjectVisGridder::itsWorldSize == 1 ) {
             // MPI has only one rank so it must be running in serial
             ASKAPLOG_INFO_STR(logger, "MPI WProject gridder runs in serial");
             itsSerial = true;
@@ -419,6 +432,23 @@ void MPIWProjectVisGridder::configureGridder(const LOFAR::ParameterSet& parset)
         // rank within a node
         MPI_Comm_rank(itsNodeComms, &itsNodeRank);
         ASKAPCHECK(itsNodeComms != MPI_COMM_NULL, "rank: " << itsWorldRank << ", itsNodeRank: " << itsNodeRank << " has itsNodeComms = MPI_COMM_NULL");
+
+        // allocate memory to store which rank calls the initConvolutionFunction() method.
+        MPI_Aint scratchSizeInBytes = 0;
+        if ( itsNodeRank == 0 ) {
+            scratchSizeInBytes = itsNodeSize * sizeof(int);
+        }
+        int s = MPI_Win_allocate_shared(scratchSizeInBytes,sizeof(int),
+                                MPI_INFO_NULL, itsNodeComms, &itsScratchSharedMemory,
+                                &itsScratchWindowTable);
+        if ( itsNodeRank != 0 ) {
+            int s = MPI_Win_shared_query(itsScratchWindowTable, 0, &itsScratchWindowSize, 
+                                        &itsScratchWindowDisp, &itsScratchSharedMemory);
+        }
+        // initialise the scratch shared memory
+        itsScratchSharedMemory[itsNodeRank] = 0;
+        
+
         MPI_Barrier(itsNodeComms);
 
         ASKAPLOG_INFO_STR(logger,"rank: " << itsWorldRank << ", itsNodeSize: " << itsNodeSize << ", itsNodeRank: " << itsNodeRank);
@@ -474,7 +504,7 @@ void  MPIWProjectVisGridder::setupMpiMemory(size_t bufferSize /* in bytes */)
     int elen = 0;
     ASKAPLOG_INFO_STR(logger,"itsNodeRank: " << itsNodeRank << ", bufferSize: " << memSizeInBytes);
     ASKAPCHECK(itsNodeComms != MPI_COMM_NULL,"itsNodeRank: " << itsNodeRank << " - itsNodeComms is Null");
-    int r = MPI_Win_allocate_shared(memSizeInBytes,sizeof(imtypeComplex),
+    int r = MPI_Win_allocate_shared(memSizeInBytes,sizeof(casacore::Complex),
                                 MPI_INFO_NULL, itsNodeComms, &itsMpiSharedMemory,
                                 &itsWindowTable);
     if ( r != MPI_SUCCESS ) {
@@ -555,14 +585,13 @@ void MPIWProjectVisGridder::copyToSharedMemory(std::vector<std::pair<int,int>>& 
     //MPI_Barrier(itsNodeComms);
 
     // now each rank copies its CF to the shared memory
-    imtypeComplex* shareMemPtr = itsMpiSharedMemory; // a contiguous chunk of shared memory
+    casacore::Complex* shareMemPtr = itsMpiSharedMemory; // a contiguous chunk of shared memory
     for (unsigned int iw = 0; iw < itsConvFuncMatSize.size(); iw++) {
         if (itsConvFunc[iw].nelements() != 0) {
             std::copy(itsConvFunc[iw].data(),itsConvFunc[iw].data() + itsConvFunc[iw].nelements(),shareMemPtr);
         }
         shareMemPtr += itsConvFuncMatSize[iw].first *  itsConvFuncMatSize[iw].second;;
     }
-    ASKAPLOG_INFO_STR(logger, "copyToSharedMemory itsNodeRank: " << itsNodeRank << " - DONE");
 #else
     ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library" );
 #endif
@@ -573,14 +602,14 @@ void MPIWProjectVisGridder::copyFromSharedMemory(const std::vector<std::pair<int
     ASKAPLOG_DEBUG_STR(logger, "itsNodeRank: " << itsNodeRank <<
                                 " - copy shared memory back to itsConvFunc. number of CFs = " << itsConvFuncMatSize.size());
     unsigned int numOfElems = itsConvFuncMatSize.size();
-    imtypeComplex* shareMemPtr = itsMpiSharedMemory;
+    casacore::Complex* shareMemPtr = itsMpiSharedMemory;
     for (unsigned int elem = 0; elem < numOfElems; elem++) {
         casacore::IPosition pos(2);
         pos(0) = itsConvFuncMatSize[elem].first;
         pos(1) = itsConvFuncMatSize[elem].second;
         ASKAPCHECK(itsConvFuncMatSize[elem].first != 0 || itsConvFuncMatSize[elem].second != 0, "shape of CF is zero");
 
-        casacore::Matrix<imtypeComplex> m(pos,shareMemPtr,casacore::SHARE);
+        casacore::Matrix<casacore::Complex> m(pos,shareMemPtr,casacore::SHARE);
         itsConvFunc[elem].reference(m);
         shareMemPtr += m.nelements();
     }
@@ -604,6 +633,87 @@ void MPIWProjectVisGridder::copyConvFuncOffset()
     }
 #else
     ASKAPTHROW(AskapError, "Cant use MPIWProject gridder without MPI library");
+#endif
+}
+
+void MPIWProjectVisGridder::determineRanksUsed(bool active)
+{
+#ifdef HAVE_MPI
+    if ( MPIWProjectVisGridder::itsWorldSize > 1 ) {
+        if ( !active ) {
+            // Tell the MPI gridder the ranks that are going to exit.
+            // This is to stop the gridder from hanging in the code later on.
+            MPIWProjectVisGridder::unusedRank();
+        }
+        // cant call itsComms.barrier() here because the master may not
+        // executing this code
+        MPIWProjectVisGridder::barrier();
+        // Tell the MPI gridder to update its MPI communicator to exclude
+        // the ranks that dont run the for loop below
+        MPIWProjectVisGridder::updateMpiComms();
+        MPIWProjectVisGridder::barrier();
+    }
+#endif
+}
+void MPIWProjectVisGridder::unusedRank()
+{
+#ifdef HAVE_MPI
+    ASKAPLOG_INFO_STR(logger,"unusedRank: " << itsNodeRank);
+    itsScratchSharedMemory[itsNodeRank] = 1;
+#endif
+}
+
+void MPIWProjectVisGridder::barrier()
+{
+#ifdef HAVE_MPI
+    // the test to see if itsNodeComms is null is needed
+    // because it may contain a subset of ranks in a set
+    // of ranks that was originally created when the gridder
+    // object was constructed. This is because some ranks 
+    // may have exited after the gridder is created and before
+    // the initConvolutionFunction() is called (eg: the ccontsubstract
+    // app)
+    if ( itsNodeComms != MPI_COMM_NULL ) {
+        MPI_Barrier(itsNodeComms);
+    }
+#endif
+}
+
+void MPIWProjectVisGridder::updateMpiComms()
+{
+#ifdef HAVE_MPI
+    std::vector<int> ranks;
+    bool doAgain = false;
+    // only active ranks have their value = 0 in itsScratchSharedMemory
+    // array
+    for(int r = 0; r < itsNodeSize; r++) {
+        if ( itsScratchSharedMemory[r] == 0 ) {
+            ranks.push_back(r);
+            doAgain = true;
+        }
+    }
+
+    if ( doAgain ) {
+        static MPI_Group group, sub_group;
+        MPI_Comm_group(itsNodeComms, &group);
+        MPI_Group_incl(group, ranks.size(), ranks.data(), &sub_group);
+        MPI_Comm_create(itsNodeComms,sub_group,&itsNodeComms);
+        /// the test for MPI_COMM_NULL is needed because ranks that are
+        /// no longer in the updated communicator (itsNodeComms) have NULL
+        /// communicator after the MPI_Comm_create and hence using it in
+        /// the MPI calls cause segmentation in the code.
+        if ( itsNodeComms != MPI_COMM_NULL ) {
+            MPI_Comm_size(itsNodeComms, &itsNodeSize);
+            MPI_Comm_rank(itsNodeComms, &itsNodeRank);
+        }
+        if ( group != MPI_GROUP_NULL ) {
+            MPI_Group_free(&group);
+        }
+        if ( sub_group != MPI_GROUP_NULL ) {
+            MPI_Group_free(&sub_group);
+        }
+    }
+
 #endif
 }
 

@@ -97,12 +97,20 @@ namespace askap
 
       bool itsWriteScaleMask;
       bool itsUseOverlapMask;
+      bool itsUseCleanMask;
 
       casacore::Array<float> itsPSFZeroArray;
 
       float itsPSFZeroCentre;
 
     private:
+
+      /// @brief check the noise thresholds
+      /// @details This method checks if the noise threshold or deep clean noise threshold has been reached
+      /// @param[in] objectiveFunction The level to check against the thresholds
+      /// @return true if one of the noise thresholds has been reached, false otherwise
+      bool checkNoiseThresholds(double objectiveFunction) const;
+
 
       /// @brief extra oversampling factor to use during clean
       boost::optional<float> itsExtraOversamplingFactor;

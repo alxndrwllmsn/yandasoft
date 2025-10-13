@@ -67,7 +67,7 @@ namespace askap
 
     ImageSolver::ImageSolver() :
       itsZeroWeightCutoffArea(false), itsZeroWeightCutoffMask(true),
-      itsSaveIntermediate(true), itsIsRestoreSolver(false)
+      itsSaveIntermediate(true), itsIsRestoreSolver(false), itsUseMask(false)
     {
     }
 
@@ -186,7 +186,7 @@ namespace askap
         } // loop over elements (image pixels)
         ASKAPLOG_INFO_STR(logger, "Normalized dirty image by truncated weights image");
         if (haveMask) {
-            if (allOne) {
+            if (allOne && !itsUseMask) {
                 // no need for a mask
                 ASKAPLOG_INFO_STR(logger, "Not using a clean mask");
                 mask->resize(casacore::IPosition(mask->ndim(),0));
@@ -575,7 +575,7 @@ namespace askap
         setSaveIntermediate(parset.getBool("saveintermediate", true));
         ASKAPLOG_INFO_STR(logger,(saveIntermediate() ? "Saving ":"Not saving ") << "intermediate images");
         zeroWeightCutoffMask(!parset.getBool("weightcutoff.clean",false));
-        const std::string weightCutoff = parset.getString("weightcutoff","truncate");
+        const std::string weightCutoff = parset.getString("weightcutoff","zero");
         if (weightCutoff == "zero") {
             zeroWeightCutoffArea(true);
             ASKAPLOG_INFO_STR(logger, "Solver is configured to zero pixels in the area where weight is below cutoff (tolerance parameter)");

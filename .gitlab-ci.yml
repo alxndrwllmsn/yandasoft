@@ -1,4 +1,7 @@
 # GitLab CI script for yandasoft
+include: # include the common github callback mechanism from askapdev
+  - project: 'ASKAPSDP/askap-dev'
+    file:    'developer/gitlab-ci/github-status-callback.yaml'
 
 image: registry.gitlab.com/askapsdp/yandasoft_image/yandasoft:casacore3.5.0-mpich
 
@@ -27,6 +30,21 @@ build:
       - _build
       - _install
 
+build_no_enable_float_params:
+  extends: .common
+  stage: build
+  before_script:
+    - sudo apt update && sudo apt install -y g++ git cmake
+    - sudo ln -s /usr/lib/x86_64-linux-gnu/ /usr/lib64
+  script:
+    - n_cpus=`grep '^processor' /proc/cpuinfo  | wc -l`
+    - cmake -C .gitlab-ci.cmake.in -DASKAPSDP_GIT_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/ASKAPSDP/" -DENABLE_FLOAT_IMAGE_PARAMS=NO -DENABLE_OPENMP=OFF -DCMAKE_INSTALL_PREFIX=./_install2 -DCMAKE_CXX_FLAGS="-coverage" -DCMAKE_EXE_LINKER_FLAGS="-coverage" -B _build2 -S .
+    - sudo cmake --build _build2 --target install -j $n_cpus
+  artifacts:
+    paths:
+      - _build2
+      - _install2
+
 test:
   extends: .common
   stage: test
@@ -54,6 +72,33 @@ test:
       junit: _build/ctest.xml
     when: always
 
+test_no_enable_float_params:
+  extends: .common
+  stage: test
+  dependencies:
+    - build_no_enable_float_params
+  before_script:
+    - sudo apt update && sudo apt install -y cmake xsltproc
+  variables:
+    CASARCFILES: ${CI_PROJECT_DIR}/_build2/test_gitlab_casarc.cfg
+    TEST_DATASET_PATH: ${CI_PROJECT_DIR}/_build2/testdataset.ms
+  script:
+    - cd _build2
+    - tar -xjf base-accessors/measdata.tar.bz2
+    - "echo 'measures.directory: '${PWD}'/data' > ${CASARCFILES}"
+    - cat $CASARCFILES
+    - tar -xjf base-accessors/testdataset.tar.bz2
+    - ctest -C DartConfiguration.tcl -T test --verbose --no-compress-output
+  after_script:
+    - cd _build2
+    - askap-cmake/ctest2junit > ctest.xml
+  artifacts:
+    paths:
+      - _build2
+    reports:
+      junit: _build2/ctest.xml
+    when: always
+
 robottests:
   extends: .common
   stage: test
@@ -74,6 +119,28 @@ robottests:
     paths:
       - tests/data/simulation/synthregression    
       - _build
+    when: always
+
+robottests_no_enable_float_params:
+  extends: .common
+  stage: test
+  dependencies:
+     - build_no_enable_float_params
+  before_script:
+     - pip install robotframework
+  script:
+    - export CDIR=${PWD}
+# setup path and library path to ensure we're testing the right thing
+# See also AXA-1996 - got caught up by the lack of these lines earlier
+    - export PATH=${CDIR}/_install2/bin:${PATH}
+    - export LD_LIBRARY_PATH=${CDIR}/_install2/lib:${LD_LIBRARY_PATH}
+    - which cimager
+    - cd tests/data/simulation/synthregression
+    - python -m robot synthregression.robot
+  artifacts:
+    paths:
+      - tests/data/simulation/synthregression
+      - _build2
     when: always
 
 pages:
@@ -101,13 +168,22 @@ success:
     - sudo apt update && sudo apt install -y curl
   after_script:
     - ""
+  variables:
+    CI_STATE:   "success"
+    CI_MESSAGE: "The build succeeded!"
   script:
-    - BUILD_STATUS=passed BUILD_KEY=push ./build_status
-    - >
-      if [ "$CI_COMMIT_BRANCH" = develop ]; then
-        curl --request POST --form "token=$CI_JOB_TOKEN" --form ref=develop https://gitlab.com/api/v4/projects/19044771/trigger/pipeline
-      fi
-    - >
+    - if [ "$PUSH_SOURCE" == "GITHUB" ]; then
+    -   echo Push source is $PUSH_SOURCE
+    -   echo Building for csiro-internal/${CI_PROJECT_NAME}/statuses/${CI_COMMIT_SHA}
+    -   echo Building in "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}"
+    -   !reference [.github-status-callback, script]
+    - else
+    -   echo Push source is probably from bitbucket
+    -   BUILD_STATUS=passed BUILD_KEY=push ./build_status
+    -   if [ "$CI_COMMIT_BRANCH" = develop ]; then
+    -     curl --request POST --form "token=$CI_JOB_TOKEN" --form ref=develop https://gitlab.com/api/v4/projects/19044771/trigger/pipeline
+    -   fi
+    - fi
   when: on_success
 
 failure:
@@ -116,7 +192,17 @@ failure:
     - sudo apt update && sudo apt install -y curl
   after_script:
     - ""
+  variables:
+    CI_STATE:   "failure"
+    CI_MESSAGE: "The build failed!"
   script:
-    - BUILD_STATUS=failed BUILD_KEY=push ./build_status
+    - if [ "$PUSH_SOURCE" == "GITHUB" ]; then
+    -   echo Push source is $PUSH_SOURCE
+    -   echo Building for csiro-internal/${CI_PROJECT_NAME}/statuses/${CI_COMMIT_SHA}
+    -   echo Building in "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}"
+    -   !reference [.github-status-callback, script]
+    - else
+    -   echo Push source is probably from bitbucket
+    -   BUILD_STATUS=failed BUILD_KEY=push ./build_status
+    - fi
   when: on_failure
-

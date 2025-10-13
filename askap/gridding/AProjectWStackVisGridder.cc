@@ -128,8 +128,8 @@ void AProjectWStackVisGridder::initialiseSumOfWeights()
 void AProjectWStackVisGridder::initIndices(const accessors::IConstDataAccessor& acc) {
     ASKAPTRACE("AProjectWStackVisGridder::initIndices");
 
-    // this calculates current field id
-    indexField(acc);
+    // this calculates current field id, only needed if there is more than 1
+    if (rotateUVW()) indexField(acc);
 
     const int nSamples = acc.nRow();
     const int nChan = acc.nChannel();
@@ -141,7 +141,8 @@ void AProjectWStackVisGridder::initIndices(const accessors::IConstDataAccessor& 
     itsGMap.resize(nSamples, nPol, nChan);
     itsGMap.set(0);
 
-    const casacore::Vector<casacore::RigidVector<double, 3> > &rotatedUVW = acc.rotatedUVW(getTangentPoint());
+    const casacore::Vector<casacore::RigidVector<double, 3> > &rotatedUVW = (rotateUVW() ? acc.rotatedUVW(getTangentPoint()) :
+        acc.uvw());
 
     for (int i=0; i<nSamples; ++i) {
         const int feed=acc.feed1()(i);
@@ -258,30 +259,30 @@ void AProjectWStackVisGridder::initConvolutionFunction(const accessors::IConstDa
     const casacore::uInt qnx = nx / itsOverSample;
     const casacore::uInt qny = ny / itsOverSample;
 
-    casacore::Vector<double> ccfx;
-    casacore::Vector<double> ccfy;
     if (itsSpheroidalTaper) {
         // Include spheroidal for anti-aliasing and general kernel robustness
-        ccfx.resize(qnx);
-        ccfy.resize(qny);
-        for (casacore::uInt qix = 0; qix < qnx; ++qix) {
-            const double nux = std::abs(double(qix) - double(qnx / 2)) / double(qnx / 2);
-            ccfx(qix) = grdsf(nux);
-        }
-        for (casacore::uInt qiy = 0; qiy < qny; ++qiy) {
-            const double nuy = std::abs(double(qiy) - double(qny / 2)) / double(qny / 2);
-            ccfy(qiy) = grdsf(nuy);
-        }
-        if (doInterpolation()) {
-          // The spheroidal is undefined and set to zero at nu=1, but that
-          // is not the numerical limit. Estimate it from its neighbours.
-          interpolateEdgeValues(ccfx);
-          interpolateEdgeValues(ccfy);
+        if (itsCcfx.size()==0) {
+            itsCcfx.resize(qnx);
+            itsCcfy.resize(qny);
+            for (casacore::uInt qix = 0; qix < qnx; ++qix) {
+                const double nux = std::abs(double(qix) - double(qnx / 2)) / double(qnx / 2);
+                itsCcfx(qix) = grdsf(nux);
+            }
+            for (casacore::uInt qiy = 0; qiy < qny; ++qiy) {
+                const double nuy = std::abs(double(qiy) - double(qny / 2)) / double(qny / 2);
+                itsCcfy(qiy) = grdsf(nuy);
+            }
+            if (doInterpolation()) {
+            // The spheroidal is undefined and set to zero at nu=1, but that
+            // is not the numerical limit. Estimate it from its neighbours.
+            interpolateEdgeValues(itsCcfx);
+            interpolateEdgeValues(itsCcfy);
+            }
         }
     }
 
 
-    casacore::Matrix<imtypeComplex> cplane(pattern.pattern().shape());
+    casacore::Matrix<imtypeComplex> cplane;
     // Limit number of fft threads to 8 (more is slower for our fft sizes)
     scimath::FFT2DWrapper<imtypeComplex> fft2d(true,8);
     int nDone=0;
@@ -290,8 +291,9 @@ void AProjectWStackVisGridder::initConvolutionFunction(const accessors::IConstDa
 
         if (!isCFValid(feed, currentField())) {
             makeCFValid(feed, currentField());
+            ASKAPLOG_DEBUG_STR(logger,"make CF valid for feed="<<feed<<" field="<<currentField());
             nDone++;
-            casacore::MVDirection offset(acc.pointingDir1()(row).getAngle());
+            casacore::MVDirection offset(rotateUVW() ? acc.pointingDir1()(row).getAngle() : getTangentPoint());
             const double parallacticAngle = hasSymmetricIllumination ? 0. : acc.feed1PA()(row);
 
             for (int chan=0; chan<nChan; chan++) {
@@ -304,13 +306,16 @@ void AProjectWStackVisGridder::initConvolutionFunction(const accessors::IConstDa
                 }
 
                 double peak=0.0;
+                if (cplane.size()==0) {
+                    cplane.resize(pattern.pattern().shape());
+                }
                 cplane.set(0.);
                 for (casacore::uInt iy=0; iy<ny; ++iy) {
                     const int qiy = iy + int(qny)/2 - int(ny)/2;
                     for (casacore::uInt ix=0; ix<nx; ++ix) {
                         const int qix = ix + int(qnx)/2 - int(nx)/2;
                         if (!itsSpheroidalTaper || ((qix>=0) && (qix<qnx) && (qiy>=0) && (qiy<qny))) {
-                            const imtype taper = itsSpheroidalTaper ? ccfx(qix) * ccfy(qiy) : 1.0;
+                            const imtype taper = itsSpheroidalTaper ? itsCcfx(qix) * itsCcfy(qiy) : 1.0;
                             cplane(ix, iy) = pattern(ix, iy) * conj(pattern(ix,iy)) * taper;
                             if (casacore::abs(cplane(ix,iy))>peak) {
                                 peak=casacore::abs(cplane(ix,iy));
@@ -433,13 +438,11 @@ void AProjectWStackVisGridder::finaliseWeights(casacore::Array<imtype>& out) {
         for (int ix=0; ix<cnx; ++ix) {
              const double nux = std::abs(double(ix)-double(ccenx))/double(ccenx);
              const double val = grdsf(nux);
-             //ccfx(ix) = val; //casacore::abs(val) > 1e-10 ? 1./val : 0.;
              ccfx(ix) = val > itsSpheroidalWeightsCutoff ? val : 0.;
         }
         for (int iy=0; iy<cny; ++iy) {
              const double nuy = std::abs(double(iy)-double(cceny))/double(cceny);
              const double val = grdsf(nuy);
-             //ccfy(iy) = val; //casacore::abs(val) > 1e-10 ? 1./val : 0.;
              ccfy(iy) = val > itsSpheroidalWeightsCutoff ? val : 0.;
         }
         // this isn't really needed unless itsSpheroidalWeightsCutoff==0. But shouldn't hurt

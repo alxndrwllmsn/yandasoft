@@ -45,6 +45,7 @@
 #include <askap/measurementequation/CalibrationApplicatorME.h>
 #include <askap/calibaccess/CalibAccessFactory.h>
 #include <askap/measurementequation/NoXPolGain.h>
+#include <askap/gridding/MPIWProjectVisGridder.h>
 
 #include <askap/askap/AskapError.h>
 #include <askap/measurementequation/SynthesisParamsHelper.h>
@@ -542,6 +543,16 @@ void ContSubtractParallel::calcOne(const std::string &ms, bool distributeByTile)
 
     uint niter = 0;
     casacore::Matrix<casacore::Complex> phasor;
+
+    const std::string gridder =  parset().getString("gridder","");
+    ASKAPDEBUGASSERT(gridder != "");
+    if ( gridder == "MPIWProject" ) {
+        // if we are using the MPI gridder which has its own MPI communicator,
+        // we need to tell the MPI gridder the ranks that are going to exit.
+        // This is to stop the gridder from hanging in the code later on.
+        MPIWProjectVisGridder::determineRanksUsed(it.hasMore());
+    }
+
 
     for (; it.hasMore(); it.next()) {
         // iteration over the dataset

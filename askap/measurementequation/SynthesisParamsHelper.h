@@ -257,7 +257,13 @@ namespace askap
                                                             const int maxsupport = 101,
                                                             const std::string &name = "");
 
-        static casacore::Vector<casacore::Quantum<double> > fitBeam(casacore::Array<imtype> &psfArray,
+        /// @brief fit gaussian beam into PSF
+        /// @param[in] psfArray array of T where T is etiher float or double
+        /// @param[in] axes An Axes is a ordered set of Axises
+        /// @param[in] cutoff cutoff defining the support size where the fitting is done
+        /// @param[in] name full name of the parameter representing the PSF (default is to figure this out)
+        template <typename T>
+        static casacore::Vector<casacore::Quantum<double> > fitBeam(const casacore::Array<T> &psfArray,
                                                             const scimath::Axes &axes,
                                                             const double cutoff = 0.5,
                                                             const int maxsupport = 101);
@@ -266,13 +272,14 @@ namespace askap
         /// @details This method fits a 2D Gaussian into the given PSF image. If the array is
         /// multi-dimensional, only first plane is used. A warning is given in the case of
         /// a potential ambiguity.
-        /// @param[in] psfArray Array with 2 or more dimensions containing the PSF
+        /// @param[in] psfArray Array with 2 or more dimensions containing the PSF. T is either float or double.
         /// @param[in] cutoff cutoff defining the support size where the fitting is done (default
         ///            is 0.5, i.e. fitting is done to pixels enclosed in a rectangular support
         ///            defined by 50% cutoff from the peak)
         /// @param[in] maxsupport Max support size of beam above cutoff level
         /// @return beam size in pixels, beam PA in radians
-        static casacore::Vector<double> fitBeam(casacore::Array<imtype> &psfArray,
+        template <typename T>
+        static casacore::Vector<double> fitBeam(const casacore::Array<T> &psfArray,
                                                 const double cutoff = 0.5,
                                                 const int maxsupport = 101);
 
@@ -525,4 +532,5 @@ namespace askap
 
   }
 }
+#include <askap/measurementequation/SynthesisParamsHelper.tcc>
 #endif

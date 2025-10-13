@@ -807,7 +807,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
           Array<float> inPix = iacc.read(inImgName,blc,trc);
 
-          if (parset.getBool("removebeam",false)) {
+          if (!findSmallestBoundingBox && parset.getBool("removebeam",false)) {
 
               Array<float> taylor0;
               Array<float> taylor1;
@@ -872,7 +872,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
               casa::IPosition thispos(taylor0.shape().nelements(),0);
               ASKAPLOG_INFO_STR(logger, " removing Beam for Taylor terms - slice " << thispos);
-              accumulator.removeBeamFromTaylorTerms(taylor0,taylor1,taylor2,thispos,iacc.coordSys(inImgName));
+              accumulator.removeBeamFromTaylorTerms(taylor0,taylor1,taylor2,thispos);
 
 
               // now we need to set the inPix to be the scaled version
@@ -895,7 +895,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
 
           }
 
-          if (parset.getBool("removeleakage",false)) {
+          if (!findSmallestBoundingBox && parset.getBool("removeleakage",false)) {
               ASKAPCHECK(inPix.shape()[2]==1,"Pol axis should have size 1 for removeleakage");
               // only do this if we're processing a Q, U or V image
               int pol = 0;
@@ -932,7 +932,7 @@ static void mergeMPI(const LOFAR::ParameterSet &parset, askap::askapparallel::As
                   // do leakage correction
                   casa::IPosition thispos(blc);
                   ASKAPLOG_INFO_STR(logger," removing Stokes I leakage using "<<inStokesIName<<" for channel " << thispos(3));
-                  accumulator.removeLeakage(inPix,stokesI,pol,thispos,iacc.coordSys(inImgName));
+                  accumulator.removeLeakage(inPix,stokesI,pol,thispos);
               } else {
                   ASKAPLOG_WARN_STR(logger,"Skipping removeLeakage - cannot determine polarisation of input");
               }

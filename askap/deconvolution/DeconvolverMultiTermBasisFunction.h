@@ -105,7 +105,7 @@ namespace askap {
 
                 /// @brief Set the type of solution used in finding the optimum component
                 /// @details When trying to find the optimum component we can use MAXBASE
-                /// to find the peak over term 0 bases or MAXCHISQ to also use the higher 
+                /// to find the peak over term 0 bases or MAXCHISQ to also use the higher
                 /// order taylor terms in the optimization.
                 /// @params[in] solutionType, specify either MAXBASE or MAXCHISQ
                 void setSolutionType(const std::string& solutionType);
@@ -293,7 +293,7 @@ namespace askap {
                 /// @details This will point to a MultiScaleBasisFunction with a number of scales
                 boost::shared_ptr<BasisFunction<T>> itsBasisFunction;
 
-                /// @brief The flux subtracted on each term and scale 
+                /// @brief The flux subtracted on each term and scale
                 /// @details The shape of this is a vector of [nbases] with vectors of [nterms] values
                 Vector< Vector<T>> itsTermBaseFlux;
 
@@ -307,7 +307,7 @@ namespace askap {
 
                 /// @brief Set the type of solution used in finding the optimum component
                 /// @details When trying to find the optimum component we can use MAXBASE
-                /// to find the peak over term 0 bases or MAXCHISQ to also use the higher 
+                /// to find the peak over term 0 bases or MAXCHISQ to also use the higher
                 /// order taylor terms in the optimization.
                 std::string itsSolutionType;
 
@@ -357,6 +357,18 @@ namespace askap {
                 /// subsequent scale. When using pixellists, this avoids putting lots of closely
                 /// spaced, correlated pixels in the list for large scales.
                 bool itsUseIncrements;
+
+                /// @brief Constrain some scales to positive components
+                /// @details For each scale, specify if components can take any value or are
+                /// constrained to be positive
+                vector<bool> itsPositivityConstraint;
+
+                /// @brief Bias scales in peak search
+                /// @details The scale bias factors to apply in the peak search
+                /// Values less than 1 will prefer large scales, greater than 1 prefers small scales.
+                /// Factor is bias^(1+log2(scale/scale1)) where scale1 is the first non zero scale.
+                /// Bias range limited to 0-2, most useful range to try is probably 0.7-1.3
+                vector<float> itsScaleBias;
         };
 
     } // namespace synthesis

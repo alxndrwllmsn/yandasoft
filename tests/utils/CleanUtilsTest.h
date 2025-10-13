@@ -75,7 +75,7 @@ class CleanUtilsTest : public CppUnit::TestFixture {
             int npix1 = 1024, npix2 = 256;
 
             int offset = 1;
-            imtype result = npix1 * npix1 - npix2 * npix2;
+            float result = npix1 * npix1 - npix2 * npix2;
             makeImages(ip,taylorMap,offset,npix1,npix2);
             CPPUNIT_ASSERT_EQUAL(result, sum(overlapMask(ip,taylorMap,extraOversamplingFactor)));
 

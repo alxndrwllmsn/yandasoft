@@ -32,6 +32,7 @@ ASKAP_LOGGER(logger, ".gridding.awprojectvisgridder");
 #include <askap/gridding/AWProjectVisGridder.h>
 #include <askap/scimath/fft/FFT2DWrapper.h>
 #include <askap/scimath/utils/PaddingUtils.h>
+#include <askap/scimath/utils/OptimizedArrayMathUtils.h>
 #include <casacore/casa/Arrays/ArrayIter.h>
 #include <casacore/casa/BasicSL/Complex.h>
 #include <casacore/casa/Arrays/Array.h>
@@ -54,30 +55,6 @@ ASKAP_LOGGER(logger, ".gridding.awprojectvisgridder");
 
 namespace askap {
 namespace synthesis {
-
-//std::vector<casa::Matrix<casa::Complex> > AWProjectVisGridder::theirCFCache;
-//std::vector<std::pair<int,int> > AWProjectVisGridder::theirConvFuncOffsets;
-
-/// @brief a helper method for a ref copy of casa arrays held in
-/// stl vector
-/// @param[in] in input array
-/// @param[out] out output array (will be resized)
-/// @return size of the cache in bytes (assuming Complex array elements)
-//template<typename T>
-//size_t deepRefCopyOfSTDVector(const std::vector<T> &in,
-//                            std::vector<T> &out)
-//{
-//   out.resize(in.size());
-//   size_t total = 0;
-//   const typename std::vector<T>::const_iterator inEnd = in.end();
-//   typename std::vector<T>::iterator outIt = out.begin();
-//   for (typename std::vector<T>::const_iterator inIt = in.begin();
-//       inIt != inEnd; ++inIt,++outIt) {
-//       outIt->reference(*inIt);
-//       total += outIt->nelements()*sizeof(casa::Complex)+sizeof(T);
-//   }
-//   return total;
-//}
 
 AWProjectVisGridder::AWProjectVisGridder(const boost::shared_ptr<IBasicIllumination const> &illum,
         const double wmax, const int nwplanes,
@@ -135,8 +112,8 @@ void AWProjectVisGridder::initIndices(const accessors::IConstDataAccessor& acc)
     const int nPol = acc.nPol();
     itsCMap.resize(nSamples, nPol, nChan);
     itsCMap.set(0);
-
-    const casacore::Vector<casacore::RigidVector<double, 3> > &rotatedUVW = acc.rotatedUVW(getTangentPoint());
+    const casacore::Vector<casacore::RigidVector<double, 3> > &rotatedUVW = (rotateUVW() ? acc.rotatedUVW(getTangentPoint()) :
+        acc.uvw());
     const casacore::Vector<casacore::Double> & chanFreq = acc.frequency();
 
     for (int i = 0; i < nSamples; ++i) {
@@ -431,7 +408,7 @@ void AWProjectVisGridder::initConvolutionFunction(const accessors::IConstDataAcc
                     // Now correct for normalization of FFT
                     thisPlane *= imtypeComplex(1.0 / (double(nx) * double(ny)));
                     // use this norm later on during normalisation
-                    const double thisPlaneNorm = sum(real(thisPlane));
+                    const double thisPlaneNorm = utility::sumArray(real(thisPlane));
                     ASKAPDEBUGASSERT(thisPlaneNorm > 0.);
 
                     const int zIndex = iw + nWPlanes() * (chan + nChan * (feed + itsMaxFeeds * currentField()));

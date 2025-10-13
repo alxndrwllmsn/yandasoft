@@ -34,6 +34,7 @@
 // Local package includes
 #include "askap/flagging/IFlagger.h"
 #include "askap/flagging/FlaggingStats.h"
+#include "askap/flagging/NoiseScaler.h"
 
 namespace askap {
 namespace synthesis {
@@ -55,7 +56,7 @@ class AmplitudeFlagger : public IFlagger {
         /// @brief Constructor
         /// @throw AskapError   If an upper or lower threshold is not specified
         ///                     in the parset.
-        AmplitudeFlagger(const LOFAR::ParameterSet& parset);
+        AmplitudeFlagger(const LOFAR::ParameterSet& parset, std::shared_ptr<NoiseScaler> noiseScaler);
 
         /// @see IFlagger::processRows()
         virtual void processRows(const accessors::IDataSharedIter& di,
@@ -110,6 +111,10 @@ class AmplitudeFlagger : public IFlagger {
         // When integrating, used to limit flag generation to a single call to
         // "processRow"
         bool itsAverageFlagsAreReady;
+
+        // scale the noise?
+        std::shared_ptr<NoiseScaler> itsNoiseScaler;
+
 
         // The set of correlation products for which these flagging rules should
         // be applied. An empty list means apply to all correlation products.

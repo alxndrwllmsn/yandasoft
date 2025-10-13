@@ -328,7 +328,6 @@ namespace askap
                             regionSum += val;
                             if (rsq<=localRadiusSq) {
                               localCount += 1;
-                              //localSum += localBox(xb,yb); // Unused, why?
                             }
                           }
                         }
